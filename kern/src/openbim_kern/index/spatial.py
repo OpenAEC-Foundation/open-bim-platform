@@ -72,8 +72,9 @@ def build_summary(ifc: Path) -> dict[str, Any]:
     unit = ifcopenshell.util.unit.get_project_unit(model, "LENGTHUNIT")
     per_class: Counter[str] = Counter()
     per_storey: Counter[str] = Counter()
+    for product in model.by_type("IfcProduct"):
+        per_class[product.is_a()] += 1
     for el in model.by_type("IfcElement"):
-        per_class[el.is_a()] += 1
         node = element_util.get_container(el)
         while node is not None and not node.is_a("IfcBuildingStorey"):
             node = element_util.get_aggregate(node)

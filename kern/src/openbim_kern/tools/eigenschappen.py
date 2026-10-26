@@ -6,11 +6,11 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..index.properties import read_properties
+from ..errors import KernError
+from ..index.properties import ElementProperties, read_properties
 from ..sources import Source, fetch_source
 from .registry import tool
 
@@ -25,7 +25,7 @@ class EigenschappenIn(BaseModel):
 
 
 class EigenschappenUit(BaseModel):
-    elementen: dict[str, dict[str, Any]]
+    elementen: dict[str, ElementProperties]
 
 
 def data_dir() -> Path:
@@ -50,7 +50,12 @@ def _cached_index(source: Source) -> Path:
 @tool("eigenschappen", "Geef de eigenschappen, hoeveelheden, materialen en classificaties van elementen uit een index.")
 def eigenschappen(invoer: EigenschappenIn) -> EigenschappenUit:
     if invoer.index.sha256:
-        return EigenschappenUit(elementen=read_properties(_cached_index(invoer.index), invoer.globalids))
+        db = _cached_index(invoer.index)
+        try:
+            return EigenschappenUit(elementen=read_properties(db, invoer.globalids))
+        except KernError:
+            db.unlink(missing_ok=True)  # never keep a cached file that is not a valid index
+            raise
     work = Path(tempfile.mkdtemp(prefix="eigenschappen-"))
     try:
         db = fetch_source(invoer.index, work, MAX_INDEX_BYTES)

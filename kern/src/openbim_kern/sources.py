@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
-from pydantic import BaseModel, ConfigDict, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
 
 from openbim_kern.errors import KernError
 
@@ -20,8 +20,13 @@ class Source(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     url: HttpUrl
-    sha256: str | None = None
+    sha256: str | None = Field(default=None, pattern=r"^[0-9a-fA-F]{64}$")
     grootte: int | None = None
+
+    @field_validator("sha256")
+    @classmethod
+    def _lower(cls, value: str | None) -> str | None:
+        return value.lower() if value else value
 
 
 def _unreachable(url: str, detail: str) -> KernError:

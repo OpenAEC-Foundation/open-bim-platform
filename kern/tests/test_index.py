@@ -88,3 +88,23 @@ def test_summary_counts(ifc_small):
 def test_spatial_tree(ifc_small):
     t = build_spatial_tree(ifc_small)
     assert t["klasse"] == "IfcProject" and depth_of_storeys(t) == 3
+
+
+def test_index_spatial_objects(ifc_small, tmp_path):
+    import ifcopenshell
+
+    build_property_index(ifc_small, tmp_path / "e.sqlite")
+    model = ifcopenshell.open(str(ifc_small))
+    storey = model.by_type("IfcBuildingStorey")[0]
+    site = model.by_type("IfcSite")[0]
+    project = model.by_type("IfcProject")[0]
+    got = read_properties(tmp_path / "e.sqlite", [storey.GlobalId, site.GlobalId, project.GlobalId])
+    assert got[storey.GlobalId]["klasse"] == "IfcBuildingStorey"
+    assert got[storey.GlobalId]["verdieping"] == storey.GlobalId
+    assert got[site.GlobalId]["klasse"] == "IfcSite" and got[site.GlobalId]["verdieping"] is None
+    assert got[project.GlobalId]["klasse"] == "IfcProject"
+
+
+def test_summary_counts_spatial(ifc_small):
+    s = build_summary(ifc_small)["aantallen_per_klasse"]
+    assert s["IfcBuildingStorey"] == 2 and s["IfcSite"] == 1

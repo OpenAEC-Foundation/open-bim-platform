@@ -1,9 +1,11 @@
 import hashlib
 
 import pytest
+from pydantic import ValidationError
 from test_index import first_wall_globalid
 
 from openbim_kern.index.properties import build_property_index
+from openbim_kern.sources import Source
 
 
 @pytest.fixture
@@ -59,3 +61,27 @@ def test_globalids_length_enforced(client, auth, ids):
     body = {"index": {"url": "http://127.0.0.1:1/e.sqlite"}, "globalids": ids}
     r = client.post("/v1/tools/eigenschappen", json=body, headers=auth)
     assert r.status_code == 422 and r.json()["error_code"] == "ongeldige_invoer"
+
+
+def test_sha256_path_traversal_rejected(client, auth):
+    body = {"index": {"url": "http://127.0.0.1:1/e.sqlite", "sha256": "../../x"}, "globalids": ["a"]}
+    r = client.post("/v1/tools/eigenschappen", json=body, headers=auth)
+    assert r.status_code == 422 and r.json()["error_code"] == "ongeldige_invoer"
+    with pytest.raises(ValidationError):
+        Source(url="http://127.0.0.1:1/x", sha256="../../x")
+
+
+def test_sha256_normalised_to_lowercase():
+    assert Source(url="http://127.0.0.1:1/x", sha256="A" * 64).sha256 == "a" * 64
+
+
+@pytest.mark.parametrize("with_sha", [True, False])
+def test_non_sqlite_index_rejected_and_not_cached(client, auth, httpserver, data_dir, with_sha):
+    data = b"this is not a database" * 100
+    httpserver.expect_request("/e.sqlite").respond_with_data(data)
+    source = {"url": httpserver.url_for("/e.sqlite")}
+    if with_sha:
+        source["sha256"] = hashlib.sha256(data).hexdigest()
+    r = client.post("/v1/tools/eigenschappen", json={"index": source, "globalids": ["a"]}, headers=auth)
+    assert r.status_code == 422 and r.json()["error_code"] == "index_ongeldig"
+    assert not list(data_dir.rglob("*.sqlite"))

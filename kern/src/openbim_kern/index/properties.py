@@ -6,11 +6,14 @@ import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 import ifcopenshell
 import ifcopenshell.util.classification
 import ifcopenshell.util.element as element_util
+from typing_extensions import TypedDict
+
+from ..errors import KernError
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS elements (
@@ -48,6 +51,11 @@ def _json_safe(value: Any) -> Any:
 
 
 def _storey(element: ifcopenshell.entity_instance) -> ifcopenshell.entity_instance | None:
+    """Storey of an element; a storey is its own storey, project/site/building have none."""
+    if element.is_a("IfcBuildingStorey"):
+        return element
+    if not element.is_a("IfcElement") and not element.is_a("IfcSpace"):
+        return None
     node = element_util.get_container(element)
     while node is not None and not node.is_a("IfcBuildingStorey"):
         node = element_util.get_aggregate(node)
@@ -85,9 +93,10 @@ def build_property_index(ifc: Path, db: Path) -> None:
     db.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(db)) as con:
         con.executescript(SCHEMA)
-        for el in model.by_type("IfcElement"):
+        indexed = [*model.by_type("IfcProject"), *model.by_type("IfcProduct")]
+        for el in indexed:
             gid = el.GlobalId
-            type_ = element_util.get_type(el)
+            type_ = element_util.get_type(el) if el.is_a("IfcObject") else None
             storey = _storey(el)
             con.execute(
                 "INSERT OR IGNORE INTO elements VALUES (?,?,?,?,?)",
@@ -111,8 +120,20 @@ def build_property_index(ifc: Path, db: Path) -> None:
 
 def read_properties(db: Path, globalids: list[str]) -> dict[str, ElementProperties]:
     """Properties of the given elements; unknown GlobalIds are absent from the result."""
+    try:
+        return _read(db, globalids)
+    except sqlite3.Error as exc:
+        raise KernError(
+            "index_ongeldig",
+            f"De index is geen geldige eigenschappen-index: {exc}.",
+            "Lever een index aan die met build_property_index is gemaakt.",
+            status=422,
+        ) from exc
+
+
+def _read(db: Path, globalids: list[str]) -> dict[str, ElementProperties]:
     result: dict[str, ElementProperties] = {}
-    with closing(sqlite3.connect(db)) as con:
+    with closing(sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)) as con:
         for gid in dict.fromkeys(globalids):
             row = con.execute(
                 "SELECT ifc_class, name, type_globalid, storey_globalid FROM elements WHERE globalid=?", (gid,)
