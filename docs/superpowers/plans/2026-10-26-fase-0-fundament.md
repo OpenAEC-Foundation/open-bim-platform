@@ -127,7 +127,8 @@ def test_no_keys_no_start(monkeypatch): monkeypatch.delenv("OPENBIM_KERN_SLEUTEL
 ```
 
 `echo_tool` is een fixture die een tool `echo` (invoer `{tekst: str}`, uitvoer `{tekst: str}`) registreert en
-na de test weer weghaalt.
+na de test weer weghaalt. Een lange tool krijgt bij het uitvoeren ook `progress: Callable[[float], None]` als
+keyword-argument (taak 7); `registry` herkent dat aan de signatuur en neemt het niet op in het invoerschema.
 
 - [ ] **Step 2: Run** `cd kern && pip install -e .[test] && pytest tests/test_app.py -v` — Expected: FAIL (module ontbreekt).
 - [ ] **Step 3: Implement** pyproject (pakket `openbim-kern`, src-layout, extras `test`: pytest, pytest-httpserver; script `openbim-kern = openbim_kern.cli:app`), `errors.py`, `registry.py`, `app.py`. Validatiefouten van pydantic worden `ongeldige_invoer` (422).
