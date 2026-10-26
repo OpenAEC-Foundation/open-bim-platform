@@ -1,0 +1,6 @@
+PROMPTS.md
+.claude/
+.superpowers/
+node_modules/
+__pycache__/
+.venv/
