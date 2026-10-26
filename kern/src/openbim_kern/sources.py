@@ -56,8 +56,8 @@ def fetch_source(source: Source, workdir: Path, max_bytes: int) -> Path:
         size = 0
         with os.fdopen(fd, "wb") as out:
             try:
-                with httpx.stream("GET", url, timeout=_TIMEOUT, follow_redirects=True) as response:
-                    if response.status_code >= 400:
+                with httpx.stream("GET", url, timeout=_TIMEOUT, follow_redirects=False) as response:
+                    if not response.is_success:
                         raise _unreachable(url, f"HTTP-status {response.status_code}")
                     for chunk in response.iter_bytes(CHUNK_BYTES):
                         size += len(chunk)
@@ -104,7 +104,7 @@ def deliver(path: Path, url: str) -> None:
         )
     except httpx.HTTPError as exc:
         raise _target_error(url, str(exc) or type(exc).__name__) from exc
-    if response.status_code >= 400:
+    if not response.is_success:
         raise _target_error(url, f"HTTP-status {response.status_code}")
 
 

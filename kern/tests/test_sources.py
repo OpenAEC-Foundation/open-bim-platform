@@ -116,3 +116,25 @@ def test_deliver_failure(httpserver, tmp_path):
         deliver(f, httpserver.url_for("/out"))
     assert exc.value.error_code == "doel_onbereikbaar"
     assert exc.value.status == 502
+
+
+def test_fetch_does_not_follow_redirects(httpserver, tmp_path):
+    location = httpserver.url_for("/geheim")
+    httpserver.expect_request("/a.ifc").respond_with_data("", status=302, headers={"Location": location})
+    httpserver.expect_request("/geheim").respond_with_data(DATA)
+    with pytest.raises(KernError) as exc:
+        fetch_source(Source(url=httpserver.url_for("/a.ifc")), tmp_path, 1000)
+    assert exc.value.error_code == "bron_onbereikbaar"
+    assert exc.value.status == 502
+    assert [r.path for r, _ in httpserver.log] == ["/a.ifc"]
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_deliver_redirect_is_failure(httpserver, tmp_path):
+    f = tmp_path / "out.frag"
+    f.write_bytes(DATA)
+    httpserver.expect_request("/out", method="PUT").respond_with_data("", status=307, headers={"Location": "/elders"})
+    with pytest.raises(KernError) as exc:
+        deliver(f, httpserver.url_for("/out"))
+    assert exc.value.error_code == "doel_onbereikbaar"
+    assert exc.value.status == 502
