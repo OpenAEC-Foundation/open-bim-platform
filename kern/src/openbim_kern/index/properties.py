@@ -1,0 +1,142 @@
+"""SQLite property index over an IFC file: build it once, read selected elements cheaply."""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from contextlib import closing
+from pathlib import Path
+from typing import Any, TypedDict
+
+import ifcopenshell
+import ifcopenshell.util.classification
+import ifcopenshell.util.element as element_util
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS elements (
+    globalid TEXT PRIMARY KEY, ifc_class TEXT, name TEXT, type_globalid TEXT, storey_globalid TEXT);
+CREATE TABLE IF NOT EXISTS properties (
+    globalid TEXT, set_name TEXT, name TEXT, value TEXT, unit TEXT, kind TEXT,
+    UNIQUE (globalid, set_name, name, kind));
+CREATE TABLE IF NOT EXISTS materials (globalid TEXT, material TEXT, UNIQUE (globalid, material));
+CREATE TABLE IF NOT EXISTS classifications (
+    globalid TEXT, system TEXT, code TEXT, name TEXT, UNIQUE (globalid, system, code));
+"""
+
+
+class ElementProperties(TypedDict):
+    klasse: str
+    naam: str | None
+    type: str | None
+    verdieping: str | None
+    psets: dict[str, dict[str, Any]]
+    hoeveelheden: dict[str, dict[str, Any]]
+    materialen: list[str]
+    classificaties: list[dict[str, str | None]]
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, ifcopenshell.entity_instance):
+        return value.wrappedValue if hasattr(value, "wrappedValue") else value.is_a()
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
+
+
+def _storey(element: ifcopenshell.entity_instance) -> ifcopenshell.entity_instance | None:
+    node = element_util.get_container(element)
+    while node is not None and not node.is_a("IfcBuildingStorey"):
+        node = element_util.get_aggregate(node)
+    return node
+
+
+def _materials(element: ifcopenshell.entity_instance) -> list[str]:
+    if element_util.get_material(element) is None:
+        return []
+    names: list[str] = []
+    for item in element_util.get_materials(element):
+        name = getattr(item, "Name", None)
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
+def _classifications(element: ifcopenshell.entity_instance) -> list[tuple[str | None, str, str | None]]:
+    found = []
+    for ref in ifcopenshell.util.classification.get_references(element):
+        code = getattr(ref, "Identification", None) or getattr(ref, "ItemReference", None)
+        if code is None:
+            continue
+        system = ifcopenshell.util.classification.get_classification(ref)
+        found.append((getattr(system, "Name", None) if system else None, code, getattr(ref, "Name", None)))
+    return found
+
+
+def build_property_index(ifc: Path, db: Path) -> None:
+    """Create or extend the index database.
+
+    Rows are inserted with INSERT OR IGNORE so the parts of a split file can fill one database.
+    """
+    model = ifcopenshell.open(str(ifc))
+    db.parent.mkdir(parents=True, exist_ok=True)
+    with closing(sqlite3.connect(db)) as con:
+        con.executescript(SCHEMA)
+        for el in model.by_type("IfcElement"):
+            gid = el.GlobalId
+            type_ = element_util.get_type(el)
+            storey = _storey(el)
+            con.execute(
+                "INSERT OR IGNORE INTO elements VALUES (?,?,?,?,?)",
+                (gid, el.is_a(), el.Name, type_.GlobalId if type_ else None, storey.GlobalId if storey else None),
+            )
+            for kind, kwargs in (("pset", {"psets_only": True}), ("qto", {"qtos_only": True})):
+                for set_name, props in element_util.get_psets(el, **kwargs).items():
+                    for name, value in props.items():
+                        if name == "id":
+                            continue
+                        con.execute(
+                            "INSERT OR IGNORE INTO properties VALUES (?,?,?,?,?,?)",
+                            (gid, set_name, name, json.dumps(_json_safe(value)), None, kind),
+                        )
+            for material in _materials(el):
+                con.execute("INSERT OR IGNORE INTO materials VALUES (?,?)", (gid, material))
+            for system, code, name in _classifications(el):
+                con.execute("INSERT OR IGNORE INTO classifications VALUES (?,?,?,?)", (gid, system, code, name))
+        con.commit()
+
+
+def read_properties(db: Path, globalids: list[str]) -> dict[str, ElementProperties]:
+    """Properties of the given elements; unknown GlobalIds are absent from the result."""
+    result: dict[str, ElementProperties] = {}
+    with closing(sqlite3.connect(db)) as con:
+        for gid in dict.fromkeys(globalids):
+            row = con.execute(
+                "SELECT ifc_class, name, type_globalid, storey_globalid FROM elements WHERE globalid=?", (gid,)
+            ).fetchone()
+            if row is None:
+                continue
+            psets: dict[str, dict[str, Any]] = {}
+            qtos: dict[str, dict[str, Any]] = {}
+            for set_name, name, value, kind in con.execute(
+                "SELECT set_name, name, value, kind FROM properties WHERE globalid=? ORDER BY rowid", (gid,)
+            ):
+                (psets if kind == "pset" else qtos).setdefault(set_name, {})[name] = json.loads(value)
+            materials = con.execute("SELECT material FROM materials WHERE globalid=? ORDER BY rowid", (gid,))
+            classes = con.execute(
+                "SELECT system, code, name FROM classifications WHERE globalid=? ORDER BY rowid", (gid,)
+            )
+            result[gid] = ElementProperties(
+                klasse=row[0],
+                naam=row[1],
+                type=row[2],
+                verdieping=row[3],
+                psets=psets,
+                hoeveelheden=qtos,
+                materialen=[m for (m,) in materials],
+                classificaties=[{"systeem": s, "code": c, "naam": n} for s, c, n in classes],
+            )
+    return result

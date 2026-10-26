@@ -11,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from . import __version__
 from .errors import KernError
+from .tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
 from .tools.registry import REGISTRY
 
 
