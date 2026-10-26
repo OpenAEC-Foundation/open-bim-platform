@@ -192,8 +192,10 @@ Per bestandsversie maakt de BIM-kern:
 | `index.json` | samenvatting: schema, eenheden, georeferentie (IfcMapConversion), begrenzingsdoos, aantallen per klasse en verdieping, lijst van delen | IfcOpenShell |
 
 - **Splitsen:** boven 1,5 GB (mijn keuze, ruim onder de gemeten grens) splitst de kern het bestand eerst met
-  `IfcSplitter` in delen per verdieping, en anders op grootte. Elk deel wordt een eigen `.frag`; `index.json` zegt
-  welk deel welke verdiepingen bevat.
+  `IfcSplitter` in `ceil(grootte / 1 GB)` delen. De splitser maakt groepen van ongeveer even veel elementen, houdt
+  samenhangende elementen bij elkaar (wand, opening, deur) en geeft elk deel de gedeelde ruimtelijke structuur mee.
+  Elk deel wordt een eigen `.frag`; `index.json` zegt per deel de grootte en de verdiepingen waar het elementen in
+  heeft.
 - **Eén proces per omzetting**, met een geheugengrens (3 GB per GB IFC, plus marge) en een tijdslimiet (30 minuten per
   GB, mijn keuze), herhalen bij een WebAssembly-fout (hoogstens twee keer).
 - **Sleutel:** `(bestand, versie, omzetterversie)`. De omzetterversie is de versie van de kern plus de versie van
