@@ -155,6 +155,13 @@ def test_cli_werker_once(slow_tool):
     assert store.get(taak).status == "klaar"
 
 
+def test_cli_serve_without_keys(monkeypatch):
+    monkeypatch.delenv("OPENBIM_KERN_SLEUTELS", raising=False)
+    monkeypatch.setattr(cli.uvicorn, "run", lambda *a, **k: pytest.fail("must not start"))
+    result = CliRunner().invoke(cli.app, ["serve"])
+    assert result.exit_code == 1 and "OPENBIM_KERN_SLEUTELS" in result.stderr
+
+
 def test_cli_serve(monkeypatch):
     calls = {}
     monkeypatch.setattr(cli.uvicorn, "run", lambda app, **kwargs: calls.update(kwargs, app=app))

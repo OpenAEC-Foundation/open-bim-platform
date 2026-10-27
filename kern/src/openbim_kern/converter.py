@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -50,9 +51,8 @@ def convert_to_frag(ifc: Path, out: Path) -> ConvertStats:
     t0 = time.monotonic()
     in_bytes = ifc.stat().st_size
     out.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_name = tempfile.mkstemp(dir=out.parent, prefix=f".{out.stem}-", suffix=".part")
-    os.close(fd)
-    tmp = Path(tmp_name)
+    # A fresh name the converter creates itself, so the output gets the usual file mode (mkstemp gives 0600).
+    tmp = out.with_name(f".{out.stem}-{uuid.uuid4().hex}.part")
     try:
         run = _run_converter(["frag", str(ifc), str(tmp)], ifc)
         report = _last_json(run.stdout, ifc)

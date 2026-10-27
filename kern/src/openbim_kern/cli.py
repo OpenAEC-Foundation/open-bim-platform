@@ -23,7 +23,12 @@ def serve(
 ) -> None:
     from .app import create_app
 
-    uvicorn.run(create_app(), host=host, port=poort)
+    try:
+        kern = create_app()
+    except RuntimeError as exc:  # no API keys configured
+        typer.echo(f"De kern start niet: {exc}", err=True)
+        raise typer.Exit(1) from None
+    uvicorn.run(kern, host=host, port=poort)
 
 
 @app.command(help="Voer de lange taken uit de wachtrij uit, elk in een eigen proces.")

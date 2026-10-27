@@ -1,8 +1,8 @@
 import threading
 import time
 
-import psutil
 import pytest
+from leftovers import leftover_processes
 
 from openbim_kern.errors import KernError
 from openbim_kern.jobs.worker import queues_from_env, run_worker
@@ -148,7 +148,7 @@ def test_cancel(store, slow_tool):
     worker.join(timeout=5)
     assert not worker.is_alive() and time.monotonic() - t0 < 5
     assert store.get(taak).status == "afgebroken"
-    assert not psutil.Process().children(recursive=True)
+    assert not leftover_processes()
 
 
 def test_worker_stops_on_event(store, slow_tool):
@@ -160,7 +160,7 @@ def test_worker_stops_on_event(store, slow_tool):
     stop.set()
     worker.join(timeout=5)
     assert not worker.is_alive()
-    assert not psutil.Process().children(recursive=True)
+    assert not leftover_processes()
     assert store.requeue_running() == 1  # the job starts again with the next worker
 
 

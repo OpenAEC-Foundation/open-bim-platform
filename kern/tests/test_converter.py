@@ -2,8 +2,8 @@ from collections import Counter
 
 import ifcopenshell
 import ifcopenshell.util.element as element_util
-import psutil
 import pytest
+from leftovers import leftover_processes
 
 from openbim_kern.converter import convert_to_frag, split_ifc
 from openbim_kern.errors import KernError
@@ -49,7 +49,7 @@ def test_memory_limit(fake_converter, monkeypatch, ifc_small, tmp_path):
     monkeypatch.setenv("OPENBIM_GEHEUGEN_GRENS_BYTES", str(200 * 1024 * 1024))
     e = pytest.raises(KernError, convert_to_frag, ifc_small, tmp_path / "m.frag").value
     assert e.error_code == "omzetten_te_veel_geheugen"
-    assert not psutil.Process().children(recursive=True)
+    assert not leftover_processes()
 
 
 def test_time_limit(fake_converter, monkeypatch, ifc_small, tmp_path):
@@ -58,7 +58,7 @@ def test_time_limit(fake_converter, monkeypatch, ifc_small, tmp_path):
     e = pytest.raises(KernError, convert_to_frag, ifc_small, tmp_path / "m.frag").value
     assert e.error_code == "omzetten_tijd_op"
     assert not (tmp_path / "m.frag").exists()
-    assert not psutil.Process().children(recursive=True)
+    assert not leftover_processes()
 
 
 def test_split(ifc_small, tmp_path):
