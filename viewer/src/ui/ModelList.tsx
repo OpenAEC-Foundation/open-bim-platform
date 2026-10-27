@@ -104,7 +104,10 @@ function ModelRow({ model, on, isLoaded, isLoading, onToggle }: RowProps) {
         </span>
       </label>
       <span className="model-list__meta">
-        <span className={`oa-badge ${BADGE[model.status]}`}>{t(`status.${model.status}`)}</span>
+        <span className={`oa-badge ${BADGE[model.status]}`}>
+          {t(`status.${model.status}`)}
+          {model.status === "bezig" && model.voortgang ? ` · ${Math.round(model.voortgang * 100)}%` : ""}
+        </span>
         <span>{model.discipline || t("discipline_geen")}</span>
         {state && <span>{state}</span>}
       </span>

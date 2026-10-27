@@ -35,6 +35,8 @@ export type ModelInfo = {
   naam: string;
   discipline: string;
   status: ModelStatus;
+  /** Progress of the conversion, 0 to 1, while it runs (when the host knows it). */
+  voortgang?: number;
   fout?: KernFout | null;
   delen: ModelPart[];
   index: ModelIndex | null;
