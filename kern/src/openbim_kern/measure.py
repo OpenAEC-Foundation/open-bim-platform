@@ -7,7 +7,9 @@ so `openbim-kern lokaal <map>` and the viewer can open the folder without conver
 
 from __future__ import annotations
 
+import functools
 import hashlib
+import json
 import multiprocessing
 import os
 import platform
@@ -32,21 +34,37 @@ MB = 1024**2
 CHUNK_BYTES = 8 * MB
 
 
-def measure(root: Path, log: Any = print) -> list[dict[str, Any]]:
-    """Convert every model in the folder and return one row per file."""
+def measure(
+    root: Path,
+    log: Any = None,
+    rows_path: Path | None = None,
+    resume: bool = False,
+) -> list[dict[str, Any]]:
+    """Convert every model in the folder and return one row per file.
+
+    With `rows_path` the rows are written there after every file, so a long run that stops loses nothing. With
+    `resume` a file that has a row there (same version, no error) and its output in place is not converted again.
+    """
+    log = log or functools.partial(print, flush=True)
     root = Path(root).resolve()
     context = multiprocessing.get_context("spawn")
+    earlier = _earlier_rows(rows_path) if resume else {}
     rows = []
     for ifc in model_files(root):
         sleutel = ifc.relative_to(root).as_posix()
         versie = _sha256(ifc)[:12]
+        target = root.joinpath(*PurePosixPath(derived_rel(sleutel, versie)).parts)
+        known = earlier.get((sleutel, versie))
+        if known and "fout" not in known and (target / "index.json").is_file():
+            rows.append({**known, "hervat": True})
+            log(f"{sleutel}: al gemeten, overgenomen")
+            continue
         row: dict[str, Any] = {"bestand": sleutel, "versie": versie, "ifc_bytes": ifc.stat().st_size}
         (root / DERIVED).mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix=".meting-", dir=root / DERIVED))
         try:
             outcome = _run_child(context, ifc, work)
             if outcome["ok"]:
-                target = root.joinpath(*PurePosixPath(derived_rel(sleutel, versie)).parts)
                 target.mkdir(parents=True, exist_ok=True)
                 for name in outcome["files"]:
                     os.replace(work / "uit" / name, target / name)
@@ -64,8 +82,25 @@ def measure(root: Path, log: Any = print) -> list[dict[str, Any]]:
         finally:
             shutil.rmtree(work, ignore_errors=True)
         rows.append(row)
+        if rows_path is not None:
+            _write_rows(rows_path, rows)
         log(_progress(row))
     return rows
+
+
+def _earlier_rows(rows_path: Path | None) -> dict[tuple[str, str], dict[str, Any]]:
+    try:
+        rows = json.loads(Path(rows_path).read_text(encoding="utf-8")) if rows_path else []
+    except (OSError, ValueError):
+        return {}
+    return {(r["bestand"], r["versie"]): r for r in rows if isinstance(r, dict) and "bestand" in r and "versie" in r}
+
+
+def _write_rows(rows_path: Path, rows: list[dict[str, Any]]) -> None:
+    rows_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = rows_path.with_name(rows_path.name + ".part")
+    tmp.write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
+    os.replace(tmp, rows_path)
 
 
 def _run_child(context: Any, ifc: Path, work: Path) -> dict[str, Any]:
@@ -129,7 +164,8 @@ def render(rows: list[dict[str, Any]], root: Path) -> str:
         "# Meting omzetten",
         "",
         f"- Map: `{root}` ({len(rows)} bestanden, {total_ifc / 1e9:.2f} GB IFC)",
-        f"- Omzetter: `{CONVERTER_VERSION}`",
+        f"- Omzetter: `{CONVERTER_VERSION}`; splitsen boven {_setting('OPENBIM_SPLITS_VANAF_BYTES', 1_500_000_000)} in "
+        f"delen van {_setting('OPENBIM_DEEL_BYTES', 1_000_000_000)}",
         f"- Machine: {platform.platform()}, {psutil.cpu_count(logical=False)} kernen, "
         f"{memory / 1024**3:.0f} GB geheugen",
         f"- Datum: {datetime.now().isoformat(timespec='minutes')}",
@@ -170,6 +206,12 @@ def render(rows: list[dict[str, Any]], root: Path) -> str:
     if failed:
         lines += ["", f"{len(failed)} bestand(en) konden niet worden omgezet; zie de tabel."]
     return "\n".join(lines) + "\n"
+
+
+def _setting(name: str, default: int) -> str:
+    """A size setting of the conversion as GB, with `(standaard)` when it is not set."""
+    value = os.environ.get(name)
+    return f"{int(value) / 1e9:g} GB" if value else f"{default / 1e9:g} GB (standaard)"
 
 
 def _progress(row: dict[str, Any]) -> str:

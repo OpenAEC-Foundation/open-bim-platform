@@ -85,6 +85,11 @@ def test_measure_report(tmp_path):
     assert {r["bestand"] for r in rows} == {"Constructie/wand model.ifc", "Installaties/kanaal één.ifc"}
     assert all(r["frag_bytes"] > 0 and r["seconden"] > 0 and r["piek_index"] > 0 for r in rows)
 
+    # A second run with --hervat takes the rows over instead of converting again.
+    load("measure").main([str(folder), "--uit", str(report), "--hervat"])
+    again = json.loads(report.with_suffix(".json").read_text(encoding="utf-8"))
+    assert all(r.get("hervat") for r in again) and [r["seconden"] for r in again] == [r["seconden"] for r in rows]
+
     # The output lands where the local server looks, so the viewer can open the folder without converting again.
     for source in sources:
         versie = hashlib.sha256(source.read_bytes()).hexdigest()[:12]
