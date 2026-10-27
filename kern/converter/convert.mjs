@@ -17,6 +17,7 @@ import path from "node:path";
 import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import * as FRAGS from "@thatopen/fragments";
+import * as WEBIFC from "web-ifc";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CHUNK = 1024 * 1024;
@@ -96,12 +97,30 @@ const io = {
   },
 };
 
+// The default type lists of the splitter know only part of the IFC4 and IFC4X3 types (not IfcDuctSegment, say). A
+// type it does not know is copied into every part and loses its storey, so take every IfcElement subtype and every
+// spatial structure type of every schema from web-ifc.
+function splitterConfig() {
+  const names = new Map(
+    Object.entries(WEBIFC)
+      .filter(([k, v]) => /^IFC[A-Z0-9]+$/.test(k) && typeof v === "number")
+      .map(([k, v]) => [v, k]),
+  );
+  const subtypes = (code) =>
+    Object.values(WEBIFC.InheritanceDef).flatMap((def) => (def[code] ?? []).map((c) => names.get(c)).filter(Boolean));
+  const spatial = new Set([...FRAGS.SPATIAL_TYPES, ...subtypes(WEBIFC.IFCSPATIALSTRUCTUREELEMENT)]);
+  spatial.delete("IFCSPACE"); // spaces are distributed like elements, as in the defaults
+  const elements = new Set([...FRAGS.ELEMENT_TYPES, ...subtypes(WEBIFC.IFCELEMENT)]);
+  for (const t of spatial) elements.delete(t);
+  return { elementTypes: [...elements], spatialTypes: [...spatial] };
+}
+
 async function split(input, n, outdir) {
   const groups = Number.parseInt(n, 10);
   assertComplete(input);
   mkdirSync(outdir, { recursive: true });
   const tmp = (id) => path.join(outdir, `.groep-${id}.ifc`);
-  const splitter = new FRAGS.IfcSplitter(io);
+  const splitter = new FRAGS.IfcSplitter(io, splitterConfig());
   const written = await splitter.split(input, groups, tmp);
   const ids = [...written.keys()].sort((a, b) => a - b);
   const delen = ids.map((id, i) => {

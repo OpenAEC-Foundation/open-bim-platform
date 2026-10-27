@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..errors import KernError
 from ..index.properties import ElementProperties, read_properties
+from ..paths import data_dir
 from ..sources import Source, fetch_source
 from .registry import tool
 
@@ -26,11 +27,6 @@ class EigenschappenIn(BaseModel):
 
 class EigenschappenUit(BaseModel):
     elementen: dict[str, ElementProperties]
-
-
-def data_dir() -> Path:
-    configured = os.environ.get("OPENBIM_KERN_DATA")
-    return Path(configured) if configured else Path(tempfile.gettempdir()) / "openbim-kern"
 
 
 def _cached_index(source: Source) -> Path:

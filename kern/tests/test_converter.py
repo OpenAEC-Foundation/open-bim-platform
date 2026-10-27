@@ -1,4 +1,7 @@
+from collections import Counter
+
 import ifcopenshell
+import ifcopenshell.util.element as element_util
 import psutil
 import pytest
 
@@ -62,3 +65,22 @@ def test_split(ifc_small, tmp_path):
     parts = split_ifc(ifc_small, 2, tmp_path)
     assert len(parts) == 2 and all(ifcopenshell.open(str(p)).by_type("IfcProject") for p in parts)
     assert [p.name for p in parts] == ["deel-1.ifc", "deel-2.ifc"]
+
+
+def _containers(ifc):
+    model = ifcopenshell.open(str(ifc))
+    result = {}
+    for el in model.by_type("IfcElement"):
+        container = element_util.get_container(el)
+        result[el.GlobalId] = container.GlobalId if container else None
+    return result
+
+
+def test_split_puts_each_element_in_one_part(ifc_small, tmp_path):
+    """IFC4-only element types (an IfcDuctSegment here) must be split like the others, keeping their storey."""
+    parts = split_ifc(ifc_small, 2, tmp_path)
+    found = [_containers(p) for p in parts]
+    counts = Counter(gid for part in found for gid in part)
+    source = _containers(ifc_small)
+    assert counts == Counter(source.keys())  # every element in exactly one part
+    assert {gid: c for part in found for gid, c in part.items()} == source

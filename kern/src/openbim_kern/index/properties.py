@@ -85,11 +85,15 @@ def _classifications(element: ifcopenshell.entity_instance) -> list[tuple[str | 
 
 
 def build_property_index(ifc: Path, db: Path) -> None:
+    """Create or extend the index database from an IFC file; see index_model."""
+    index_model(ifcopenshell.open(str(ifc)), db)
+
+
+def index_model(model: ifcopenshell.file, db: Path) -> None:
     """Create or extend the index database.
 
     Rows are inserted with INSERT OR IGNORE so the parts of a split file can fill one database.
     """
-    model = ifcopenshell.open(str(ifc))
     db.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(db)) as con:
         con.executescript(SCHEMA)
@@ -116,6 +120,27 @@ def build_property_index(ifc: Path, db: Path) -> None:
             for system, code, name in _classifications(el):
                 con.execute("INSERT OR IGNORE INTO classifications VALUES (?,?,?,?)", (gid, system, code, name))
         con.commit()
+
+
+def count_elements(db: Path) -> dict[str, dict[str, int]]:
+    """Counts per class and per storey over the distinct GlobalIds in the index.
+
+    Same meaning as the counts of build_summary: every IfcProduct per class, and per storey the elements in it (not
+    the storey itself or its spaces). The parts of a split file share their spatial structure, and counting GlobalIds
+    counts it once.
+    """
+    with closing(sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)) as con:
+        per_class = con.execute(
+            "SELECT ifc_class, count(*) FROM elements WHERE ifc_class != 'IfcProject' GROUP BY ifc_class"
+        )
+        per_storey = con.execute(
+            "SELECT storey_globalid, count(*) FROM elements WHERE storey_globalid IS NOT NULL"
+            " AND storey_globalid != globalid AND ifc_class != 'IfcSpace' GROUP BY storey_globalid"
+        )
+        return {
+            "aantallen_per_klasse": dict(per_class.fetchall()),
+            "aantallen_per_verdieping": dict(per_storey.fetchall()),
+        }
 
 
 def read_properties(db: Path, globalids: list[str]) -> dict[str, ElementProperties]:
