@@ -16,7 +16,8 @@ def store(tmp_path):
 
 @pytest.fixture
 def client(store):
-    return TestClient(create_app(keys=[KEY], store=store))
+    with TestClient(create_app(keys=[KEY], store=store)) as c:  # runs the lifespan (the MCP session manager)
+        yield c
 
 
 @pytest.fixture

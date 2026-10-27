@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -88,56 +89,86 @@ def omzetten(invoer: OmzetVerzoek, progress: Callable[[float], None] = _no_progr
         work = Path(tmp)
         ifc = work / "bron.ifc"
         os.replace(fetch_source(invoer.bron, work / "bron", MAX_SOURCE_BYTES), ifc)
-        parts = planned_parts(ifc.stat().st_size)
-        _check_targets(invoer.doelen, parts)
+        _check_targets(invoer.doelen, planned_parts(ifc.stat().st_size))
         progress(0.05)
-
-        if parts:
-            inputs = split_ifc(ifc, parts, work / "delen")
-            names = [f"deel-{i}.frag" for i in range(1, len(inputs) + 1)]
-        else:
-            inputs, names = [ifc], ["model.frag"]
-        progress(0.1)
-
-        out = work / "uit"
-        db = out / "eigenschappen.sqlite"
-        delen: list[Deel] = []
-        summaries: list[dict[str, Any]] = []
-        trees: list[dict[str, Any]] = []
-        peak = 0
-        for i, (part, name) in enumerate(zip(inputs, names, strict=True)):
-            stats = convert_to_frag(part, out / name)
-            peak = max(peak, stats.peak_rss)
-            model = _open(part)
-            index_model(model, db)
-            summaries.append(summarize(model))
-            trees.append(spatial_tree(model))
-            del model  # one part in memory at a time
-            delen.append(
-                Deel(naam=name, bytes=stats.out_bytes, verdiepingen=list(summaries[-1]["aantallen_per_verdieping"]))
-            )
-            progress(0.1 + 0.8 * (i + 1) / len(inputs))
-
-        index = {
-            **summaries[0],
-            "begrenzing": merge_bounds([s["begrenzing"] for s in summaries]),
-            **count_elements(db),
-            "omzetter": CONVERTER_VERSION,
-            "delen": [d.model_dump() for d in delen],
-        }
-        _write_json(out / "ruimtelijk.json", merge_spatial_trees(trees))
-        _write_json(out / "index.json", index)
-
-        # index.json goes last: once it is there, the rest of the output is complete.
-        for name in [*names, "eigenschappen.sqlite", "ruimtelijk.json", "index.json"]:
-            deliver(out / name, str(invoer.doelen[name]))
+        result = convert_model(ifc, work, progress)
+        for name in result.files:
+            deliver(work / "uit" / name, str(invoer.doelen[name]))
         progress(1.0)
+    return _outcome(result, t0)
 
+
+def convert_to_folder(ifc: Path, folder: Path) -> OmzetUitkomst:
+    """Convert a local IFC file into folder (the CLI); output files of an earlier run are replaced."""
+    t0 = time.monotonic()
+    folder.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=folder, prefix=".omzetten-", ignore_cleanup_errors=True) as tmp:
+        work = Path(tmp)
+        result = convert_model(ifc, work)
+        for name in result.files:
+            os.replace(work / "uit" / name, folder / name)
+    return _outcome(result, t0)
+
+
+@dataclass
+class Converted:
+    delen: list[Deel]
+    files: list[str]  # output files in delivery order: index.json, which marks the output as complete, last
+    peak_rss: int
+
+
+def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no_progress) -> Converted:
+    """Split when large, convert to fragments and build the index, tree and summary: all output in work / "uit".
+
+    The one conversion path, for the tool and the CLI alike.
+    """
+    parts = planned_parts(ifc.stat().st_size)
+    if parts:
+        inputs = split_ifc(ifc, parts, work / "delen")
+        names = [f"deel-{i}.frag" for i in range(1, len(inputs) + 1)]
+    else:
+        inputs, names = [ifc], ["model.frag"]
+    progress(0.1)
+
+    out = work / "uit"
+    db = out / "eigenschappen.sqlite"
+    delen: list[Deel] = []
+    summaries: list[dict[str, Any]] = []
+    trees: list[dict[str, Any]] = []
+    peak = 0
+    for i, (part, name) in enumerate(zip(inputs, names, strict=True)):
+        stats = convert_to_frag(part, out / name)
+        peak = max(peak, stats.peak_rss)
+        model = _open(part)
+        index_model(model, db)
+        summaries.append(summarize(model))
+        trees.append(spatial_tree(model))
+        del model  # one part in memory at a time
+        delen.append(
+            Deel(naam=name, bytes=stats.out_bytes, verdiepingen=list(summaries[-1]["aantallen_per_verdieping"]))
+        )
+        progress(0.1 + 0.8 * (i + 1) / len(inputs))
+
+    index = {
+        **summaries[0],
+        "begrenzing": merge_bounds([s["begrenzing"] for s in summaries]),
+        **count_elements(db),
+        "omzetter": CONVERTER_VERSION,
+        "delen": [d.model_dump() for d in delen],
+    }
+    _write_json(out / "ruimtelijk.json", merge_spatial_trees(trees))
+    _write_json(out / "index.json", index)
+    return Converted(
+        delen=delen, files=[*names, "eigenschappen.sqlite", "ruimtelijk.json", "index.json"], peak_rss=peak
+    )
+
+
+def _outcome(result: Converted, t0: float) -> OmzetUitkomst:
     return OmzetUitkomst(
         omzetter=CONVERTER_VERSION,
-        delen=delen,
+        delen=result.delen,
         duur_s=time.monotonic() - t0,
-        piek_geheugen=max(peak, _own_peak_rss()),
+        piek_geheugen=max(result.peak_rss, _own_peak_rss()),
     )
 
 

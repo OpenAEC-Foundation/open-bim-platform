@@ -14,6 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from ..errors import KernError
+from ..paths import data_dir
 from ..tools.registry import REGISTRY
 
 MAX_WAITING_PER_SITE = 100
@@ -195,3 +196,8 @@ class JobStore:
             return con.execute(
                 "UPDATE jobs SET status='wacht', gestart=NULL, voortgang=0 WHERE status='bezig'"
             ).rowcount
+
+
+def default_store() -> JobStore:
+    """The job store of this installation: taken.sqlite in the data directory (OPENBIM_KERN_DATA)."""
+    return JobStore(data_dir() / "taken.sqlite")
