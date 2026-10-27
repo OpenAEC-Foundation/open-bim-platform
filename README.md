@@ -50,6 +50,18 @@ De viewer laadt via de host-laag; lokaal is dat de lokale server (`VITE_OPENBIM_
 `http://127.0.0.1:8740`). De worker van fragments komt uit de bundel, nooit van een CDN: `npm run build && npm run
 check:geen-cdn` controleert dat.
 
+### In de SuperCloud (werkplek)
+
+`frappe/openaec_bim` is de platform-app op de klantsite (Frappe, naast OpenAEC Storage en de werkplek). Een modelmap in
+Storage is het project: de app laat elke IFC-versie door de BIM-kern omzetten (met ondertekende S3-adressen), volgt de
+taken en geeft de gastpagina van de werkplek de delen en eigenschappen, steeds met de rechten van Storage. De viewer
+draait als werkplek-app `bim` (`/werkplek/bim?map=<id>`) en praat via de werkplekbrug in `bim.*`-berichten
+(`viewer/src/host/WerkplekHost.ts`). De werkplekkant (gastpagina, adapter, bouwstap, lokale MinIO en kern) staat in
+`openaec-bench`, branch `bouw/bim-werkplek`; zie `docs/werkplek.md` daar. Plan: `docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md`.
+
+Nog een besluit van de eigenaar: de projectlicentie van deze repo, prijsniveau en status in de catalogus, welke app
+een `.ifc` standaard opent (nu de planner), en een machine met genoeg geheugen voor het omzetten op staging.
+
 ### Tests
 
 ```bash
