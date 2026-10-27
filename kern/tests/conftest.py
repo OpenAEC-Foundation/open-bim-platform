@@ -60,3 +60,16 @@ def ifc_truncated(models_dir, ifc_small):
     import models
 
     return models.ifc_truncated(models_dir / "truncated.ifc", ifc_small)
+
+
+@pytest.fixture
+def fake_converter(monkeypatch, tmp_path):
+    """Point OPENBIM_OMZETTER_CMD at tests/fakeconv.py (JSON list form, portable)."""
+    import json
+    import sys
+    from pathlib import Path
+
+    script = Path(__file__).parent / "fakeconv.py"
+    monkeypatch.setenv("OPENBIM_OMZETTER_CMD", json.dumps([sys.executable, str(script)]))
+    monkeypatch.setenv("FAKE_FAIL_ONCE_MARKER", "")
+    return tmp_path / "marker"
