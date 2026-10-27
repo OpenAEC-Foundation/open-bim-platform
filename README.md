@@ -58,6 +58,7 @@ pytest
 ruff check src tests && ruff format --check src tests
 cd ../viewer
 npx vitest run
+npm run test:e2e     # browserproef: kern, lokale server en viewer samen (Playwright)
 ```
 
 ### Container

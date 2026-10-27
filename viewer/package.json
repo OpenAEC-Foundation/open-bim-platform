@@ -9,7 +9,8 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",
-    "check:geen-cdn": "node scripts/check-geen-cdn.mjs dist"
+    "check:geen-cdn": "node scripts/check-geen-cdn.mjs dist",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@openaec/design-tokens": "file:vendor/openaec-style-book/packages/tokens",
@@ -27,6 +28,7 @@
     "web-ifc": "0.0.78"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^24.19.2",
     "@types/react": "^18.3.31",
     "@types/react-dom": "^18.3.7",

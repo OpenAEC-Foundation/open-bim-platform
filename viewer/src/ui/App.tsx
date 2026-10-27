@@ -148,6 +148,16 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
     queueRef.current = queueRef.current.then(() => engine.highlight(target)).catch((e) => setError(describe(e)));
   }, [selection, loaded]);
 
+  // Test entry for the browser test (e2e/smoke.spec.ts); it exists only in the development build.
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const target = window as unknown as { __openbimSelect?: (selection: Selection | null) => void };
+    target.__openbimSelect = setSelection;
+    return () => {
+      delete target.__openbimSelect;
+    };
+  }, []);
+
   const onPointerDown = (event: PointerEvent) => {
     pointerRef.current = { x: event.clientX, y: event.clientY };
   };

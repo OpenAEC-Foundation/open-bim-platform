@@ -178,3 +178,20 @@ def ifc_truncated(path: Path, source: Path | None = None) -> Path:
         path.with_name("_full_for_truncation.ifc").unlink()
     path.write_bytes(data[: len(data) // 2])
     return path
+
+
+def project_folder(root: Path) -> list[Path]:
+    """A project folder with two models in discipline folders, with spaces and accents in the names."""
+    root = Path(root)
+    (root / "Constructie").mkdir(parents=True, exist_ok=True)
+    (root / "Installaties").mkdir(parents=True, exist_ok=True)
+    return [ifc_small(root / "Constructie" / "wand model.ifc"), ifc_2x3(root / "Installaties" / "kanaal één.ifc")]
+
+
+if __name__ == "__main__":
+    import sys
+
+    if len(sys.argv) != 2:
+        sys.exit("usage: python -m tests.models <map>")
+    for made in project_folder(Path(sys.argv[1])):
+        print(made)

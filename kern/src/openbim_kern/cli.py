@@ -92,3 +92,7 @@ def omzetten(
         typer.echo(f"{exc.melding}\n{exc.remedie}", err=True)
         raise typer.Exit(1) from None
     typer.echo(json.dumps(uitkomst.model_dump(mode="json"), ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    app()
