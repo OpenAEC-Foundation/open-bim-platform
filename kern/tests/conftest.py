@@ -8,8 +8,15 @@ KEY = "test-sleutel"
 
 
 @pytest.fixture
-def client():
-    return TestClient(create_app(keys=[KEY]))
+def store(tmp_path):
+    from openbim_kern.jobs.store import JobStore
+
+    return JobStore(tmp_path / "taken.sqlite")
+
+
+@pytest.fixture
+def client(store):
+    return TestClient(create_app(keys=[KEY], store=store))
 
 
 @pytest.fixture
@@ -27,6 +34,32 @@ def echo_tool():
         yield
     finally:
         REGISTRY.pop("echo", None)
+
+
+def _register(naam, fn_name, **kwargs):
+    import tooltools
+
+    tool(naam, f"Test tool {naam}.", **kwargs)(getattr(tooltools, fn_name))
+    try:
+        yield naam
+    finally:
+        REGISTRY.pop(naam, None)
+
+
+@pytest.fixture
+def slow_tool():
+    """Long tool `traag` in queue `licht`: sleeps `seconden`, reporting progress."""
+    yield from _register("traag", "traag", lang=True, rij="licht")
+
+
+@pytest.fixture
+def failing_tool():
+    yield from _register("faalt", "faalt", lang=True, rij="licht")
+
+
+@pytest.fixture
+def crashing_tool():
+    yield from _register("crasht", "crasht", lang=True, rij="licht")
 
 
 @pytest.fixture(scope="session")

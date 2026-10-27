@@ -16,6 +16,7 @@ from pathlib import Path
 import psutil
 
 from openbim_kern.errors import KernError
+from openbim_kern.processes import kill_tree, tree_rss
 
 GB = 1_000_000_000
 CONVERT_SCRIPT = Path(__file__).resolve().parents[2] / "converter" / "convert.mjs"
@@ -133,7 +134,7 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
         peak = 0
         try:
             while True:
-                rss = _tree_rss(root)
+                rss = tree_rss(root)
                 peak = max(peak, rss)
                 if rss > memory_limit:
                     raise KernError(
@@ -156,7 +157,7 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
                     pass
         finally:
             if proc.poll() is None:
-                _kill_tree(root)
+                kill_tree(root)
                 proc.wait()
         out.seek(0)
         err.seek(0)
@@ -187,29 +188,6 @@ def _memory_limit(size: int) -> int:
 def _time_limit(size: int) -> float:
     override = os.environ.get("OPENBIM_TIJD_GRENS_S")
     return float(override) if override else max(300.0, 1800.0 * size / GB)
-
-
-def _tree_rss(root: psutil.Process) -> int:
-    try:
-        procs = [root, *root.children(recursive=True)]
-    except psutil.Error:
-        return 0
-    total = 0
-    for p in procs:
-        with contextlib.suppress(psutil.Error):
-            total += p.memory_info().rss
-    return total
-
-
-def _kill_tree(root: psutil.Process) -> None:
-    try:
-        procs = [*root.children(recursive=True), root]
-    except psutil.Error:
-        procs = [root]
-    for p in procs:
-        with contextlib.suppress(psutil.Error):
-            p.kill()
-    psutil.wait_procs(procs, timeout=10)
 
 
 def _last_line(text: str) -> str:

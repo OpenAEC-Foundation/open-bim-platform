@@ -2,6 +2,7 @@
 
 import hmac
 import os
+import re
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -11,6 +12,8 @@ from starlette.concurrency import run_in_threadpool
 
 from . import __version__
 from .errors import KernError
+from .jobs.store import JobStore
+from .paths import data_dir
 from .tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
 from .tools import omzetten as _omzetten  # noqa: F401  (registers the tool)
 from .tools.registry import REGISTRY
@@ -35,8 +38,33 @@ def _validation_error(exc: ValidationError | RequestValidationError) -> KernErro
     )
 
 
-def create_app(keys: list[str] | None = None) -> FastAPI:
+SITE_HEADER = "X-OpenAEC-Klantsite"
+DEFAULT_SITE = "lokaal"
+_SITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,99}")
+
+
+def _site(request: Request) -> str:
+    site = request.headers.get(SITE_HEADER, DEFAULT_SITE)
+    if not _SITE.fullmatch(site):
+        raise KernError(
+            "ongeldige_invoer",
+            f"De kop {SITE_HEADER} is ongeldig.",
+            "Gebruik letters, cijfers, punt, streep of liggend streepje (hoogstens 100 tekens).",
+            422,
+        )
+    return site
+
+
+def create_app(keys: list[str] | None = None, store: JobStore | None = None) -> FastAPI:
+    """The kern service; jobs of long tools go to `store` (default: taken.sqlite in the data directory)."""
     valid_keys = _load_keys(keys)
+    stores: list[JobStore] = [store] if store is not None else []
+
+    def job_store() -> JobStore:
+        if not stores:  # created on first use, so an app without long tools touches no disk
+            stores.append(JobStore(data_dir() / "taken.sqlite"))
+        return stores[0]
+
     app = FastAPI(
         title="Open BIM Platform kern",
         version=__version__,
@@ -62,7 +90,7 @@ def create_app(keys: list[str] | None = None) -> FastAPI:
 
     @app.exception_handler(KernError)
     async def _kern_error(_: Request, exc: KernError) -> JSONResponse:
-        return JSONResponse(exc.to_dict(), status_code=exc.status)
+        return JSONResponse(exc.to_dict(), status_code=exc.status, headers=exc.headers)
 
     @app.exception_handler(RequestValidationError)
     async def _request_validation(_: Request, exc: RequestValidationError) -> JSONResponse:
@@ -96,13 +124,6 @@ def create_app(keys: list[str] | None = None) -> FastAPI:
                 "Raadpleeg GET /v1/tools voor de beschikbare tools.",
                 404,
             )
-        if spec.lang:
-            raise KernError(
-                "tool_lang",
-                f"De tool '{naam}' is een lange tool en draait als taak.",
-                "Lange tools worden nog niet ondersteund via deze route.",
-                501,
-            )
         try:
             body = await request.json()
         except ValueError:
@@ -113,7 +134,20 @@ def create_app(keys: list[str] | None = None) -> FastAPI:
             invoer = spec.invoer.model_validate(body)
         except ValidationError as exc:
             raise _validation_error(exc) from None
+        if spec.lang:
+            payload = invoer.model_dump(mode="json")
+            taak = await run_in_threadpool(job_store().submit, naam, payload, _site(request))
+            return JSONResponse({"taak": taak}, status_code=202)
         uitvoer = await run_in_threadpool(spec.fn, invoer)
         return JSONResponse(spec.uitvoer.model_validate(uitvoer).model_dump(mode="json"))
+
+    @app.get("/v1/taken/{taak}", dependencies=[Depends(require_key)])
+    def get_job(taak: str) -> JSONResponse:
+        return JSONResponse(job_store().get(taak).model_dump(mode="json"))
+
+    @app.delete("/v1/taken/{taak}", dependencies=[Depends(require_key)])
+    def cancel_job(taak: str) -> dict[str, str]:
+        job_store().cancel(taak)
+        return {"status": job_store().get(taak).status}
 
     return app

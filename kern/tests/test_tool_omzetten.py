@@ -10,6 +10,7 @@ from openbim_kern import CONVERTER_VERSION
 from openbim_kern.errors import KernError
 from openbim_kern.index.properties import read_properties
 from openbim_kern.index.spatial import build_summary
+from openbim_kern.jobs.worker import run_worker
 from openbim_kern.tools.omzetten import OmzetVerzoek, omzetten
 from openbim_kern.tools.registry import REGISTRY
 
@@ -24,6 +25,13 @@ def data_dir(tmp_path, monkeypatch):
 
 def run_omzetten(httpserver, ifc, names, *, grootte=True, progress=None):
     """Serve `ifc` as the source, run the tool with a PUT target per name; returns (uitkomst, received bodies)."""
+    body, received = serve(httpserver, ifc, names, grootte=grootte)
+    invoer = OmzetVerzoek.model_validate(body)
+    return (omzetten(invoer, progress=progress) if progress else omzetten(invoer)), received
+
+
+def serve(httpserver, ifc, names, *, grootte=True):
+    """Serve `ifc` as the source and a PUT target per name; returns (tool input, received bodies)."""
     received: dict[str, bytes] = {}
 
     def target(name):
@@ -38,8 +46,7 @@ def run_omzetten(httpserver, ifc, names, *, grootte=True, progress=None):
     bron = {"url": httpserver.url_for("/bron.ifc")}
     if grootte:
         bron["grootte"] = ifc.stat().st_size
-    invoer = OmzetVerzoek(bron=bron, doelen={name: target(name) for name in names})
-    return (omzetten(invoer, progress=progress) if progress else omzetten(invoer)), received
+    return {"bron": bron, "doelen": {name: target(name) for name in names}}, received
 
 
 def globalids(tree):
@@ -155,3 +162,14 @@ def test_registered_as_long_tool(client, auth):
     assert spec.lang is True and spec.rij == "omzetten"
     (entry,) = [t for t in client.get("/v1/tools", headers=auth).json() if t["naam"] == "omzetten"]
     assert set(entry["invoer_schema"]["properties"]) == {"bron", "doelen"}
+
+
+def test_omzetten_as_job(client, auth, store, httpserver, ifc_small):
+    body, got = serve(httpserver, ifc_small, [*BASE, "model.frag"])
+    r = client.post("/v1/tools/omzetten", headers=auth, json=body)
+    assert r.status_code == 202
+    run_worker(store, {"omzetten": 1}, once=True)
+    job = client.get(f"/v1/taken/{r.json()['taak']}", headers=auth).json()
+    assert job["status"] == "klaar" and job["voortgang"] == 1.0, job
+    assert [d["naam"] for d in job["uitkomst"]["delen"]] == ["model.frag"]
+    assert json.loads(got["index.json"])["omzetter"] == CONVERTER_VERSION
