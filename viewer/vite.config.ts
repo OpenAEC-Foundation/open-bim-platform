@@ -30,6 +30,8 @@ function bundledFragmentsWorkerOnly(): Plugin {
 }
 
 export default defineConfig({
+  // Relative addresses: the same bundle runs under /werkplek/app/bim/ on every customer site.
+  base: "./",
   plugins: [react(), bundledFragmentsWorkerOnly()],
   resolve: {
     alias: {
