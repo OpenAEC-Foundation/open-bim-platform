@@ -55,11 +55,25 @@ check:geen-cdn` controleert dat.
 ```bash
 cd kern
 pytest
-ruff check src tests && ruff format --check src tests
+ruff check src tests scripts && ruff format --check src tests scripts
 cd ../viewer
 npx vitest run
 npm run test:e2e     # browserproef: kern, lokale server en viewer samen (Playwright)
 ```
+
+### Meten
+
+Een groot, geldig IFC voor metingen maken en een map met modellen doormeten:
+
+```bash
+cd kern
+python scripts/enlarge.py <in.ifc> <factor> <uit.ifc>
+python scripts/measure.py <map> --uit <rapport.md>
+```
+
+`measure.py` zet elk model om in een eigen proces en schrijft per bestand de grootte, de duur per stap en het
+piekgeheugen van de omzetter en van IfcOpenShell. De uitvoer komt in `<map>/.afgeleid/`, zodat `openbim-kern lokaal
+<map>` en de viewer de map daarna meteen openen.
 
 ### Container
 

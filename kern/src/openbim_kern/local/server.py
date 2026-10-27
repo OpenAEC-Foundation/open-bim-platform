@@ -41,6 +41,24 @@ _VERSION = re.compile(r"[0-9a-f]{12}")
 _PART = re.compile(r"model\.frag|deel-[1-9][0-9]*\.frag")
 
 
+def derived_rel(sleutel: str, versie: str) -> str:
+    """Relative path of the derived data of a model version in a project folder."""
+    return f"{DERIVED}/{sleutel}/{versie}/{CONVERTER_VERSION}"
+
+
+def model_files(root: Path) -> list[Path]:
+    """The IFC models in a project folder, in a stable order; folders and files starting with a dot are skipped."""
+    found = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
+        found.extend(
+            Path(dirpath) / name
+            for name in sorted(filenames)
+            if name.lower().endswith(".ifc") and not name.startswith(".")
+        )
+    return found
+
+
 class LokaleBron(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -140,21 +158,13 @@ class _Project:
         return path
 
     def model_files(self) -> list[Path]:
-        found = []
-        for dirpath, dirnames, filenames in os.walk(self.root):
-            dirnames[:] = sorted(d for d in dirnames if not d.startswith("."))
-            found.extend(
-                Path(dirpath) / name
-                for name in sorted(filenames)
-                if name.lower().endswith(".ifc") and not name.startswith(".")
-            )
-        return found
+        return model_files(self.root)
 
     def key(self, path: Path) -> str:
         return path.relative_to(self.root).as_posix()
 
     def derived_rel(self, sleutel: str, versie: str) -> str:
-        return f"{DERIVED}/{sleutel}/{versie}/{CONVERTER_VERSION}"
+        return derived_rel(sleutel, versie)
 
     def derived_dir(self, sleutel: str, versie: str) -> Path:
         return self.root.joinpath(*PurePosixPath(self.derived_rel(sleutel, versie)).parts)

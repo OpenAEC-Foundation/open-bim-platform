@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -114,7 +114,8 @@ def convert_to_folder(ifc: Path, folder: Path) -> OmzetUitkomst:
 class Converted:
     delen: list[Deel]
     files: list[str]  # output files in delivery order: index.json, which marks the output as complete, last
-    peak_rss: int
+    peak_rss: int  # of the converter processes
+    seconds: dict[str, float] = field(default_factory=dict)  # per stage: splitsen, fragments, index
 
 
 def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no_progress) -> Converted:
@@ -122,9 +123,12 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
 
     The one conversion path, for the tool and the CLI alike.
     """
+    seconds = {"splitsen": 0.0, "fragments": 0.0, "index": 0.0}
     parts = planned_parts(ifc.stat().st_size)
     if parts:
+        t0 = time.monotonic()
         inputs = split_ifc(ifc, parts, work / "delen")
+        seconds["splitsen"] = time.monotonic() - t0
         names = [f"deel-{i}.frag" for i in range(1, len(inputs) + 1)]
     else:
         inputs, names = [ifc], ["model.frag"]
@@ -137,13 +141,17 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
     trees: list[dict[str, Any]] = []
     peak = 0
     for i, (part, name) in enumerate(zip(inputs, names, strict=True)):
+        t0 = time.monotonic()
         stats = convert_to_frag(part, out / name)
+        seconds["fragments"] += time.monotonic() - t0
         peak = max(peak, stats.peak_rss)
+        t0 = time.monotonic()
         model = _open(part)
         index_model(model, db)
         summaries.append(summarize(model))
         trees.append(spatial_tree(model))
         del model  # one part in memory at a time
+        seconds["index"] += time.monotonic() - t0
         delen.append(
             Deel(naam=name, bytes=stats.out_bytes, verdiepingen=list(summaries[-1]["aantallen_per_verdieping"]))
         )
@@ -159,7 +167,10 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
     _write_json(out / "ruimtelijk.json", merge_spatial_trees(trees))
     _write_json(out / "index.json", index)
     return Converted(
-        delen=delen, files=[*names, "eigenschappen.sqlite", "ruimtelijk.json", "index.json"], peak_rss=peak
+        delen=delen,
+        files=[*names, "eigenschappen.sqlite", "ruimtelijk.json", "index.json"],
+        peak_rss=peak,
+        seconds=seconds,
     )
 
 
@@ -168,7 +179,7 @@ def _outcome(result: Converted, t0: float) -> OmzetUitkomst:
         omzetter=CONVERTER_VERSION,
         delen=result.delen,
         duur_s=time.monotonic() - t0,
-        piek_geheugen=max(result.peak_rss, _own_peak_rss()),
+        piek_geheugen=max(result.peak_rss, own_peak_rss()),
     )
 
 
@@ -210,7 +221,7 @@ def _write_json(path: Path, data: Any) -> None:
     path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
 
 
-def _own_peak_rss() -> int:
+def own_peak_rss() -> int:
     """Peak memory of this process (the property index runs in it)."""
     info = psutil.Process().memory_info()
     if hasattr(info, "peak_wset"):  # Windows
