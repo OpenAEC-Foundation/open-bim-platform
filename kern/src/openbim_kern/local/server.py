@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 import tempfile
 import threading
 import time
@@ -36,6 +37,8 @@ VITE_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
 LOCAL_HOSTS = ["127.0.0.1", "localhost"]
 CHUNK_BYTES = 8 * 1024 * 1024
 _KERN_TIMEOUT = httpx.Timeout(30.0, read=300.0)
+_VERSION = re.compile(r"[0-9a-f]{12}")
+_PART = re.compile(r"model\.frag|deel-[1-9][0-9]*\.frag")
 
 
 class LokaleBron(BaseModel):
@@ -241,6 +244,34 @@ class _Project:
             queued.append({"sleutel": sleutel, "taak": taak})
         return queued
 
+    def part(self, sleutel: str, versie: str, deel: str) -> Path:
+        """A converted part of a model version (what the viewer loads), without knowing the storage layout."""
+        if not _VERSION.fullmatch(versie) or not _PART.fullmatch(deel):
+            raise KernError(
+                "ongeldige_invoer",
+                "De versie of de naam van het deel is ongeldig.",
+                "Gebruik versie en delen[].naam uit GET /lokaal/project.",
+                422,
+            )
+        self.resolve(sleutel)  # refuses paths outside the folder
+        derived = self.derived_dir(sleutel, versie)
+        if not (derived / "index.json").is_file():
+            raise KernError(
+                "nog_niet_klaar",
+                f"Versie {versie} van {sleutel} is nog niet omgezet.",
+                "Zet het model om met POST /lokaal/omzetten en wacht tot de status klaar is.",
+                409,
+            )
+        path = derived / deel
+        if not path.is_file():
+            raise KernError(
+                "deel_onbekend",
+                f"Het model {sleutel} heeft geen deel '{deel}'.",
+                "Gebruik delen[].naam uit GET /lokaal/project.",
+                404,
+            )
+        return path
+
     def properties(self, invoer: LokaalEigenschappenIn) -> httpx.Response:
         bron = invoer.bron
         path = self.resolve(bron.sleutel)
@@ -343,6 +374,10 @@ def create_local_app(root: Path, kern_url: str, kern_key: str, poort: int = 8740
                 os.unlink(tmp)
             raise
         return {"bytes": size}
+
+    @app.get("/lokaal/laad")
+    def get_part(sleutel: str, versie: str, deel: str) -> FileResponse:
+        return FileResponse(project.part(sleutel, versie, deel), media_type="application/octet-stream")
 
     @app.post("/lokaal/omzetten")
     def post_omzetten() -> dict[str, list[dict[str, str]]]:

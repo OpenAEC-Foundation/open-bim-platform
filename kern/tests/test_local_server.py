@@ -163,6 +163,33 @@ def test_new_version_detected(local, ifc_small, ifc_2x3):
     assert (local.root / ".afgeleid" / WALL_MODEL / old["bron"]["versie"] / CONVERTER_VERSION / "index.json").is_file()
 
 
+def test_laad_part(local, ifc_small):
+    add_model(local, WALL_MODEL, ifc_small)
+    bron = models(local)[WALL_MODEL]["bron"]
+    params = {"sleutel": bron["sleutel"], "versie": bron["versie"], "deel": "model.frag"}
+    early = local.client.get("/lokaal/laad", params=params)
+    assert early.status_code == 409 and early.json()["error_code"] == "nog_niet_klaar"
+    convert(local)
+    r = local.client.get("/lokaal/laad", params=params)
+    derived = local.root / ".afgeleid" / WALL_MODEL / bron["versie"] / CONVERTER_VERSION
+    assert r.status_code == 200 and r.content == (derived / "model.frag").read_bytes()
+    missing = local.client.get("/lokaal/laad", params={**params, "deel": "deel-2.frag"})
+    assert missing.status_code == 404 and missing.json()["error_code"] == "deel_onbekend"
+
+
+@pytest.mark.parametrize(
+    ("sleutel", "versie", "deel", "code"),
+    [
+        ("../geheim.ifc", "0" * 12, "model.frag", "ongeldig_pad"),
+        (WALL_MODEL, "0" * 12, "../index.json", "ongeldige_invoer"),
+        (WALL_MODEL, "../../x", "model.frag", "ongeldige_invoer"),
+    ],
+)
+def test_laad_refuses_bad_input(local, sleutel, versie, deel, code):
+    r = local.client.get("/lokaal/laad", params={"sleutel": sleutel, "versie": versie, "deel": deel})
+    assert r.status_code in (400, 422) and r.json()["error_code"] == code
+
+
 def test_eigenschappen(local, ifc_small):
     add_model(local, WALL_MODEL, ifc_small)
     bron = models(local)[WALL_MODEL]["bron"]
