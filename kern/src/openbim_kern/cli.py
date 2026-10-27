@@ -37,6 +37,41 @@ def werker(
 
 
 @app.command(
+    help="Lokale ontwikkelserver voor een map met IFC-modellen, met de kern en de werker erbij. Luistert "
+    "alleen op 127.0.0.1."
+)
+def lokaal(
+    projectmap: Annotated[
+        Path, typer.Argument(exists=True, file_okay=False, metavar="MAP", help="De projectmap met IFC-modellen.")
+    ],
+    poort: Annotated[int, typer.Option("--poort", help="Poort van de lokale server.")] = 8740,
+    kern_poort: Annotated[int, typer.Option("--kern-poort", help="Poort van de kern.")] = 8730,
+) -> None:
+    import secrets
+    import threading
+
+    from .app import create_app
+    from .jobs.store import default_store
+    from .jobs.worker import queues_from_env, run_worker
+    from .local.server import BackgroundServer, create_local_app
+
+    key = secrets.token_urlsafe(32)  # only this process talks to this kern
+    store = default_store()
+    stop = threading.Event()
+    with BackgroundServer(create_app(keys=[key], store=store), kern_poort) as kern:
+        worker = threading.Thread(
+            target=run_worker, args=(store, queues_from_env()), kwargs={"stop": stop}, name="werker", daemon=True
+        )
+        worker.start()
+        try:
+            typer.echo(f"Lokale server: http://127.0.0.1:{poort}/lokaal/project (kern op {kern.url})", err=True)
+            uvicorn.run(create_local_app(projectmap, kern.url, key, poort=poort), host="127.0.0.1", port=poort)
+        finally:
+            stop.set()
+            worker.join(timeout=15)
+
+
+@app.command(
     help="Zet een lokaal IFC-bestand om naar uitmap: model.frag (of deel-<n>.frag), eigenschappen.sqlite, "
     "ruimtelijk.json en index.json. Alleen voor lokaal gebruik; deze opdracht leest en schrijft schijf."
 )

@@ -130,7 +130,12 @@ def test_cli_omzetten_same_as_tool(httpserver, ifc_small, tmp_path):
     _, got = run_omzetten(httpserver, ifc_small, [*BASE, "model.frag"])
     out = tmp_path / "uit"
     assert CliRunner().invoke(cli.app, ["omzetten", str(ifc_small), str(out)]).exit_code == 0
-    assert json.loads((out / "index.json").read_bytes()) == json.loads(got["index.json"])
+    cli_index, tool_index = json.loads((out / "index.json").read_bytes()), json.loads(got["index.json"])
+    # A .frag carries a random model id, so its size can differ by a few bytes between two conversions.
+    for index in (cli_index, tool_index):
+        for deel in index["delen"]:
+            assert deel.pop("bytes") > 0
+    assert cli_index == tool_index
     assert json.loads((out / "ruimtelijk.json").read_bytes()) == json.loads(got["ruimtelijk.json"])
 
 

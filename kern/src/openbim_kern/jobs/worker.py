@@ -6,6 +6,7 @@ import contextlib
 import inspect
 import multiprocessing
 import os
+import threading
 import time
 from multiprocessing.context import SpawnContext, SpawnProcess
 from pathlib import Path
@@ -31,8 +32,14 @@ def queues_from_env() -> dict[str, int]:
     }
 
 
-def run_worker(store: JobStore, queues: dict[str, int], max_per_site: int = 2, once: bool = False) -> None:
-    """Run queued jobs until stopped; with once=True until no job is waiting or running.
+def run_worker(
+    store: JobStore,
+    queues: dict[str, int],
+    max_per_site: int = 2,
+    once: bool = False,
+    stop: threading.Event | None = None,
+) -> None:
+    """Run queued jobs until `stop` is set; with once=True until no job is waiting or running.
 
     One worker per database: at start, jobs left running by an earlier worker are queued again.
     """
@@ -40,14 +47,17 @@ def run_worker(store: JobStore, queues: dict[str, int], max_per_site: int = 2, o
     ctx = multiprocessing.get_context("spawn")
     running: dict[str, SpawnProcess] = {}
     try:
-        while True:
+        while stop is None or not stop.is_set():
             _reap(store, running)
             for queue, limit in queues.items():
                 while (job := store.claim(queue, limit, max_per_site)) is not None:
                     _start(ctx, store, job, running)
             if once and not running:
                 return
-            time.sleep(POLL_S)
+            if stop is None:
+                time.sleep(POLL_S)
+            else:
+                stop.wait(POLL_S)
     finally:
         # Stopped (or failed) ourselves: stop the jobs too; they are queued again at the next start.
         for proc in running.values():

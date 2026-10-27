@@ -151,6 +151,19 @@ def test_cancel(store, slow_tool):
     assert not psutil.Process().children(recursive=True)
 
 
+def test_worker_stops_on_event(store, slow_tool):
+    taak = store.submit("traag", {"seconden": 60}, "a")
+    stop = threading.Event()
+    worker = threading.Thread(target=run_worker, args=(store, {"licht": 1}), kwargs={"stop": stop}, daemon=True)
+    worker.start()
+    assert wait_for(lambda: store.get(taak).voortgang > 0)
+    stop.set()
+    worker.join(timeout=5)
+    assert not worker.is_alive()
+    assert not psutil.Process().children(recursive=True)
+    assert store.requeue_running() == 1  # the job starts again with the next worker
+
+
 def test_finished_job_cannot_be_cancelled(store, slow_tool):
     taak = store.submit("traag", {}, "a")
     drain(store)
