@@ -39,6 +39,28 @@ jobs:
       - name: Tests
         run: pytest -q
 
+  viewer:
+    name: Viewer (vitest, build, geen CDN)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - name: Installeren
+        run: npm ci
+      - name: Tests
+        run: npx vitest run
+      - name: Bouwen
+        run: npm run build
+      - name: Geen CDN in de bundel
+        run: npm run check:geen-cdn
+
   image:
     name: Image bouwen en starten
     runs-on: ubuntu-24.04

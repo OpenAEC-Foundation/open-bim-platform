@@ -1,0 +1,20 @@
+{
+  "titel": "Open BIM Platform",
+  "modellen": "Modellen",
+  "geen_modellen": "Geen IFC-modellen in deze map.",
+  "project_laden": "Project laden…",
+  "project_fout": "Het project kon niet worden geladen: {{melding}}",
+  "leeg_titel": "Nog niets geladen",
+  "leeg_hint": "Modellen die klaar zijn, verschijnen hier vanzelf.",
+  "passend": "Alles in beeld",
+  "vernieuwen": "Vernieuwen",
+  "discipline_geen": "Algemeen",
+  "status": {
+    "wacht": "Wacht op omzetten",
+    "bezig": "Wordt omgezet",
+    "klaar": "Klaar",
+    "fout": "Omzetten mislukt"
+  },
+  "geladen": "{{aantal}} van {{totaal}} geladen",
+  "versie": "Versie {{versie}}"
+}

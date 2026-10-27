@@ -35,12 +35,29 @@ De onderdelen ook los:
 - `openbim-kern werker`: voert de lange taken uit de wachtrij uit.
 - `openbim-kern omzetten <ifc> <uitmap>`: zet één bestand om op schijf, zonder server.
 
+### Viewer
+
+De viewer staat in `viewer/`: React en Vite met That Open (fragments) en de huisstijl uit het OpenAEC-stijlbook
+(overgenomen in `viewer/vendor/`, tot de pakketten op npm staan). Met `openbim-kern lokaal <map>` draaiend:
+
+```bash
+cd viewer
+npm ci
+npm run dev        # http://127.0.0.1:5173
+```
+
+De viewer laadt via de host-laag; lokaal is dat de lokale server (`VITE_OPENBIM_LOKAAL`, standaard
+`http://127.0.0.1:8740`). De worker van fragments komt uit de bundel, nooit van een CDN: `npm run build && npm run
+check:geen-cdn` controleert dat.
+
 ### Tests
 
 ```bash
 cd kern
 pytest
 ruff check src tests && ruff format --check src tests
+cd ../viewer
+npx vitest run
 ```
 
 ### Container

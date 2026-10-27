@@ -1,0 +1,20 @@
+{
+  "titel": "Open BIM Platform",
+  "modellen": "Models",
+  "geen_modellen": "No IFC models in this folder.",
+  "project_laden": "Loading project…",
+  "project_fout": "The project could not be loaded: {{melding}}",
+  "leeg_titel": "Nothing loaded yet",
+  "leeg_hint": "Models that are ready appear here by themselves.",
+  "passend": "Fit all",
+  "vernieuwen": "Refresh",
+  "discipline_geen": "General",
+  "status": {
+    "wacht": "Waiting for conversion",
+    "bezig": "Converting",
+    "klaar": "Ready",
+    "fout": "Conversion failed"
+  },
+  "geladen": "{{aantal}} of {{totaal}} loaded",
+  "versie": "Version {{versie}}"
+}

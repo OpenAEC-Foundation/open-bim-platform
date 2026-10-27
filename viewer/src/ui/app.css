@@ -1,0 +1,107 @@
+/* Layout of the viewer. Colours, fonts and sizes come only from @openaec/design-tokens. */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-family-body);
+  font-size: var(--font-size-base);
+  line-height: var(--font-line-height-normal);
+}
+
+/* The shell's title bar is fixed at the top, 32px high. */
+.viewer {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding-top: 32px;
+  box-sizing: border-box;
+}
+
+.viewer__body {
+  flex: 1;
+  display: grid;
+  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr);
+  min-height: 0;
+}
+
+.viewer__body--inspector {
+  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) var(--spacing-sidebar-width);
+}
+
+.viewer__sidebar {
+  min-height: 0;
+}
+
+.viewer__canvas {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--color-bg);
+}
+
+.viewer__canvas canvas {
+  display: block;
+}
+
+.viewer__empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-sm);
+  pointer-events: none;
+}
+
+.viewer__hint,
+.viewer__error {
+  margin: 0;
+  padding: var(--spacing-3) var(--spacing-4);
+  font-size: var(--font-size-sm);
+  color: var(--color-text-muted);
+}
+
+.viewer__error {
+  color: var(--color-semantic-error);
+  background: var(--color-semantic-error-bg);
+}
+
+.model-list {
+  list-style: none;
+  margin: 0;
+  padding: var(--spacing-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+}
+
+.model-list__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2) var(--spacing-3);
+  border-radius: var(--radius-sm);
+}
+
+.model-list__name {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-list__meta {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
