@@ -2,6 +2,7 @@
   "titel": "Open BIM Platform",
   "modellen": "Models",
   "geen_modellen": "No IFC models in this folder.",
+  "geen_map": "No model folder chosen yet.",
   "project_laden": "Loading project…",
   "project_fout": "The project could not be loaded: {{melding}}",
   "leeg_titel": "Nothing loaded yet",

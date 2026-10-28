@@ -6,7 +6,7 @@ import { FragmentsEngine } from "../engine/FragmentsEngine";
 import { sourceKey, type BimHost, type ModelInfo, type ModelSource, type Project } from "../host/BimHost";
 import { DEFAULT_BUDGET, planLoad } from "../model/budget";
 import type { Selection } from "../model/selection";
-import { describe } from "./format";
+import { describe, isNoFolder } from "./format";
 import { ModelList } from "./ModelList";
 import { PropertiesPanel } from "./PropertiesPanel";
 
@@ -44,6 +44,7 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
 
   const [project, setProject] = useState<Project | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [noFolder, setNoFolder] = useState(false);
   /** Models switched on, by sleutel: switching on a model means its current version. */
   const [enabled, setEnabled] = useState<Set<string>>(new Set());
   const [loaded, setLoaded] = useState<Set<string>>(new Set());
@@ -66,8 +67,10 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
     try {
       setProject(await host.project());
       setError(null);
+      setNoFolder(false);
     } catch (e) {
-      setError(t("project_fout", { melding: describe(e) }));
+      if (isNoFolder(e)) setNoFolder(true);
+      else setError(t("project_fout", { melding: describe(e) }));
     }
   }, [host, t]);
 
@@ -192,7 +195,8 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
             <span className="oa-sidebar__section-label">{t("modellen")}</span>
           </div>
           {error && <p className="viewer__error">{error}</p>}
-          {!project && !error && <p className="viewer__hint">{t("project_laden")}</p>}
+          {noFolder && <p className="viewer__hint">{t("geen_map")}</p>}
+          {!project && !error && !noFolder && <p className="viewer__hint">{t("project_laden")}</p>}
           {project && models.length === 0 && <p className="viewer__hint">{t("geen_modellen")}</p>}
           {models.length > 0 && (
             <ModelList

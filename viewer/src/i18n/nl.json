@@ -3,6 +3,7 @@
   "modellen": "Modellen",
   "geen_modellen": "Geen IFC-modellen in deze map.",
   "project_laden": "Project laden…",
+  "geen_map": "Nog geen modelmap gekozen.",
   "project_fout": "Het project kon niet worden geladen: {{melding}}",
   "leeg_titel": "Nog niets geladen",
   "leeg_hint": "Zet links een model aan. Modellen die nog worden omgezet, komen vanzelf in de lijst.",

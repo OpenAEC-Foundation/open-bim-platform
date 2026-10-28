@@ -22,6 +22,11 @@ export function formatValue(value: unknown, language: string, yes: string, no: s
   return String(value);
 }
 
+/** The host has no model folder yet (the workspace asks for one first): a state to show, not an error. */
+export function isNoFolder(error: unknown): boolean {
+  return error instanceof HostError && error.fout?.error_code === "geen_map";
+}
+
 /** A readable message for an error of the host or the engine. */
 export function describe(error: unknown): string {
   if (error instanceof HostError) return error.fout ? `${error.fout.melding} ${error.fout.remedie}` : error.message;

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { HostError } from "../host/BimHost";
-import { describe as describeError, formatBytes, formatValue } from "./format";
+import { describe as describeError, formatBytes, formatValue, isNoFolder } from "./format";
 
 test("formatBytes uses binary units in the reader's language", () => {
   expect(formatBytes(2 * 1024 ** 3, "nl")).toBe("2 GB");
@@ -19,4 +19,10 @@ test("formatValue", () => {
 test("describe shows the kern's message and remedy", () => {
   const error = new HostError(409, { error_code: "x", melding: "Nog niet klaar.", remedie: "Wacht even." });
   expect(describeError(error)).toBe("Nog niet klaar. Wacht even.");
+});
+
+test("isNoFolder recognises a host without a model folder", () => {
+  expect(isNoFolder(new HostError(0, { error_code: "geen_map", melding: "Kies eerst een modelmap.", remedie: "" }))).toBe(true);
+  expect(isNoFolder(new HostError(0, { error_code: "werkplek", melding: "Weg.", remedie: "" }))).toBe(false);
+  expect(isNoFolder(new Error("geen_map"))).toBe(false);
 });
