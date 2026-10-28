@@ -1,7 +1,7 @@
 # Elementopslag en relatiegraaf: ontwerpnotitie
 
-Status: voorstel voor na fase 1; de eigenaar beslist (zie 8). Aanvulling op `2026-10-26-open-bim-platform-design.md`,
-hoofdstukken 5.3, 5.4, 6.3 en 10.
+Status: meshstore, manifest, de tabel `relaties` en het kolombestand met eigenschappen zijn besloten voor fase 2 en
+opgenomen in `2026-10-26-open-bim-platform-design.md` (5.3, 5.4, 9 en 10); de andere punten van 8 staan nog open.
 
 ## 1. Vraag
 
@@ -192,7 +192,9 @@ van de exporteur.
 
 ## 8. Beslissingen voor de eigenaar
 
-- Meshstore en manifest in fase 2 (aanbevolen, eerst voor de diff), of pas bij IfcGit.
+- **Besloten:** meshstore en manifest, de tabel `relaties` in de index en het kolombestand met eigenschappen komen in
+  fase 2.
+- Verliesvrij opschonen vóór het splitsen in fase 2 (aanbevolen, apart uit te werken).
 - Wel of geen graafdatabase in fase 4, en zo ja: welke licentie past bij het verdienmodel.
 - De tolerantie voor gelijke geometrie (voorstel 0,1 mm) en de codering van meshes in de store.
 - Het geheugenbudget per werker voor modelsessies (16 GB voorgesteld), te nemen in het kostenplan.

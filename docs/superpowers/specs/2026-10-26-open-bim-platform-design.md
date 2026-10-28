@@ -187,9 +187,11 @@ Per bestandsversie maakt de BIM-kern:
 | Afgeleid | Inhoud | Gemaakt met |
 |---|---|---|
 | `model.frag` (of `deel-<n>.frag`) | geometrie + standaardeigenschappen voor de viewer | `@thatopen/fragments` IfcImporter in Node |
-| `eigenschappen.sqlite` | alle psets, hoeveelheden, materialen, classificaties, typen, relaties per GlobalId | IfcOpenShell |
+| `eigenschappen.sqlite` | alle psets, hoeveelheden, materialen, classificaties, typen, relaties per GlobalId; vanaf fase 2 ook de tabel `relaties (van, naar, soort)` met alle geobjectiveerde relaties | IfcOpenShell |
 | `ruimtelijk.json` | ruimtelijke boom (project, terrein, gebouw, verdieping, ruimte) met GlobalIds | IfcOpenShell |
 | `index.json` | samenvatting: schema, eenheden, georeferentie (IfcMapConversion), begrenzingsdoos, aantallen per klasse en verdieping, lijst van delen | IfcOpenShell |
+| `manifest.json` (fase 2) | per GlobalId: de hash van de mesh (vóór het uitsnijden van sparingen), de plaatsing, de sparingen die erin snijden, deel en verdieping; de meshes zelf staan in de meshstore (5.4) | IfcOpenShell (geometrie-iterator) |
+| `eigenschappen.parquet` (fase 2) | alle eigenschapswaarden kolomgericht, voor zoeken en rapporten over modellen heen | IfcOpenShell |
 
 - **Splitsen:** boven 1,5 GB (mijn keuze, ruim onder de gemeten grens) splitst de kern het bestand eerst met
   `IfcSplitter` in `ceil(grootte / 1 GB)` delen. De splitser maakt groepen van ongeveer even veel elementen, houdt
@@ -210,10 +212,17 @@ Per bestandsversie maakt de BIM-kern:
 - **Waar:** in de S3-bucket van de omgeving, onder `<openaec_storage_prefix>/bim/afgeleid/<bestand>/<versie>/<omzetter>/`.
   Niet als bestand in een ruimte (niemand werkt erin), wel in dezelfde bucket en met dezelfde versleuteling (KMS van
   de klant).
-- **Quotum:** telt mee in het opslaggebruik van de omgeving als aparte post `bim_afgeleid_bytes`, niet in het quotum
-  van een ruimte (mijn keuze; het is ongeveer 10% van de bronbestanden). Issue voor Storage: `api.quotum` met die post.
+- **Meshstore (fase 2):** de geometrie per element, compact gecodeerd, één keer per omgeving onder
+  `<openaec_storage_prefix>/bim/geometrie/<hash>`; het manifest van een versie verwijst ernaar. Een nieuwe versie
+  schrijft alleen de meshes die er nog niet zijn (in de proef 9 % bij een aanlevering na 2,5 week, zie
+  `2026-10-28-elementopslag-en-relatiegraaf.md`). Het `.frag` per versie blijft voor de viewer tot That Open streaming
+  levert.
+- **Quotum:** telt mee in het opslaggebruik van de omgeving als aparte post `bim_afgeleid_bytes` (met de meshstore),
+  niet in het quotum van een ruimte (mijn keuze; het is ongeveer 10% van de bronbestanden). Issue voor Storage:
+  `api.quotum` met die post.
 - **Opruimen:** afgeleide gegevens van een bronversie verdwijnen als die versie in Storage definitief weg is
-  (wijzigingenlijst), en van een versie die 90 dagen niemand opende en niet de nieuwste is (instelbaar).
+  (wijzigingenlijst), en van een versie die 90 dagen niemand opende en niet de nieuwste is (instelbaar). Een mesh
+  verdwijnt pas als geen enkel manifest er nog naar verwijst.
 - **Browser:** de viewer heeft geen opslag (opaque frame). Binnen één sessie houdt de gastpagina geladen
   `.frag`-bestanden in het geheugen. HTTP-cache: de gastpagina haalt afgeleide gegevens met een kortlevend, ondertekend
   adres zonder cookies (zoals `lees_token` van de werkplek), met `Cache-Control: private, max-age=…, immutable`; de
@@ -422,7 +431,7 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
 |---|---|---|
 | **0. Fundament** | Repo-opzet (drie onderdelen), BIM-kern met het rekenkern-contract en de tools `omzetten`, `eigenschappen`; omzetten met splitsen; viewer die één project laadt met de host-laag `lokaal`; testset van modellen; alles lokaal en op de bench | Een map met tien IFC-bestanden (samen ≥ 5 GB) is volledig omgezet; de viewer laadt modellen tot het geheugenbudget en de rest is aan te zetten, op een laptop met 16 GB geheugen en een ingebouwde GPU (mijn maatstaf voor "gewone laptop") |
 | **1. Eerste bruikbare versie** | `openaec_bim` op de klantsite, gastpagina en `bim.*`-berichten, rechten via Storage, functies uit hoofdstuk 8 | Een coördinator en een externe partij (via een deling) werken samen aan issues en botsingen op de bench; release-assets volgens het SuperCloud-contract |
-| **2. Coördinatie compleet** | Versies vergelijken (per element, ook geometrie), IDS-controle (BIM Validator), BCF-API 3.0, rapporten (PDF via de rapportage van de organisatie), hoeveelheden per eigenschap, kleuren en filters bewaren als weergaven, AI-assistent in de viewer en via MCP | Vergelijken van twee versies van een model van 1 GB binnen 10 minuten; BCF-uitwisseling met een extern programma via de API |
+| **2. Coördinatie compleet** | Opslag per element: meshstore met een manifest per versie, de tabel `relaties` in de index en de eigenschappen kolomgericht per versie (5.3, 5.4, `2026-10-28-elementopslag-en-relatiegraaf.md`); versies vergelijken per element op het manifest (ook geometrie, met een terugval op klasse en mesh-hash als een GlobalId verandert), IDS-controle (BIM Validator), BCF-API 3.0, rapporten (PDF via de rapportage van de organisatie), hoeveelheden per eigenschap (uit het kolombestand), kleuren en filters bewaren als weergaven, AI-assistent in de viewer en via MCP | Vergelijken van twee versies van een model van 1 GB binnen 10 minuten; een nieuwe versie voegt alleen haar nieuwe meshes toe aan de meshstore; BCF-uitwisseling met een extern programma via de API |
 | **3. IfcGit traditioneel** | Werkwijze 6.2 | Twee partijen werken op eigen takken en voegen samen, met een overzicht van conflicten |
 | **4. IfcGit met IFCX-graaf** | Verkenning, daarna werkwijze 6.3 | Volgt uit de verkenning |
 | **5. Platform** | Documentbeheer naast het model (tekeningen en PDF's koppelen aan elementen en issues, openen in Open PDF Studio), 4D (koppeling met Open Planner Studio), kosten en hoeveelheden naar ERP, puntenwolken, gebruik op tablet in het veld, meldingen en e-mail bij issues, dashboards per project, streaming van modellen zodra That Open dat levert | Per onderdeel een eigen ontwerp |
@@ -441,7 +450,8 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
   3. werkers op goedkopere onderbreekbare capaciteit (een taak die onderbroken wordt, begint opnieuw; dat kan omdat
      elke taak herhaalbaar is);
   en per optie: kosten per GB omgezet, per botsingsronde, vaste kosten per maand, en opslag van afgeleide gegevens
-  (ongeveer 10% van de bronbestanden).
+  (ongeveer 10% van de bronbestanden per versie; vanaf fase 2 voegt een versie alleen haar nieuwe meshes toe aan de
+  meshstore, te meten op echte versiereeksen).
 - **Afrekenen:** verbruik per taak naar de regelkamer (7.2), zodat de prijs per klant kan meeschalen.
 
 ## 11. Kwaliteit en testen
