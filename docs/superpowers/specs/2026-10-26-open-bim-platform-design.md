@@ -480,3 +480,6 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
   gebruikt de brug en koppen van `openaec_werkplek`. Tot de tools-gateway er is, praat `openaec_bim` op het interne
   netwerk met de kern.
 - **Streaming in That Open** (engine_fragment#228, #311) kan het laden in delen vervangen; we volgen het.
+- **Opslag per element en de relatiegraaf** na fase 1 (meshes per hash met een manifest per versie, relaties in de
+  index, eigenschappen kolomgericht, modelsessies in de kern; wel of geen graafdatabase in fase 4): voorstel met een
+  proef in `2026-10-28-elementopslag-en-relatiegraaf.md`.
