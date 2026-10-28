@@ -3,7 +3,23 @@
 3D-samenwerkingsomgeving voor de OpenAEC SuperCloud: modellen bekijken, samenvoegen en bespreken, rechtstreeks op de
 bestanden in de opslag van de klantomgeving.
 
-Status: fase 0 (fundament) in ontwikkeling. Het ontwerp en de plannen staan in `docs/`.
+Status: fase 0 (fundament) is af en geaccepteerd: tien IFC-bestanden van samen 5,55 GB omgezet, het grootste
+(1,76 GB) in vijf delen, en de viewer laadt ze tot zijn geheugenbudget op een laptop met een ingebouwde GPU. Fase 1
+(de viewer in de werkplek van de SuperCloud) is in ontwikkeling en draait op de ontwikkelbench.
+
+## Documenten
+
+| Document | Inhoud |
+|---|---|
+| [Ontwerp](docs/superpowers/specs/2026-10-26-open-bim-platform-design.md) | doelen, architectuur, rechten, werkwijzen, roadmap, kosten |
+| [Elementopslag en relatiegraaf](docs/superpowers/specs/2026-10-28-elementopslag-en-relatiegraaf.md) | opslag per element na fase 1, met een proef op echte modellen; besloten voor fase 2 |
+| [Plan fase 0](docs/superpowers/plans/2026-10-26-fase-0-fundament.md) | kern, omzetten met splitsen, viewer, lokale route |
+| [Plan fase 1a](docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md) | platform-app `openaec_bim` en de viewer in de werkplek |
+| [Meting fase 0](docs/metingen/2026-fase-0.md) | tijden en geheugen per stap, de viewer op het budget, de proef in de werkplek |
+
+**Fase 2** brengt naast het vergelijken van versies, IDS en BCF de opslag per element: geometrie als meshes per hash
+met een manifest per versie (een nieuwe versie voegt alleen haar nieuwe meshes toe), een tabel met alle relaties in de
+index en de eigenschappen kolomgericht per versie.
 
 ## Ontwikkelen
 
@@ -35,6 +51,18 @@ De onderdelen ook los:
 - `openbim-kern werker`: voert de lange taken uit de wachtrij uit.
 - `openbim-kern omzetten <ifc> <uitmap>`: zet één bestand om op schijf, zonder server.
 
+### Omzetten en geheugen
+
+Per bestandsversie maakt de kern het weergavebestand voor de viewer (`.frag`, met `@thatopen/fragments` in Node) en
+de eigenschappen-index, de ruimtelijke boom en een samenvatting (IfcOpenShell). Bestanden boven 1,5 GB worden eerst
+gesplitst; elk deel wordt een eigen `.frag`. Elke stap draait in een eigen proces onder een geheugen- en tijdsgrens.
+Richtgetallen uit de meting van fase 0:
+
+- IfcOpenShell (de index): 12–13 GB geheugen per GB IFC; daarom delen van 0,4 tot 1 GB.
+- Fragments: ~3,8 × de bestandsgrootte.
+- Splitsen: ~6,4 × de bestandsgrootte, lineair in de tijd (0,42 GB in 53 s). De splitser leest het bestand regel
+  voor regel met tegendruk (`kern/converter/lines.mjs`).
+
 ### Viewer
 
 De viewer staat in `viewer/`: React en Vite met That Open (fragments) en de huisstijl uit het OpenAEC-stijlbook
@@ -55,9 +83,12 @@ check:geen-cdn` controleert dat.
 `frappe/openaec_bim` is de platform-app op de klantsite (Frappe, naast OpenAEC Storage en de werkplek). Een modelmap in
 Storage is het project: de app laat elke IFC-versie door de BIM-kern omzetten (met ondertekende S3-adressen), volgt de
 taken en geeft de gastpagina van de werkplek de delen en eigenschappen, steeds met de rechten van Storage. De viewer
-draait als werkplek-app `bim` (`/werkplek/bim?map=<id>`) en praat via de werkplekbrug in `bim.*`-berichten
-(`viewer/src/host/WerkplekHost.ts`). De werkplekkant (gastpagina, adapter, bouwstap, lokale MinIO en kern) staat in
-`openaec-bench`, branch `bouw/bim-werkplek`; zie `docs/werkplek.md` daar. Plan: `docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md`.
+draait als werkplek-app `bim`: de tegel op het startscherm van de werkplek opent hem als tool in de schil
+(`/werkplek/open/bim`), met eerst een venster om de modelmap te kiezen (`/werkplek/bim?map=<id>`). Hij praat via de
+werkplekbrug in `bim.*`-berichten (`viewer/src/host/WerkplekHost.ts`). De werkplekkant (gastpagina, adapter,
+bouwstap, lokale MinIO en kern) staat in `openaec-bench`, branch `bouw/bim-werkplek`; zie `docs/werkplek.md` daar.
+De browserproef met grote modellen via de GUI (uploaden in Docs, de tegel, omzetten, laden, aanklikken) is
+`scripts/werkplek-e2e/bim-proef.mjs` in dezelfde branch. Plan: `docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md`.
 
 Nog een besluit van de eigenaar: de projectlicentie van deze repo, prijsniveau en status in de catalogus, welke app
 een `.ifc` standaard opent (nu de planner), en een machine met genoeg geheugen voor het omzetten op staging.
@@ -85,7 +116,15 @@ python scripts/measure.py <map> --uit <rapport.md>
 
 `measure.py` zet elk model om in een eigen proces en schrijft per bestand de grootte, de duur per stap en het
 piekgeheugen van de omzetter en van IfcOpenShell. De uitvoer komt in `<map>/.afgeleid/`, zodat `openbim-kern lokaal
-<map>` en de viewer de map daarna meteen openen.
+<map>` en de viewer de map daarna meteen openen. Met `--hervat` slaat hij bestanden over die al gemeten zijn.
+
+Voor de opslag per element meet `storage_study.py` de semantische graaf (als tabellen en in een graafopslag), de
+index en de geometrie per element, met een hash die niet van de volgorde afhangt, binnen een versie en tussen twee
+versies:
+
+```bash
+python scripts/storage_study.py <model.ifc> [--vorige <vorige versie.ifc>] [--frag] [--uit <rapport.json>]
+```
 
 ### Container
 
