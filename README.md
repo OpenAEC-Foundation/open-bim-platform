@@ -105,7 +105,7 @@ Dit start de kern op poort 8730 en de werker, uit dezelfde image, met de wachtri
 | `OPENBIM_OMZETTER_CMD` | `node converter/convert.mjs` | opdracht voor de omzetter |
 | `OPENBIM_SPLITS_VANAF_BYTES` | `1500000000` | bestanden hierboven worden gesplitst |
 | `OPENBIM_DEEL_BYTES` | `1000000000` | doelgrootte van een deel bij splitsen |
-| `OPENBIM_GEHEUGEN_GRENS_BYTES` | 3 × grootte + 1 GB | geheugengrens per omzetproces |
+| `OPENBIM_GEHEUGEN_GRENS_BYTES` | 3 × grootte + 1 GB (splitsen: 7 × grootte + 1 GB) | geheugengrens per omzetproces; de heap van Node groeit tot deze grens mee |
 | `OPENBIM_TIJD_GRENS_S` | max(300 s, 1800 s per GB) | tijdslimiet per omzetproces |
 | `OPENBIM_RIJ_OMZETTEN` | `1` | gelijktijdige taken in de rij `omzetten` |
 | `OPENBIM_RIJ_LICHT` | `4` | gelijktijdige taken in de rij `licht` |

@@ -5,7 +5,7 @@ FROM node:24-bookworm-slim AS converter
 WORKDIR /app/converter
 COPY converter/package.json converter/package-lock.json ./
 RUN npm ci --omit=dev
-COPY converter/convert.mjs ./
+COPY converter/convert.mjs converter/lines.mjs ./
 
 # The kern: Python 3.12 with openbim_kern, plus the node binary and the converter.
 FROM python:3.12-slim-bookworm

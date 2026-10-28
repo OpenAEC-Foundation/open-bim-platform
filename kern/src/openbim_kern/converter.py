@@ -22,7 +22,13 @@ from openbim_kern.processes import kill_tree, tree_rss
 GB = 1_000_000_000
 CONVERT_SCRIPT = Path(__file__).resolve().parents[2] / "converter" / "convert.mjs"
 MAX_RETRIES = 2
+# Memory per byte of IFC, on top of 1 GB: converting stays below 3; the splitter keeps an index of every line of the
+# file and peaked at 6.4 times its size.
+CONVERT_MEMORY_FACTOR = 3
+SPLIT_MEMORY_FACTOR = 7
 RETRY_MARKER = "WebAssembly.Exception"
+# What Node writes when the V8 heap is full; it then aborts with a native stack trace instead of our message.
+HEAP_FULL_MARKER = "JavaScript heap out of memory"
 _POLL_S = 0.5
 _MAX_DETAIL = 500
 
@@ -82,7 +88,7 @@ def split_ifc(ifc: Path, parts: int, outdir: Path) -> list[Path]:
     outdir.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(dir=outdir, prefix=".splits-"))
     try:
-        run = _run_converter(["split", str(ifc), str(parts), str(work)], ifc)
+        run = _run_converter(["split", str(ifc), str(parts), str(work)], ifc, SPLIT_MEMORY_FACTOR)
         names = _last_json(run.stdout, ifc).get("delen")
         if not isinstance(names, list) or not names:
             raise _failed(ifc, "de splitser leverde geen delen op")
@@ -98,10 +104,10 @@ def split_ifc(ifc: Path, parts: int, outdir: Path) -> list[Path]:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _run_converter(args: list[str], ifc: Path) -> _Run:
+def _run_converter(args: list[str], ifc: Path, memory_factor: int = CONVERT_MEMORY_FACTOR) -> _Run:
     """Run the converter, retrying at most MAX_RETRIES times when it died on a WebAssembly exception."""
     size = ifc.stat().st_size
-    memory_limit = _memory_limit(size)
+    memory_limit = _memory_limit(size, memory_factor)
     time_limit = _time_limit(size)
     peak = 0
     attempts = 0
@@ -113,6 +119,8 @@ def _run_converter(args: list[str], ifc: Path) -> _Run:
             return _Run(stdout=stdout, peak_rss=peak, attempts=attempts)
         if RETRY_MARKER in stderr and attempts <= MAX_RETRIES:
             continue
+        if HEAP_FULL_MARKER in stderr:
+            raise _too_much_memory(ifc, memory_limit)
         raise _failed(ifc, _last_line(stderr) or f"de omzetter stopte met exitcode {returncode}")
 
 
@@ -121,7 +129,9 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
     # Output goes to files rather than pipes, so a process with a lot of output can never block on a full pipe.
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
-            proc = subprocess.Popen(cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=_environment(memory_limit)
+            )
         except OSError as exc:
             raise KernError(
                 "omzetten_mislukt",
@@ -137,12 +147,7 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
                 rss = tree_rss(root)
                 peak = max(peak, rss)
                 if rss > memory_limit:
-                    raise KernError(
-                        "omzetten_te_veel_geheugen",
-                        f"Het omzetten van {ifc.name} gebruikte meer dan {memory_limit} bytes geheugen en is gestopt.",
-                        "Lever het model in kleinere delen aan of verhoog de geheugengrens van de rekenkern.",
-                        status=413,
-                    )
+                    raise _too_much_memory(ifc, memory_limit)
                 if time.monotonic() > deadline:
                     raise KernError(
                         "omzetten_tijd_op",
@@ -169,6 +174,26 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
         )
 
 
+def _too_much_memory(ifc: Path, memory_limit: int) -> KernError:
+    return KernError(
+        "omzetten_te_veel_geheugen",
+        f"Het omzetten van {ifc.name} gebruikte meer dan {memory_limit} bytes geheugen en is gestopt.",
+        "Lever het model in kleinere delen aan of verhoog de geheugengrens van de rekenkern.",
+        status=413,
+    )
+
+
+def _environment(memory_limit: int) -> dict[str, str]:
+    """The converter's environment: the V8 heap may grow to the memory limit of the watchdog, which stays the guard.
+
+    By itself Node stops at about 4 GB of heap, too little to split an IFC of a few GB.
+    """
+    env = dict(os.environ)
+    heap = f"--max-old-space-size={memory_limit // 2**20}"
+    env["NODE_OPTIONS"] = f"{env.get('NODE_OPTIONS', '')} {heap}".strip()
+    return env
+
+
 def _command() -> list[str]:
     """OPENBIM_OMZETTER_CMD as a JSON list or a shell-style string; default `node converter/convert.mjs`."""
     raw = os.environ.get("OPENBIM_OMZETTER_CMD", "").strip()
@@ -180,9 +205,9 @@ def _command() -> list[str]:
     return cmd
 
 
-def _memory_limit(size: int) -> int:
+def _memory_limit(size: int, factor: int = CONVERT_MEMORY_FACTOR) -> int:
     override = os.environ.get("OPENBIM_GEHEUGEN_GRENS_BYTES")
-    return int(override) if override else 3 * size + GB
+    return int(override) if override else factor * size + GB
 
 
 def _time_limit(size: int) -> float:

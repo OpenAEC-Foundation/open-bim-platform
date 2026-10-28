@@ -4,7 +4,6 @@
 // On failure the exit code is 1 and the last stderr line is a short message for the user (Dutch where it is ours).
 import {
   closeSync,
-  createReadStream,
   createWriteStream,
   mkdirSync,
   openSync,
@@ -18,6 +17,7 @@ import { Writable } from "node:stream";
 import { fileURLToPath } from "node:url";
 import * as FRAGS from "@thatopen/fragments";
 import * as WEBIFC from "web-ifc";
+import { readLines } from "./lines.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const CHUNK = 1024 * 1024;
@@ -73,24 +73,7 @@ async function frag(input, output) {
 // carries its own line endings.
 const io = {
   async readableStream(p) {
-    statSync(p); // throws when the file does not exist
-    const lines = createReadStream(p, { encoding: "utf8", highWaterMark: CHUNK });
-    return new ReadableStream({
-      async start(controller) {
-        let rest = "";
-        try {
-          for await (const piece of lines) {
-            const parts = (rest + piece).split(/\r?\n/);
-            rest = parts.pop();
-            for (const l of parts) controller.enqueue(l);
-          }
-          if (rest.length) controller.enqueue(rest);
-          controller.close();
-        } catch (e) {
-          controller.error(e);
-        }
-      },
-    });
+    return readLines(p);
   },
   async writableStream(p) {
     return Writable.toWeb(createWriteStream(p, { encoding: "utf8" }));
