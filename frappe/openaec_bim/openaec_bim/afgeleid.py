@@ -99,8 +99,10 @@ def bijwerken(doc) -> None:
 	elif status == "klaar":
 		uitkomst = taak.get("uitkomst") or {}
 		doc.omzetter = uitkomst.get("omzetter")
-		doc.delen = [{"naam": d["naam"], "bytes": cint(d["bytes"])} for d in uitkomst.get("delen") or []]
-		doc.frag_bytes = sum(d["bytes"] for d in doc.delen)
+		delen = [{"naam": d["naam"], "bytes": cint(d["bytes"])} for d in uitkomst.get("delen") or []]
+		# Een JSON-veld van Frappe neemt geen lijst aan: als tekst (api._json leest beide).
+		doc.delen = json.dumps(delen)
+		doc.frag_bytes = sum(d["bytes"] for d in delen)
 		doc.samenvatting = json.loads(lees_object(f"{doc.prefix}/index.json"))
 		doc.status = "klaar"
 	else:

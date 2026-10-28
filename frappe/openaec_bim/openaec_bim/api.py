@@ -115,6 +115,8 @@ def project(map: str) -> dict:
 def _klaar(bestand: str, versie):
 	_bestand(bestand)
 	doc = afgeleid.laatste(bestand, cint(versie))
+	if doc and doc.status in ("wacht", "bezig"):
+		afgeleid.bijwerken(doc)  # misschien is de kern al klaar en heeft niemand het nog gezien
 	if not doc or doc.status != "klaar":
 		raise NogNietKlaar(_("Dit model is nog niet omgezet."))
 	return doc

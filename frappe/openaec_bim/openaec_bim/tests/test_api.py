@@ -1,6 +1,7 @@
 import hashlib
 import json
 from unittest.mock import patch
+from urllib.parse import unquote
 
 import frappe
 from frappe.tests import IntegrationTestCase
@@ -140,7 +141,7 @@ class TestApi(IntegrationTestCase):
 		self.assertEqual(adres["bytes"], 5)
 		token = adres["adres"].split("token=", 1)[1]
 		frappe.set_user("Guest")
-		respons = api.lees(token=frappe.utils.unquote(token))
+		respons = api.lees(token=unquote(token))
 		self.assertEqual(b"".join(respons.response), b"FRAG!")
 		self.assertEqual(respons.mimetype, "application/octet-stream")
 
@@ -174,8 +175,12 @@ class TestApi(IntegrationTestCase):
 		self.assertEqual(vraag["index"]["sha256"], hashlib.sha256(b"DE INDEX").hexdigest())
 
 	def test_onderdelen_volgen_het_splitsen_van_de_kern(self):
-		self.assertEqual(afgeleid.onderdelen(10)[-1], "model.frag")
-		self.assertEqual(afgeleid.onderdelen(2_500_000_000)[-3:], ["deel-1.frag", "deel-2.frag", "deel-3.frag"])
+		standaard = {"openaec_bim_deel_bytes": 0, "openaec_bim_splits_vanaf_bytes": 0}
+		with patch.dict(frappe.local.conf, standaard):
+			self.assertEqual(afgeleid.onderdelen(10)[-1], "model.frag")
+			self.assertEqual(afgeleid.onderdelen(2_500_000_000)[-3:], ["deel-1.frag", "deel-2.frag", "deel-3.frag"])
+		with patch.dict(frappe.local.conf, {"openaec_bim_deel_bytes": 400_000_000}):
+			self.assertEqual(afgeleid.onderdelen(1_756_000_000)[-1], "deel-5.frag")
 
 	def test_token_van_een_andere_site_of_kapot(self):
 		with self.assertRaises(frappe.PermissionError):
