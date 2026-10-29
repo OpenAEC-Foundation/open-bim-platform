@@ -63,6 +63,9 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual([(m["sleutel"], m["versie"]) for m in vraag["set_a"]], [(self.constructie, "1")])
 		self.assertEqual((vraag["soort"], vraag["tolerantie"]), ("hard", 0.01))
 		self.assertIn(f"bim/botsingen/{ronde}.json", vraag["doel"])
+		# De rij botsing doet één taak tegelijk: de adressen blijven een dag geldig, ook na lang wachten.
+		self.assertIn("X-Amz-Expires=86400", vraag["set_a"][0]["bron"]["url"])
+		self.assertIn("X-Amz-Expires=86400", vraag["doel"])
 		self.assertEqual(doc.status, "wacht")
 
 	def test_een_model_zonder_omzetting_kan_niet_meedoen(self):

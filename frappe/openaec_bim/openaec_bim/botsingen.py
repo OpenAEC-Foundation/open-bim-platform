@@ -19,6 +19,8 @@ RONDE = "BIM Botsingsronde"
 BOTSING = "BIM Botsing"
 SOORTEN = ("hard", "afstand")
 STATUSSEN = ("nieuw", "actief", "opgelost", "genegeerd")
+# De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
+GELDIG = 24 * 3600
 VELDEN = ("ronde", "sleutel", "element_a", "element_b", "punt", "afstand", "status", "issue", "groep")
 
 
@@ -97,7 +99,7 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 			{
 				"sleutel": m["bestand"],
 				"versie": versies[m["bestand"]],
-				"bron": afgeleid.bron(m["bestand"], cint(versies[m["bestand"]])),
+				"bron": afgeleid.bron(m["bestand"], cint(versies[m["bestand"]]), GELDIG),
 				"klassen": m["klassen"],
 			}
 			for m in items
@@ -105,7 +107,7 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 
 	try:
 		doc.kern_taak = kern.start_botsingen(
-			kern_set(set_a), kern_set(set_b), soort, tolerantie, afgeleid.schrijfadres(doc.resultaat, afgeleid.GELDIG_DOEL)
+			kern_set(set_a), kern_set(set_b), soort, tolerantie, afgeleid.schrijfadres(doc.resultaat, GELDIG)
 		)
 	except kern.KernFout as fout:
 		doc.status = "fout"

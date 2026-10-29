@@ -64,14 +64,14 @@ def getoonde_versie(bestand: str) -> int | None:
 	return cint(versie) or None
 
 
-def bron(bestand: str, versie: int) -> dict:
+def bron(bestand: str, versie: int, geldig: int = GELDIG_BRON) -> dict:
 	"""Een ondertekend leesadres van de IFC van deze versie voor de kern, met grootte en (als bekend) sha256."""
 	gegevens = frappe.db.get_value(
 		"Bestandsversie", {"bestand": bestand, "volgnummer": cint(versie)}, ["s3_sleutel", "sha256", "grootte"], as_dict=True
 	)
 	if not gegevens or not gegevens.s3_sleutel:
 		frappe.throw(_("Versie bestaat niet"), frappe.DoesNotExistError)
-	uit = {"url": leesadres(gegevens.s3_sleutel, GELDIG_BRON), "grootte": cint(gegevens.grootte)}
+	uit = {"url": leesadres(gegevens.s3_sleutel, geldig), "grootte": cint(gegevens.grootte)}
 	sha256 = (gegevens.sha256 or "").lower()
 	if _SHA256.fullmatch(sha256):
 		uit["sha256"] = sha256
