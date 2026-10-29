@@ -31,6 +31,19 @@ def test_duct_through_wall_is_a_hard_clash(ifc_small):
     assert hit.afstand == pytest.approx(0.2, abs=0.01)
 
 
+def test_the_order_of_the_sets_does_not_matter(ifc_small, tmp_path):
+    import shutil
+
+    walls, duct = tmp_path / "walls.ifc", tmp_path / "duct.ifc"
+    shutil.copy(ifc_small, walls)
+    shutil.copy(ifc_small, duct)
+    a = [ClashModel(sleutel="constructie", versie="1", pad=walls, klassen=["IfcWall"])]
+    b = [ClashModel(sleutel="installaties", versie="1", pad=duct, klassen=["IfcDuctSegment"])]
+    for set_a, set_b in ((a, b), (b, a)):
+        found = find_clashes(set_a, set_b, "hard", 0.0)
+        assert found and all(c.a.sleutel == set_a[0].sleutel and c.b.sleutel == set_b[0].sleutel for c in found)
+
+
 def test_each_element_carries_its_ifc_class(ifc_small):
     found = find_clashes([model(ifc_small, ["IfcDuctSegment"])], [model(ifc_small, ["IfcWall"])], "hard", 0.0)
     assert {(c.a.klasse, c.b.klasse) for c in found} == {("IfcDuctSegment", "IfcWall")}

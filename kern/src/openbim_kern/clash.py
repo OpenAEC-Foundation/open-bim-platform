@@ -81,6 +81,11 @@ def find_clashes(
     seen: set[frozenset[str]] = set()
     for clash in raw:
         a, b = clash.a.get_argument(0), clash.b.get_argument(0)
+        # The tree may give the pair the other way round: a from set B and b from set A.
+        if a not in refs_a or b not in refs_b:
+            a, b = b, a
+        if a not in refs_a or b not in refs_b:
+            continue
         pair = frozenset((a, b))
         if a == b or pair in seen:
             continue
