@@ -313,3 +313,41 @@ def naar_issue(botsing: str) -> dict:
 	doc.issue = t["guid"]
 	doc.save(ignore_permissions=True)
 	return issues.topic(t["guid"])
+
+
+def ronde_naar_json(ronde) -> dict:
+	return {
+		"naam": ronde.name,
+		"titel": ronde.titel,
+		"set_a": json.loads(ronde.set_a or "[]"),
+		"set_b": json.loads(ronde.set_b or "[]"),
+		"soort": ronde.soort,
+		"tolerantie": flt(ronde.tolerantie),
+		"status": ronde.status,
+		"aantal": cint(ronde.aantal),
+		"bron_versies": json.loads(ronde.bron_versies or "{}"),
+		"vorige_ronde": ronde.vorige_ronde,
+		"gestart": str(ronde.creation),
+		"gestart_door": ronde.owner,
+		"fout": json.loads(ronde.fout) if ronde.fout else None,
+	}
+
+
+def rondes(project) -> list[dict]:
+	"""De rondes van het project, nieuwste eerst; lopende rondes worden eerst bij de kern bijgewerkt."""
+	project = issues._project(project)
+	issues._vereis_lezen(project)
+	uit = []
+	for naam in frappe.get_all(RONDE, {"project": project.name}, pluck="name", order_by="creation desc"):
+		doc = frappe.get_doc(RONDE, naam)
+		bijwerken(doc)
+		uit.append(ronde_naar_json(doc))
+	return uit
+
+
+def lijst(ronde: str) -> list[dict]:
+	"""De botsingen van een ronde, per groep en sleutel."""
+	project = issues._project(frappe.db.get_value(RONDE, ronde, "project") or "")
+	issues._vereis_lezen(project)
+	rijen = frappe.get_all(BOTSING, {"ronde": ronde}, ["name", *VELDEN], order_by="groep asc, sleutel asc")
+	return [naar_json(rij) for rij in rijen]
