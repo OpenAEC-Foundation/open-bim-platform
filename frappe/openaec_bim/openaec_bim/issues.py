@@ -163,9 +163,12 @@ def project_van(map_: str):
 	"""Het BIM-project van een modelmap; bij het eerste gebruik wordt het gemaakt."""
 	map_doc = api._modelmap(map_)
 	if not frappe.db.exists(PROJECT, map_doc.name):
-		frappe.get_doc({"doctype": PROJECT, "modelmap": map_doc.name, "ruimte": map_doc.ruimte, "titel": map_doc.naam}).insert(
-			ignore_permissions=True
-		)
+		try:
+			frappe.get_doc(
+				{"doctype": PROJECT, "modelmap": map_doc.name, "ruimte": map_doc.ruimte, "titel": map_doc.naam}
+			).insert(ignore_permissions=True)
+		except frappe.DuplicateEntryError:
+			pass  # tegelijk gemaakt door een ander verzoek (de gastpagina vraagt instellingen en issues tegelijk)
 	return frappe.get_doc(PROJECT, map_doc.name)
 
 

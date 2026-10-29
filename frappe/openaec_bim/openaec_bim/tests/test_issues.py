@@ -1,4 +1,5 @@
 import base64
+from unittest.mock import patch
 
 import frappe
 from openaec_storage import api as opslag
@@ -34,6 +35,19 @@ class TestIssues(ProjectTest):
 		self.assertEqual(issues.project_van(nieuwe_map).name, project.name)
 		frappe.set_user(self.buiten)
 		self.assertRaises(frappe.PermissionError, issues.project_van, nieuwe_map)
+
+	def test_project_van_kan_tegelijk_voor_het_eerst_gevraagd_worden(self):
+		# De gastpagina vraagt instellingen en issues tegelijk: het tweede verzoek ziet het project nog niet en maakt
+		# het ook aan.
+		nieuwe_map = opslag.maak_map(ruimte=self.ruimte, naam="07 Tegelijk")["map"]
+		issues.project_van(nieuwe_map)
+		echt = frappe.db.exists
+
+		def nog_niet(doctype, *args, **kwargs):
+			return None if doctype == "BIM Project" else echt(doctype, *args, **kwargs)
+
+		with patch.object(frappe.db, "exists", nog_niet):
+			self.assertEqual(issues.project_van(nieuwe_map).name, nieuwe_map)
 
 	def test_uitbreidingen_komen_uit_het_project(self):
 		ext = issues.uitbreidingen(self.project)
