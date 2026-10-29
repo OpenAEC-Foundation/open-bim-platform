@@ -276,7 +276,8 @@ def _lees_visualisatie(z, namen: set[str], map_: str, vi: ET.Element, versie: Ve
 				"coloring": kleuren or None,
 				"visibility": _schoon(
 					{
-						"default_visibility": _waar(zicht.get("DefaultVisibility"), True),
+						# Zonder attribuut is de standaard van de XSD: uit.
+						"default_visibility": _waar(zicht.get("DefaultVisibility"), False),
 						"exceptions": [_component(x) for x in zicht.findall("Exceptions/Component")] or None,
 						"view_setup_hints": _schoon(
 							{
@@ -486,26 +487,33 @@ def _visualisatie(sp: dict, drie: bool) -> tuple[bytes, list[tuple[str, bytes]]]
 	componenten = sp.get("components")
 	if componenten:
 		c = _sub(vi, "Components")
-		zicht = componenten.get("visibility") or {}
+		# Visibility is verplicht; zonder zichtbaarheid in het standpunt is alles zichtbaar.
+		zicht = componenten.get("visibility") or {"default_visibility": True}
 		hints = zicht.get("view_setup_hints")
-		if hints:
+
+		def zet_hints(ouder: ET.Element) -> None:
 			_sub(
-				c,
+				ouder,
 				"ViewSetupHints",
 				SpacesVisible=_als_tekst(bool(hints.get("spaces_visible"))),
 				SpaceBoundariesVisible=_als_tekst(bool(hints.get("space_boundaries_visible"))),
 				OpeningsVisible=_als_tekst(bool(hints.get("openings_visible"))),
 			)
+
+		# BCF 2.1: ViewSetupHints als eerste onder Components; BCF 3.0: binnen Visibility, voor Exceptions.
+		if hints and not drie:
+			zet_hints(c)
 		if componenten.get("selection"):
 			s = _sub(c, "Selection")
 			for x in componenten["selection"]:
 				_zet_component(s, x)
-		if zicht:
-			z = _sub(c, "Visibility", DefaultVisibility=_als_tekst(zicht.get("default_visibility", True)))
-			if zicht.get("exceptions"):
-				e = _sub(z, "Exceptions")
-				for x in zicht["exceptions"]:
-					_zet_component(e, x)
+		z = _sub(c, "Visibility", DefaultVisibility=_als_tekst(bool(zicht.get("default_visibility", True))))
+		if hints and drie:
+			zet_hints(z)
+		if zicht.get("exceptions"):
+			e = _sub(z, "Exceptions")
+			for x in zicht["exceptions"]:
+				_zet_component(e, x)
 		if componenten.get("coloring"):
 			k = _sub(c, "Coloring")
 			for kleur in componenten["coloring"]:

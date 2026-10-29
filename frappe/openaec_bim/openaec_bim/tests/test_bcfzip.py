@@ -204,6 +204,32 @@ class TestBcfzipBestand(UnitTestCase):
 		self.assertEqual(sp["components"]["coloring"], [{"color": "#FF00FF00", "components": [{"ifc_guid": KANAAL}]}])
 		self.assertEqual(sp["perspective_camera"]["camera_view_point"], {"x": 1.0, "y": 2.0, "z": 3.0})
 
+	def visualisatie(self, versie, sp):
+		import xml.etree.ElementTree as ET
+
+		inhoud = bcfzip.schrijf([volledig_topic(viewpoints=[sp], comments=[])], versie)
+		return ET.fromstring(zipfile.ZipFile(io.BytesIO(inhoud)).read(f"{G1}/{sp['guid']}.bcfv"))
+
+	def test_de_onderdelen_volgen_de_xsd(self):
+		sp = standpunt()
+		drie = self.visualisatie("3.0", sp).find("Components")
+		self.assertEqual([e.tag for e in drie], ["Selection", "Visibility", "Coloring"])
+		self.assertEqual([e.tag for e in drie.find("Visibility")], ["ViewSetupHints", "Exceptions"])
+		twee = self.visualisatie("2.1", sp).find("Components")
+		self.assertEqual([e.tag for e in twee], ["ViewSetupHints", "Selection", "Visibility", "Coloring"])
+
+	def test_zichtbaarheid_is_er_altijd_en_staat_standaard_aan(self):
+		sp = {"guid": V1, "perspective_camera": CAMERA, "components": {"selection": [{"ifc_guid": WAND}]}}
+		for versie in ("2.1", "3.0"):
+			zicht = self.visualisatie(versie, sp).find("Components/Visibility")
+			self.assertEqual(zicht.get("DefaultVisibility"), "true")
+
+	def test_zonder_defaultvisibility_is_de_zichtbaarheid_uit(self):
+		bestanden = dict(BCF_21_VAN_ELDERS)
+		bestanden[f"{G1}/viewpoint.bcfv"] = bestanden[f"{G1}/viewpoint.bcfv"].replace('<Visibility DefaultVisibility="true"/>', "<Visibility/>")
+		[topic] = bcfzip.lees(maak_zip(bestanden))
+		self.assertEqual(topic["viewpoints"][0]["components"]["visibility"], {"default_visibility": False})
+
 	def test_geen_plafond_op_het_aantal_topics(self):
 		topics = [volledig_topic(f"a0c1f6a2-5a40-4b8e-9d60-{i:012d}", viewpoints=[]) for i in range(300)]
 		self.assertEqual(len(bcfzip.lees(bcfzip.schrijf(topics, "3.0"))), 300)
