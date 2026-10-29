@@ -127,12 +127,23 @@ def bijwerken(doc) -> None:
 		koppeling.na_omzetting(doc)
 
 
+def zonder_botsing(stap, *args) -> None:
+	"""Een bijwerking die een ander verzoek tegelijk doet (de viewer vraagt het project elke paar seconden, ook terwijl
+	de planner bijwerkt), botst bij het opslaan: MariaDB 1020 of een verouderde tijdstempel. Die keer wordt de stap
+	teruggedraaid tot het savepoint en overgeslagen; de volgende vraag ziet de nieuwe stand."""
+	frappe.db.savepoint("openaec_bim_bijwerken")
+	try:
+		stap(*args)
+	except (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
+		frappe.db.rollback(save_point="openaec_bim_bijwerken")
+
+
 def volg_lopende() -> None:
 	"""Geplande taak: elke lopende omzetting, versiekoppeling en botsingsronde bijwerken."""
 	from openaec_bim import botsingen, koppeling
 
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		bijwerken(frappe.get_doc(DOCTYPE, naam))
+		zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
 	koppeling.volg_lopende()
 	botsingen.volg_lopende()

@@ -141,7 +141,7 @@ def bijwerken(doc) -> None:
 
 def volg_lopende() -> None:
 	for naam in frappe.get_all(RONDE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		bijwerken(frappe.get_doc(RONDE, naam))
+		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(RONDE, naam))
 		frappe.db.commit()
 
 
@@ -340,7 +340,7 @@ def rondes(project) -> list[dict]:
 	uit = []
 	for naam in frappe.get_all(RONDE, {"project": project.name}, pluck="name", order_by="creation desc"):
 		doc = frappe.get_doc(RONDE, naam)
-		bijwerken(doc)
+		afgeleid.zonder_botsing(bijwerken, doc)
 		uit.append(ronde_naar_json(doc))
 	return uit
 

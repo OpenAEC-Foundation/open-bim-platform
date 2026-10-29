@@ -40,6 +40,15 @@ class TestApi(IntegrationTestCase):
 	def maak_klaar(self, bestand, frag=b"FRAG!", sqlite=b"SQLITE"):
 		return maak_klaar(self.kern, bestand, frag=frag, sqlite=sqlite)
 
+	def test_project_overleeft_een_gelijktijdige_bijwerking(self):
+		# De viewer vraagt het project elke paar seconden, ook terwijl de planner dezelfde omzetting bijwerkt: dan
+		# botst het opslaan (MariaDB 1020 of een verouderde tijdstempel). Die keer slaat het project dat over.
+		api.project(map=self.map)
+		for fout in (frappe.QueryDeadlockError("1020"), frappe.TimestampMismatchError("ouder")):
+			with patch.object(afgeleid, "bijwerken", side_effect=fout):
+				project = api.project(map=self.map)
+			self.assertEqual({m["status"] for m in project["modellen"]}, {"wacht"})
+
 	def test_project_zet_de_omzettingen_klaar(self):
 		project = api.project(map=self.map)
 		self.assertEqual(project["project"], "05 BIM-modellen")

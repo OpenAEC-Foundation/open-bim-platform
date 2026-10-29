@@ -83,7 +83,7 @@ def bijwerken(doc) -> None:
 
 def volg_lopende() -> None:
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		bijwerken(frappe.get_doc(DOCTYPE, naam))
+		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
 
 

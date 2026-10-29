@@ -108,11 +108,11 @@ def project(map: str) -> dict:
 		if doc is None:
 			doc = afgeleid.start(bestand.name, versie)
 		elif doc.status in ("wacht", "bezig"):
-			afgeleid.bijwerken(doc)
+			afgeleid.zonder_botsing(afgeleid.bijwerken, doc)
 		for lopend in frappe.get_all(
 			koppeling.DOCTYPE, {"bestand": bestand.name, "naar_versie": versie, "status": ("in", ("wacht", "bezig"))}, pluck="name"
 		):
-			koppeling.bijwerken(frappe.get_doc(koppeling.DOCTYPE, lopend))
+			afgeleid.zonder_botsing(koppeling.bijwerken, frappe.get_doc(koppeling.DOCTYPE, lopend))
 		modellen.append(_model(bestand, discipline, doc))
 	return {"project": map_doc.naam, "werkwijze": "bestanden", "modellen": modellen}
 
@@ -121,7 +121,7 @@ def _klaar(bestand: str, versie):
 	_bestand(bestand)
 	doc = afgeleid.laatste(bestand, cint(versie))
 	if doc and doc.status in ("wacht", "bezig"):
-		afgeleid.bijwerken(doc)  # misschien is de kern al klaar en heeft niemand het nog gezien
+		afgeleid.zonder_botsing(afgeleid.bijwerken, doc)  # misschien is de kern al klaar en heeft niemand het gezien
 	if not doc or doc.status != "klaar":
 		raise NogNietKlaar(_("Dit model is nog niet omgezet."))
 	return doc
