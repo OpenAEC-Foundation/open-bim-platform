@@ -4,8 +4,10 @@
 bestanden in de opslag van de klantomgeving.
 
 Status: fase 0 (fundament) is af en geaccepteerd: tien IFC-bestanden van samen 5,55 GB omgezet, het grootste
-(1,76 GB) in vijf delen, en de viewer laadt ze tot zijn geheugenbudget op een laptop met een ingebouwde GPU. Fase 1
-(de viewer in de werkplek van de SuperCloud) is in ontwikkeling en draait op de ontwikkelbench.
+(1,76 GB) in vijf delen, en de viewer laadt ze tot zijn geheugenbudget op een laptop met een ingebouwde GPU. Fase 1a
+(de viewer in de werkplek van de SuperCloud) draait op de ontwikkelbench. Fase 1b (coördinatie: issues met BCF 3.0,
+de BCF-API, de versiekoppeling, het auditlog en botsingsrondes) is gebouwd en in de werkplek geaccepteerd; zie de
+meting van fase 1b.
 
 ## Documenten
 
@@ -18,6 +20,7 @@ Status: fase 0 (fundament) is af en geaccepteerd: tien IFC-bestanden van samen 5
 | [Meting fase 0](docs/metingen/2026-fase-0.md) | tijden en geheugen per stap, de viewer op het budget, de proef in de werkplek |
 | [Plan fase 1b](docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md) | issues (BCF 3.0), BCF-API, versiekoppeling, auditlog, botsingen |
 | [Conformiteit BCF-API](docs/bcf-conformiteit.md) | de paden van de BCF-API 3.0 op de klantsite, de test en de laatste uitslag |
+| [Meting fase 1b](docs/metingen/2026-fase-1b.md) | de acceptatie van de coördinatie in de werkplek, tijden van koppelen en botsen |
 
 **Fase 1** maakt issues met BCF 3.0 als datamodel, direct gevolgd door de BCF-API 3.0, en een koppeling van elementen
 over versies heen (op GlobalId, met een terugval als een exporteur GlobalIds verandert), zodat issues en botsingen een
@@ -95,6 +98,18 @@ bouwstap, lokale MinIO en kern) staat in `openaec-bench`, branch `bouw/bim-werkp
 De browserproef met grote modellen via de GUI (uploaden in Docs, de tegel, omzetten, laden, aanklikken) is
 `scripts/werkplek-e2e/bim-proef.mjs` in dezelfde branch. Plan: `docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md`.
 
+**Coördinatie (fase 1b).** In de werkplek heeft de viewer rechts de tabbladen Eigenschappen, Issues en Botsingen.
+Issues volgen het datamodel van BCF 3.0 (`openaec_bim.issues`): een nieuw issue neemt de camera, de selectie en een
+schermafbeelding met markering mee; export en import als `.bcfzip` (2.1 en 3.0) in de modelmap. Na elke nieuwe
+omgezette versie koppelt de kern de elementen aan de vorige versie (op GlobalId, met een terugval op plaats en naam);
+issues en botsingen volgen hun elementen zo naar de versie in beeld, en de modellijst noemt de matchrate. Een
+botsingsronde (hard of afstand) rekent op de versies van het moment van starten; een volgende ronde volgt de botsingen
+van de vorige. Elke wijziging komt in het auditlog (`BIM Auditregel`, met de bron). Voor controle- en
+ontwerpprogramma's biedt de klantsite de BCF-API 3.0 met de Foundation API 1.1 op `/bcf/3.0` en `/foundation`
+(OAuth2 van Frappe of een API-sleutel); zie [Conformiteit BCF-API](docs/bcf-conformiteit.md). De acceptatie in de
+werkplek is `scripts/werkplek-e2e/bim-coordinatie.mjs` in `openaec-bench`. Plan:
+`docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md`.
+
 Nog een besluit van de eigenaar: de projectlicentie van deze repo, prijsniveau en status in de catalogus, welke app
 een `.ifc` standaard opent (nu de planner), en een machine met genoeg geheugen voor het omzetten op staging.
 
@@ -111,11 +126,13 @@ npm run test:e2e     # browserproef: kern, lokale server en viewer samen (Playwr
 
 ### Meten
 
-Een groot, geldig IFC voor metingen maken en een map met modellen doormeten:
+Een groot, geldig IFC voor metingen maken, een variant voor proeven (klassen houden of weglaten, een deel van de
+GlobalIds vervangen) en een map met modellen doormeten:
 
 ```bash
 cd kern
 python scripts/enlarge.py <in.ifc> <factor> <uit.ifc>
+python scripts/variant.py <in.ifc> <uit.ifc> [--alleen IfcWall] [--zonder IfcDuctSegment] [--nieuwe-globalids 0.5]
 python scripts/measure.py <map> --uit <rapport.md>
 ```
 
