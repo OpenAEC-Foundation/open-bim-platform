@@ -21,6 +21,7 @@ BIM_DOCTYPES = (
 	"BIM Issue",
 	"BIM Project",
 	"BIM Afgeleid",
+	"BIM Versiekoppeling",
 )
 
 

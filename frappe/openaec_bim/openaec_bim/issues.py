@@ -19,7 +19,7 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_datetime, get_system_timezone, getdate, today
 
-from openaec_bim import afgeleid, api, bcfzip, kern
+from openaec_bim import afgeleid, api, bcfzip, kern, koppeling
 
 PROJECT = "BIM Project"
 ISSUE = "BIM Issue"
@@ -235,7 +235,31 @@ def _naar_bcf(issue, project) -> dict:
 			"topic_actions": (ALLE_TOPIC_ACTIES if mag else LEZER_TOPIC_ACTIES) if actief else [],
 			"topic_status": _regels(project.statussen) if mag else [],
 		},
+		"elementen": _elementen(issue),
 	}
+
+
+def _elementen(issue) -> list[dict]:
+	"""De elementen van het issue in de versie die het project toont (de laatste omgezette van elk bestand), langs de
+	versiekoppeling; `teruggevonden` is onwaar als het element daar niet (meer) te vinden is."""
+	getoond: dict[str, int | None] = {}
+	uit = []
+	for e in issue.elementen:
+		if not e.bestand or not e.versie:
+			uit.append({"ifc_guid": e.globalid, "bestand": e.bestand or None, "versie": None, "teruggevonden": False})
+			continue
+		if e.bestand not in getoond:
+			getoond[e.bestand] = frappe.db.get_value(
+				afgeleid.DOCTYPE, {"bestand": e.bestand, "status": "klaar"}, "versie", order_by="versie desc"
+			)
+		versie = cint(e.versie)
+		doel = cint(getoond[e.bestand]) or versie
+		gevonden = koppeling.huidig(e.bestand, e.globalid, versie, doel) if doel > versie else e.globalid
+		if gevonden is None:
+			uit.append({"ifc_guid": e.globalid, "bestand": e.bestand, "versie": str(versie), "teruggevonden": False})
+		else:
+			uit.append({"ifc_guid": gevonden, "bestand": e.bestand, "versie": str(max(doel, versie)), "teruggevonden": True})
+	return uit
 
 
 def _controleer_waarde(project, bcf_veld: str, waarde) -> None:
@@ -794,6 +818,7 @@ def importeer(project, bestand: str) -> dict:
 def _topic_voor_bestand(issue, project) -> dict:
 	topic = _naar_bcf(issue, project)
 	topic.pop("authorization")
+	topic.pop("elementen")
 	reacties_ = []
 	for naam in frappe.get_all(REACTIE, {"issue": issue.name}, pluck="name", order_by="creation asc"):
 		r = _reactie_naar_bcf(frappe.get_doc(REACTIE, naam), issue, project)

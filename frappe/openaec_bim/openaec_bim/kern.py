@@ -67,6 +67,11 @@ def start_omzetten(bron: dict, doelen: dict[str, str]) -> str:
 	return roep("POST", "/v1/tools/omzetten", {"bron": bron, "doelen": doelen})["taak"]
 
 
+def start_koppelen(vorige: dict, nieuwe: dict) -> str:
+	"""Zet een versiekoppeling klaar bij de kern (twee eigenschappen-indexen); geeft het taaknummer."""
+	return roep("POST", "/v1/tools/koppelen", {"vorige": vorige, "nieuwe": nieuwe})["taak"]
+
+
 def taak(taak_id: str) -> dict:
 	return roep("GET", f"/v1/taken/{taak_id}")
 

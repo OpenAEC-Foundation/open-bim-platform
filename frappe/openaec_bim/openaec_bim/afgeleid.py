@@ -109,13 +109,20 @@ def bijwerken(doc) -> None:
 		doc.status = "fout"
 		doc.fout = taak.get("fout") or {"error_code": status or "onbekend", "melding": _("De omzetting is gestopt.")}
 	doc.save(ignore_permissions=True)
+	if doc.status == "klaar":
+		from openaec_bim import koppeling
+
+		koppeling.na_omzetting(doc)
 
 
 def volg_lopende() -> None:
-	"""Geplande taak: elke lopende omzetting bijwerken."""
+	"""Geplande taak: elke lopende omzetting en versiekoppeling bijwerken."""
+	from openaec_bim import koppeling
+
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
 		bijwerken(frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
+	koppeling.volg_lopende()
 
 
 def lees_object(sleutel: str) -> bytes:

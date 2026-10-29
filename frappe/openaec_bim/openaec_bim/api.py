@@ -14,7 +14,7 @@ from frappe import _
 from frappe.utils import cint
 from werkzeug.wrappers import Response
 
-from openaec_bim import afgeleid, kern, leestoken
+from openaec_bim import afgeleid, kern, koppeling, leestoken
 
 MAX_GLOBALIDS = 1000
 LEESBLOK = 256 * 1024
@@ -93,6 +93,7 @@ def _model(bestand: dict, discipline: str, doc) -> dict:
 		"fout": _json(doc.fout) if doc and doc.status == "fout" else None,
 		"delen": [{"naam": d["naam"], "bytes": cint(d["bytes"])} for d in (_json(doc.delen) or [])] if klaar else [],
 		"index": _json(doc.samenvatting) if klaar else None,
+		"koppeling": koppeling.naar(bestand.name, cint(bestand.huidige_versie)) if klaar else None,
 	}
 
 
@@ -108,6 +109,10 @@ def project(map: str) -> dict:
 			doc = afgeleid.start(bestand.name, versie)
 		elif doc.status in ("wacht", "bezig"):
 			afgeleid.bijwerken(doc)
+		for lopend in frappe.get_all(
+			koppeling.DOCTYPE, {"bestand": bestand.name, "naar_versie": versie, "status": ("in", ("wacht", "bezig"))}, pluck="name"
+		):
+			koppeling.bijwerken(frappe.get_doc(koppeling.DOCTYPE, lopend))
 		modellen.append(_model(bestand, discipline, doc))
 	return {"project": map_doc.naam, "werkwijze": "bestanden", "modellen": modellen}
 
