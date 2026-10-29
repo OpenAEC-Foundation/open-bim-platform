@@ -1,0 +1,63 @@
+{
+ "actions": [],
+ "autoname": "field:guid",
+ "creation": "2026-10-29 09:00:00.000000",
+ "description": "Een reactie (BCF-comment) op een issue.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "guid",
+  "issue",
+  "tekst",
+  "standpunt"
+ ],
+ "fields": [
+  {
+   "fieldname": "guid",
+   "fieldtype": "Data",
+   "label": "GUID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "issue",
+   "fieldtype": "Link",
+   "label": "Issue",
+   "options": "BIM Issue",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "tekst",
+   "fieldtype": "Text",
+   "label": "Tekst",
+   "reqd": 1
+  },
+  {
+   "fieldname": "standpunt",
+   "fieldtype": "Link",
+   "label": "Standpunt",
+   "options": "BIM Standpunt"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "name": "BIM Reactie",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

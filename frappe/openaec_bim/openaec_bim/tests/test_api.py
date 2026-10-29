@@ -11,32 +11,9 @@ from openaec_storage.tests.hulp import NagebootsteS3, gebruiker, ruim_op, ruimte
 
 from openaec_bim import afgeleid, api, leestoken
 from openaec_bim.kern import KernFout
+from openaec_bim.tests.hulp import NepKern
 
 INDEX = {"schema": "IFC4", "omzetter": "kern-0.1.0+fragments-3.6.0", "delen": [{"naam": "model.frag", "bytes": 5}]}
-
-
-class NepKern:
-	"""Bootst de BIM-kern na: legt de verzoeken vast en geeft per taak de stand die de test zet."""
-
-	def __init__(self):
-		self.verzoeken = []
-		self.taken = {}
-		self.elementen = {}
-
-	def roep(self, methode, pad, json=None):
-		self.verzoeken.append((methode, pad, json))
-		if pad == "/v1/tools/omzetten":
-			taak = f"taak-{len(self.taken) + 1}"
-			self.taken[taak] = {"status": "wacht", "voortgang": 0}
-			return {"taak": taak}
-		if pad.startswith("/v1/taken/"):
-			taak = pad.rsplit("/", 1)[1]
-			if taak not in self.taken:
-				raise KernFout("taak_onbekend", "Er is geen taak.")
-			return self.taken[taak]
-		if pad == "/v1/tools/eigenschappen":
-			return {"elementen": self.elementen}
-		raise AssertionError(pad)
 
 
 class TestApi(IntegrationTestCase):
