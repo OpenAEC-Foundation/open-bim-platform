@@ -82,5 +82,38 @@
   "reacties": "Reacties",
   "geen_reacties": "Nog geen reacties.",
   "reactie_placeholder": "Schrijf een reactie…",
-  "reactie_plaatsen": "Plaatsen"
+  "reactie_plaatsen": "Plaatsen",
+  "botsingen_fout": "De botsingsrondes konden niet worden geladen: {{melding}}",
+  "ronde_nieuw": "Nieuwe ronde",
+  "ronde_uitleg": "Zoek botsingen tussen de modellen van set A en set B, op de versies die nu in beeld zijn.",
+  "ronde_starten": "Starten",
+  "geen_rondes": "Nog geen botsingsrondes.",
+  "set_a": "Set A",
+  "set_b": "Set B",
+  "soort_hard": "Hard",
+  "soort_afstand": "Afstand",
+  "soort_hard_uitleg": "Hard: elementen die dieper dan de tolerantie in elkaar steken",
+  "soort_afstand_uitleg": "Afstand: elementen die dichter dan de tolerantie bij elkaar liggen",
+  "tolerantie_mm": "Tolerantie (mm)",
+  "tolerantie_waarde": "{{mm}} mm",
+  "ronde_status": {
+    "wacht": "Wacht op de rekenkern",
+    "bezig": "Wordt berekend",
+    "klaar": "Klaar",
+    "fout": "Mislukt"
+  },
+  "botsing_status": {
+    "nieuw": "Nieuw",
+    "actief": "Actief",
+    "opgelost": "Opgelost",
+    "genegeerd": "Genegeerd"
+  },
+  "aantal_botsingen_one": "{{count}} botsing",
+  "aantal_botsingen_other": "{{count}} botsingen",
+  "verberg_afgehandeld": "Opgeloste en genegeerde verbergen",
+  "geen_botsingen": "Geen botsingen te tonen.",
+  "botsing_afstand": "{{mm}} mm",
+  "naar_issue": "Issue maken",
+  "heeft_issue": "Issue",
+  "issue_gemaakt": "Issue „{{titel}}” gemaakt."
 }

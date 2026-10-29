@@ -420,3 +420,53 @@ body {
   color: var(--color-text-muted);
   font-size: var(--font-size-xs);
 }
+
+/* Clash rounds. */
+.ronde__set {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  margin: 0;
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+}
+
+.ronde__tel,
+.ronde__verberg {
+  padding: 0 var(--spacing-4);
+}
+
+.botsing {
+  border-top: 1px solid var(--color-border);
+}
+
+.botsing[aria-current="true"] {
+  background: var(--color-bg);
+}
+
+.botsing__toon {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+  width: 100%;
+  padding: var(--spacing-1) 0;
+  border: none;
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  text-align: left;
+  cursor: pointer;
+}
+
+.botsing__acties {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.botsing__acties select {
+  flex: 1;
+  min-width: 0;
+}

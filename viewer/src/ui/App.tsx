@@ -7,6 +7,7 @@ import { sourceKey, type BimHost, type ModelInfo, type ModelSource, type Project
 import { DEFAULT_BUDGET, planLoad, switchOnNewlyReady } from "../model/budget";
 import type { Vec3, Viewpoint } from "../model/bcf";
 import type { Selection } from "../model/selection";
+import { ClashPanel } from "./ClashPanel";
 import { describe, isNoFolder } from "./format";
 import { IssuesPanel } from "./IssuesPanel";
 import { ModelList } from "./ModelList";
@@ -283,7 +284,7 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
         <div className="rechts">
           {host.coordinatie && (
             <div className="tabs" role="tablist" aria-label={t("panelen")}>
-              {(["eigenschappen", "issues"] as Tab[]).map((naam) => (
+              {(["eigenschappen", "issues", "botsingen"] as Tab[]).map((naam) => (
                 <button
                   key={naam}
                   type="button"
@@ -301,6 +302,11 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           {tab === "issues" && host.coordinatie && (
             <aside className="inspector" aria-label={t("tab_issues")}>
               <IssuesPanel coordinatie={host.coordinatie} weergave={weergave} modellen={models} />
+            </aside>
+          )}
+          {tab === "botsingen" && host.coordinatie && (
+            <aside className="inspector" aria-label={t("tab_botsingen")}>
+              <ClashPanel coordinatie={host.coordinatie} weergave={weergave} modellen={models} />
             </aside>
           )}
         </div>
