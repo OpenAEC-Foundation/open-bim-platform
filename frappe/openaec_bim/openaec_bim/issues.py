@@ -379,6 +379,11 @@ def topic_verwijder(guid: str) -> None:
 		frappe.delete_doc(REACTIE, reactie, ignore_permissions=True)
 	for standpunt in frappe.get_all(STANDPUNT, {"issue": guid}, pluck="name"):
 		frappe.delete_doc(STANDPUNT, standpunt, ignore_permissions=True)
+	# Botsingen die naar dit issue wijzen (in elke ronde): de verwijzing vervalt, de botsing blijft.
+	for botsing in frappe.get_all("BIM Botsing", {"issue": guid}, pluck="name"):
+		doc = frappe.get_doc("BIM Botsing", botsing)
+		doc.issue = None
+		doc.save(ignore_permissions=True)
 	frappe.delete_doc(ISSUE, guid, ignore_permissions=True)
 
 
@@ -749,6 +754,17 @@ def _toewijzing(project, data: dict, telling: dict) -> None:
 		telling["toewijzingen_vervallen"] += 1
 
 
+def _ouder_dan_opgeslagen(datum: str | None, opgeslagen) -> bool:
+	"""Is de datum uit het bestand ouder dan de opgeslagen wijziging? Dan zou de import een nieuwere stand
+	terugdraaien. Zonder datum in het bestand is het niet te zeggen: dan niet."""
+	if not datum:
+		return False
+	try:
+		return _tijdstip(datum) < _op_milliseconde(get_datetime(opgeslagen).replace(tzinfo=_tijdzone()))
+	except frappe.ValidationError:
+		return False
+
+
 def _importeer_reacties(issue, topic: dict) -> None:
 	for r in topic.get("comments") or []:
 		data = {"comment": r.get("comment") or "", "viewpoint_guid": r.get("viewpoint_guid")}
@@ -761,6 +777,8 @@ def _importeer_reacties(issue, topic: dict) -> None:
 			_nieuwe_reactie(issue, {"guid": r.get("guid"), **data}, r.get("author"), r.get("date"), "geïmporteerd")
 		elif bestaand.issue == issue.name and bestaand.tekst != data["comment"]:
 			doc = frappe.get_doc(REACTIE, r["guid"])
+			if _ouder_dan_opgeslagen(r.get("modified_date") or r.get("date"), doc.modified):
+				continue
 			_zet_reactie(doc, issue, data)
 			doc.flags.bim_handeling = "geïmporteerd"
 			doc.save(ignore_permissions=True)
@@ -781,15 +799,21 @@ def _importeer_topic(project, topic: dict, telling: dict) -> str | None:
 	_toewijzing(project, data, telling)
 	if elders:
 		issue = frappe.get_doc(ISSUE, guid, for_update=True)
-		telling["bijgewerkt"] += 1
+		verouderd = _ouder_dan_opgeslagen(topic.get("modified_date") or topic.get("creation_date"), issue.modified)
+		telling["verouderd" if verouderd else "bijgewerkt"] += 1
 	else:
+		verouderd = False
 		issue = frappe.get_doc({"doctype": ISSUE, "guid": guid, "project": project.name, "status": project.standaard_status})
 		telling["nieuw"] += 1
-	_van_bcf(data, issue, project)
-	issue.documentverwijzingen = json.dumps(_verwijzingen(topic))
+	if not verouderd:
+		# Een oudere stand uit het bestand draait een latere wijziging hier niet terug; nieuwe reacties en
+		# standpunten uit het bestand komen er wel bij.
+		_van_bcf(data, issue, project)
+		issue.documentverwijzingen = json.dumps(_verwijzingen(topic))
 	issue.flags.bim_handeling = "geïmporteerd"
 	if elders:
-		issue.save(ignore_permissions=True)
+		if not verouderd:
+			issue.save(ignore_permissions=True)
 	else:
 		issue.insert(ignore_permissions=True)
 		_zet_herkomst(issue, topic.get("creation_author"), topic.get("creation_date"))
@@ -820,8 +844,9 @@ def _als_kopie(topic: dict) -> dict:
 
 def importeer(project, bestand: str) -> dict:
 	"""Lees een .bcfzip (2.1 of 3.0) uit Storage in het project: een bekende guid wordt bijgewerkt, een nieuwe gemaakt,
-	met de maker en datums uit het bestand. Een topic dat al in een ander project staat, komt erin als kopie met een
-	nieuwe guid. Alleen voor wie schrijfrecht op de modelmap heeft."""
+	met de maker en datums uit het bestand; een topic dat hier na de datum in het bestand gewijzigd is, blijft staan
+	(`verouderd`). Een topic dat al in een ander project staat, komt erin als kopie met een nieuwe guid. Alleen voor wie
+	schrijfrecht op de modelmap heeft."""
 	project = _project(project)
 	_vereis_meedoen(project)
 	if not _schrijver(project):
@@ -831,7 +856,7 @@ def importeer(project, bestand: str) -> dict:
 	except bcfzip.BcfOngeldig as fout:
 		_weiger(_("Dit is geen leesbaar BCF-bestand: {0}").format(fout), "bcfzip_ongeldig")
 	_vul_instellingen_aan(project, topics)
-	telling = {"nieuw": 0, "bijgewerkt": 0, "gekopieerd": 0, "overgeslagen": 0, "toewijzingen_vervallen": 0}
+	telling = {"nieuw": 0, "bijgewerkt": 0, "verouderd": 0, "gekopieerd": 0, "overgeslagen": 0, "toewijzingen_vervallen": 0}
 	verwant: dict[str, list[str]] = {}
 	kopieen: dict[str, str] = {}
 	for topic in topics:

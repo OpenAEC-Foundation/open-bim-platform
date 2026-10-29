@@ -233,10 +233,23 @@ class TestBcfImportExport(ProjectTest):
 		self.assertIn(WAND, frappe.get_all("BIM Issue Element", {"parent": G1}, pluck="globalid"))
 		self.assertTrue(frappe.db.exists("BIM Auditregel", {"handeling": "geïmporteerd", "object": G1}))
 
-		uit = issues.importeer(self.project, self.bcfzip([{**topic, "title": "Kanaal door wand, aangepast"}], "nieuw.bcfzip"))
+		gewijzigd = {**topic, "title": "Kanaal door wand, aangepast", "modified_date": "2099-01-01T10:00:00.000+01:00"}
+		uit = issues.importeer(self.project, self.bcfzip([gewijzigd], "nieuw.bcfzip"))
 		self.assertEqual((uit["nieuw"], uit["bijgewerkt"]), (0, 1))
 		self.assertEqual(issues.topic(G1)["title"], "Kanaal door wand, aangepast")
 		self.assertEqual(len(issues.reacties(G1)), 1)
+
+	def test_een_import_overschrijft_geen_nieuwere_wijziging(self):
+		topic = volledig_topic(viewpoints=[], assigned_to=None)
+		issues.importeer(self.project, self.bcfzip([topic]))
+		issues.topic_wijzig(G1, {"topic_status": "Gesloten", "title": "Na de export gewijzigd"})
+		uit = issues.importeer(self.project, self.bcfzip([topic], "terug.bcfzip"))
+		self.assertEqual((uit["bijgewerkt"], uit["verouderd"]), (0, 1))
+		self.assertEqual((issues.topic(G1)["topic_status"], issues.topic(G1)["title"]), ("Gesloten", "Na de export gewijzigd"))
+		nieuwer = {**topic, "title": "Later gewijzigd in het andere programma", "modified_date": "2099-01-01T10:00:00.000+01:00"}
+		uit = issues.importeer(self.project, self.bcfzip([nieuwer], "nieuwer.bcfzip"))
+		self.assertEqual((uit["bijgewerkt"], uit["verouderd"]), (1, 0))
+		self.assertEqual(issues.topic(G1)["title"], "Later gewijzigd in het andere programma")
 
 	def test_verwante_issues_uit_hetzelfde_bestand(self):
 		topics = [volledig_topic(viewpoints=[], comments=[]), volledig_topic(G2, title="Tweede", viewpoints=[], comments=[])]

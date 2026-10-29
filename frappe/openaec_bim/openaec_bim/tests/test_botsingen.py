@@ -129,6 +129,15 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual(frappe.db.get_value("BIM Botsing", b.name, "issue"), t["guid"])
 		self.assertNotIn("/v1/tools/eigenschappen", [pad for _m, pad, _j in self.kern.verzoeken])
 
+	def test_een_issue_van_een_botsing_kan_verwijderd_worden(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		t = botsingen.naar_issue(self.botsing(eerste, "w1", "k1").name)
+		tweede = self.ronde_met([("w1", "k1")])
+		issues.topic_verwijder(t["guid"])
+		self.assertFalse(frappe.db.exists("BIM Issue", t["guid"]))
+		self.assertIsNone(self.botsing(eerste, "w1", "k1").issue)
+		self.assertIsNone(self.botsing(tweede, "w1", "k1").issue)
+
 	def test_status_zetten_staat_in_het_log_en_vraagt_schrijfrecht(self):
 		ronde = self.ronde_met([("w1", "k1")])
 		b = self.botsing(ronde, "w1", "k1")
