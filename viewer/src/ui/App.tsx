@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent } from "rea
 import { useTranslation } from "react-i18next";
 import { FragmentsEngine } from "../engine/FragmentsEngine";
 import { sourceKey, type BimHost, type ModelInfo, type ModelSource, type Project } from "../host/BimHost";
-import { DEFAULT_BUDGET, planLoad } from "../model/budget";
+import { DEFAULT_BUDGET, planLoad, switchOnNewlyReady } from "../model/budget";
 import type { Selection } from "../model/selection";
 import { describe, isNoFolder } from "./format";
 import { ModelList } from "./ModelList";
@@ -40,6 +40,8 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
   /** Engine work runs one step at a time, in order. */
   const queueRef = useRef<Promise<void>>(Promise.resolve());
   const plannedRef = useRef(false);
+  /** Models that were ready at a plan: from then on their switch is the user's. */
+  const seenReadyRef = useRef<Set<string>>(new Set());
   const pointerRef = useRef<{ x: number; y: number } | null>(null);
 
   const [project, setProject] = useState<Project | null>(null);
@@ -86,14 +88,24 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
     return () => window.clearInterval(timer);
   }, [converting, refresh]);
 
-  // The first time models are ready, switch on what fits in the budget; after that the switches are the user's.
+  // The first time models are ready, switch on what fits in the budget; after that the switches are the user's. A
+  // model that becomes ready later (the project was opened while it was being converted) is switched on when it fits
+  // next to what is on.
   useEffect(() => {
-    if (!project || plannedRef.current) return;
-    const plan = planLoad(project.modellen, budget).load;
-    if (project.modellen.every((m) => m.status !== "klaar")) return;
-    plannedRef.current = true;
-    setEnabled(new Set(plan.map((m) => m.bron.sleutel)));
-  }, [project, budget]);
+    if (!project) return;
+    const ready = project.modellen.filter((m) => m.status === "klaar").map((m) => m.bron.sleutel);
+    if (!ready.length) return;
+    if (!plannedRef.current) {
+      plannedRef.current = true;
+      seenReadyRef.current = new Set(ready);
+      setEnabled(new Set(planLoad(project.modellen, budget).load.map((m) => m.bron.sleutel)));
+      return;
+    }
+    if (ready.every((key) => seenReadyRef.current.has(key))) return;
+    const added = switchOnNewlyReady(project.modellen, enabled, seenReadyRef.current, budget);
+    for (const key of ready) seenReadyRef.current.add(key);
+    if (added.length) setEnabled(new Set([...enabled, ...added.map((m) => m.bron.sleutel)]));
+  }, [project, budget, enabled]);
 
   // Bring the engine in line with the switches: unload what is off, load what is on.
   useEffect(() => {

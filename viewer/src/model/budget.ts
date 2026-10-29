@@ -31,3 +31,27 @@ export function planLoad(models: ModelInfo[], budgetBytes: number): { load: Mode
   }
   return { load, available };
 }
+
+/**
+ * Models that became ready after the first plan (not in `seen`) and fit next to the models that are on, in order.
+ * Models seen ready before are the user's to switch; a model that does not fit stays available to switch on.
+ */
+export function switchOnNewlyReady(
+  models: ModelInfo[],
+  on: Set<string>,
+  seen: Set<string>,
+  budgetBytes: number,
+): ModelInfo[] {
+  let used = models
+    .filter((m) => m.status === "klaar" && on.has(m.bron.sleutel))
+    .reduce((sum, m) => sum + estimateBytes(m), 0);
+  const result: ModelInfo[] = [];
+  for (const model of models) {
+    if (model.status !== "klaar" || seen.has(model.bron.sleutel) || on.has(model.bron.sleutel)) continue;
+    const cost = estimateBytes(model);
+    if (used + cost > budgetBytes) continue;
+    result.push(model);
+    used += cost;
+  }
+  return result;
+}

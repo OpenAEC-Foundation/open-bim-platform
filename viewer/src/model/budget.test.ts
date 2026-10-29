@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { ModelInfo, ModelStatus } from "../host/BimHost";
-import { DEFAULT_BUDGET, estimateBytes, planLoad } from "./budget";
+import { DEFAULT_BUDGET, estimateBytes, planLoad, switchOnNewlyReady } from "./budget";
 
 let counter = 0;
 function m(fragBytes: number, status: ModelStatus = "klaar", parts = 1): ModelInfo {
@@ -44,4 +44,37 @@ test("skips models not ready", () => {
 
 test("the first ready model always loads, even after models that are not ready", () => {
   expect(planLoad([m(1e6, "bezig"), m(500e6)], 1).load).toHaveLength(1);
+});
+
+test("a model that becomes ready later is switched on when it fits next to what is on", () => {
+  // Opened while converting: the first model was planned, the second became ready afterwards.
+  const first = m(10e6);
+  const later = m(20e6);
+  const on = new Set([first.bron.sleutel]);
+  const seen = new Set([first.bron.sleutel]);
+  expect(switchOnNewlyReady([first, later], on, seen, DEFAULT_BUDGET).map((x) => x.bron.sleutel)).toEqual([
+    later.bron.sleutel,
+  ]);
+});
+
+test("a later model that does not fit next to what is on stays off", () => {
+  const first = m(100e6);
+  const later = m(20e6);
+  const on = new Set([first.bron.sleutel]);
+  expect(switchOnNewlyReady([first, later], on, new Set([first.bron.sleutel]), DEFAULT_BUDGET)).toEqual([]);
+});
+
+test("models already seen ready are the user's: switched off stays off", () => {
+  const first = m(10e6);
+  const second = m(10e6);
+  // Both were ready before; the user switched the second off.
+  const seen = new Set([first.bron.sleutel, second.bron.sleutel]);
+  expect(switchOnNewlyReady([first, second], new Set([first.bron.sleutel]), seen, DEFAULT_BUDGET)).toEqual([]);
+});
+
+test("models that are not ready yet are not switched on", () => {
+  const first = m(10e6);
+  const busy = m(10e6, "bezig");
+  const on = new Set([first.bron.sleutel]);
+  expect(switchOnNewlyReady([first, busy], on, new Set([first.bron.sleutel]), DEFAULT_BUDGET)).toEqual([]);
 });
