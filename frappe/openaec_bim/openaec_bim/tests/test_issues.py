@@ -46,8 +46,13 @@ class TestIssues(ProjectTest):
 		def nog_niet(doctype, *args, **kwargs):
 			return None if doctype == "BIM Project" else echt(doctype, *args, **kwargs)
 
-		with patch.object(frappe.db, "exists", nog_niet):
+		with patch.object(frappe.db, "exists", nog_niet), patch.object(frappe.db, "rollback") as terug:
 			self.assertEqual(issues.project_van(nieuwe_map).name, nieuwe_map)
+			# MariaDB meldt de botsing ook als QueryDeadlockError (snapshot-isolatie): dan opnieuw lezen na een
+			# rollback, anders ziet deze transactie het project van het andere verzoek niet.
+			with patch("frappe.model.document.Document.insert", side_effect=frappe.QueryDeadlockError("1020")):
+				self.assertEqual(issues.project_van(nieuwe_map).name, nieuwe_map)
+			self.assertEqual(terug.call_count, 2)
 
 	def test_uitbreidingen_komen_uit_het_project(self):
 		ext = issues.uitbreidingen(self.project)

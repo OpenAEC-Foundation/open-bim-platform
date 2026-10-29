@@ -160,15 +160,18 @@ def _vereis_wijzigen(issue, project) -> None:
 
 
 def project_van(map_: str):
-	"""Het BIM-project van een modelmap; bij het eerste gebruik wordt het gemaakt."""
+	"""Het BIM-project van een modelmap; bij het eerste gebruik wordt het gemaakt. Aan het begin van een verzoek
+	aanroepen: als een ander verzoek het project tegelijk maakt, begint deze transactie opnieuw."""
 	map_doc = api._modelmap(map_)
 	if not frappe.db.exists(PROJECT, map_doc.name):
 		try:
 			frappe.get_doc(
 				{"doctype": PROJECT, "modelmap": map_doc.name, "ruimte": map_doc.ruimte, "titel": map_doc.naam}
 			).insert(ignore_permissions=True)
-		except frappe.DuplicateEntryError:
-			pass  # tegelijk gemaakt door een ander verzoek (de gastpagina vraagt instellingen en issues tegelijk)
+		except (frappe.DuplicateEntryError, frappe.QueryDeadlockError):
+			# Tegelijk gemaakt door een ander verzoek (de gastpagina vraagt instellingen en issues tegelijk). Een nieuwe
+			# transactie ziet dat project; project_van staat aan het begin van een verzoek, er gaat niets verloren.
+			frappe.db.rollback()
 	return frappe.get_doc(PROJECT, map_doc.name)
 
 
