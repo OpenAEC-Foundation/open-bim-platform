@@ -70,7 +70,7 @@ describe("WerkplekHost", () => {
     expect(vraag).toHaveBeenCalledWith("bim.botsingsronde_start", {
       set_a: [{ bestand: "b1" }],
       set_b: [{ bestand: "b2", klassen: ["IfcDuctSegment"] }],
-      soort: "hard",
+      botsingsoort: "hard",
       tolerantie: 0.01,
     });
     expect(vraag).toHaveBeenCalledWith("bim.botsing_status", { botsing: "x1", status: "genegeerd" });
@@ -79,5 +79,14 @@ describe("WerkplekHost", () => {
   test("a cancelled import is null", async () => {
     const { kanaal: k } = kanaal(() => null);
     expect(await new WerkplekHost(k).coordinatie.bcfImport()).toBeNull();
+  });
+
+  test("a field of the bridge envelope (soort, id, werkplek) never travels in a request", async () => {
+    const { kanaal: k, vraag } = kanaal(() => null);
+    const host = new WerkplekHost(k);
+    await expect(
+      (host as unknown as { vraag(s: string, e: Record<string, unknown>): Promise<unknown> }).vraag("bim.x", { soort: "hard" }),
+    ).rejects.toBeInstanceOf(HostError);
+    expect(vraag).not.toHaveBeenCalled();
   });
 });
