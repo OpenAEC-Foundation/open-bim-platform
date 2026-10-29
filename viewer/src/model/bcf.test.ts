@@ -19,8 +19,14 @@ describe("bcf", () => {
 
   test("the offset of the first loaded model is undone, both ways", () => {
     const basis: [number, number, number] = [100, 0, -200];
-    close(threeToIfc([1, 2, 3], basis), [101, 197, 2]);
+    close(threeToIfc([1, 2, 3], basis), [-99, -203, 2]);
     close(ifcToThree(threeToIfc([1, 2, 3], basis), basis), [1, 2, 3]);
+  });
+
+  test("measured in the viewer: That Open adds the coordinates of the first model", () => {
+    // A duct at IFC (4.8, 6.0, 2.2), first model with coordinates (-4, -2.1, 0): in three.js at (0.8, 0.1, -6.0).
+    close(ifcToThree([4.8, 6.0, 2.2], [-4, -2.1, 0]), [0.8, 0.1, -6.0]);
+    close(threeToIfc([0.8, 0.1, -6.0], [-4, -2.1, 0]), [4.8, 6.0, 2.2]);
   });
 
   test("camera heen en terug", () => {

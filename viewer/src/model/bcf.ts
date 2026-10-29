@@ -2,8 +2,9 @@
  * Issues and clashes as the SuperCloud gives them: the JSON of the BCF API 3.0 (topics, comments, viewpoints,
  * extensions) and the clash rounds of openaec_bim.
  *
- * Coordinates: three.js is Y-up and That Open moves the models near the origin (the first loaded model sets the
- * offset, `basis`, in three.js coordinates); IFC, BCF and the clash points of the kern are Z-up world coordinates.
+ * Coordinates: three.js is Y-up and That Open moves the models near the origin (it adds the coordinates of the first
+ * loaded model, `basis`, in three.js coordinates); IFC, BCF and the clash points of the kern are Z-up world
+ * coordinates.
  * The conversion lives here and nowhere else.
  */
 
@@ -138,15 +139,18 @@ const TARGET_DISTANCE = 10;
 
 const ZERO: Vec3 = [0, 0, 0];
 
-/** A point in three.js coordinates to IFC world coordinates (Z-up), undoing the offset `basis`. */
+/**
+ * A point in three.js coordinates to IFC world coordinates (Z-up). That Open puts a model at its IFC position turned
+ * Y-up plus `basis`, the coordinates of the first loaded model (measured in the viewer); this undoes that.
+ */
 export function threeToIfc(p: Vec3, basis: Vec3 = ZERO): Vec3 {
-  const [x, y, z] = [p[0] + basis[0], p[1] + basis[1], p[2] + basis[2]];
+  const [x, y, z] = [p[0] - basis[0], p[1] - basis[1], p[2] - basis[2]];
   return [x, -z, y];
 }
 
-/** A point in IFC world coordinates (Z-up) to three.js coordinates, with the offset `basis`. */
+/** A point in IFC world coordinates (Z-up) to three.js coordinates: turned Y-up, plus `basis`. */
 export function ifcToThree(p: Vec3, basis: Vec3 = ZERO): Vec3 {
-  return [p[0] - basis[0], p[2] - basis[1], -p[1] - basis[2]];
+  return [p[0] + basis[0], p[2] + basis[1], -p[1] + basis[2]];
 }
 
 /** A direction: rotated, never moved. */
