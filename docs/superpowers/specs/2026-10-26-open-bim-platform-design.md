@@ -230,7 +230,8 @@ Per bestandsversie maakt de BIM-kern:
   `2026-10-28-elementopslag-en-relatiegraaf.md`). Het `.frag` per versie blijft voor de viewer tot That Open streaming
   levert.
 - **Quotum:** telt mee in het opslaggebruik van de omgeving als aparte post `bim_afgeleid_bytes` (met de meshstore),
-  niet in het quotum van een ruimte (mijn keuze; het is ongeveer 10% van de bronbestanden). Issue voor Storage:
+  niet in het quotum van een ruimte (mijn keuze; gemeten bij echte modellen: `.frag` 13–14 % en de eigenschappen-index
+  120–155 % van de bron, zie `docs/metingen/2026-fase-0.md`; fase 2 maakt de eigenschappen kolomgericht). Issue voor Storage:
   `api.quotum` met die post.
 - **Opruimen:** afgeleide gegevens van een bronversie verdwijnen als die versie in Storage definitief weg is
   (wijzigingenlijst), en van een versie die 90 dagen niemand opende en niet de nieuwste is (instelbaar). Een mesh
@@ -515,8 +516,9 @@ rapporten.
   3. werkers op goedkopere onderbreekbare capaciteit (een taak die onderbroken wordt, begint opnieuw; dat kan omdat
      elke taak herhaalbaar is);
   en per optie: kosten per GB omgezet, per botsingsronde, vaste kosten per maand, en opslag van afgeleide gegevens
-  (ongeveer 10% van de bronbestanden per versie; vanaf fase 2 voegt een versie alleen haar nieuwe meshes toe aan de
-  meshstore, te meten op echte versiereeksen).
+  (bij echte modellen nu ~140–165 % van de bronbestanden per versie, vooral de eigenschappen-index; vanaf fase 2
+  zijn de eigenschappen kolomgericht en voegt een versie alleen haar nieuwe meshes toe aan de meshstore, te meten op
+  echte versiereeksen).
 - **Afrekenen:** verbruik per taak naar de regelkamer (7.2), zodat de prijs per klant kan meeschalen.
 
 ## 11. Kwaliteit en testen
