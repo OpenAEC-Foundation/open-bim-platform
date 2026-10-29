@@ -7,6 +7,7 @@ import zipfile
 
 import frappe
 from frappe.tests import UnitTestCase
+from openaec_storage import api as opslag
 from openaec_storage.tests.hulp import foutcode, upload
 
 from openaec_bim import afgeleid, bcfzip, issues
@@ -265,6 +266,25 @@ class TestBcfImportExport(ProjectTest):
 		bestand = self.bcfzip([volledig_topic()])
 		frappe.set_user(self.lezer)
 		self.assertRaises(frappe.PermissionError, issues.importeer, self.project, bestand)
+
+	def test_import_in_een_ander_project_maakt_kopieen(self):
+		bestand = self.bcfzip([volledig_topic(viewpoints=[standpunt()]), volledig_topic(G2, title="Tweede", viewpoints=[], comments=[])])
+		issues.importeer(self.project, bestand)
+		frappe.set_user(self.lid)
+		andere_map = opslag.maak_map(ruimte=self.ruimte, naam="06 Kopie")["map"]
+		ander = issues.project_van(andere_map)
+		uit = issues.importeer(ander, bestand)
+		self.assertEqual((uit["nieuw"], uit["gekopieerd"], uit["overgeslagen"]), (2, 2, 0))
+		kopieen = {t["title"]: t for t in issues.topics(ander)}
+		self.assertEqual(set(kopieen), {"Kanaal door wand", "Tweede"})
+		kopie = kopieen["Kanaal door wand"]
+		self.assertNotIn(kopie["guid"], (G1, G2))
+		self.assertEqual([r["comment"] for r in issues.reacties(kopie["guid"])], ["Graag een sparing."])
+		[sp] = issues.standpunten(kopie["guid"])
+		self.assertNotEqual(sp["guid"], V1)
+		self.assertEqual(issues.reacties(kopie["guid"])[0]["viewpoint_guid"], sp["guid"])
+		self.assertEqual(issues.verwante(kopie["guid"]), [{"related_topic_guid": kopieen["Tweede"]["guid"]}])
+		self.assertEqual(len(issues.topics(self.project)), 2)
 
 	def test_een_kapot_bestand_geeft_een_foutcode(self):
 		bestand = upload(self.ruimte, "kapot.bcfzip", b"geen zip", map_naam=self.map)["bestand"]

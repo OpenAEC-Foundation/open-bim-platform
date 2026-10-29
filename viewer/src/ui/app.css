@@ -470,3 +470,7 @@ body {
   flex: 1;
   min-width: 0;
 }
+
+.model-list__koppeling {
+  grid-column: 1 / -1;
+}

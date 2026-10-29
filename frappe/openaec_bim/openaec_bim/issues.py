@@ -8,6 +8,7 @@ schrijfrecht op de modelmap heeft. Een gearchiveerde ruimte is alleen te lezen.
 
 import base64
 import binascii
+import copy
 import hashlib
 import json
 import re
@@ -797,9 +798,24 @@ def _importeer_topic(project, topic: dict, telling: dict) -> str | None:
 	return guid
 
 
+def _als_kopie(topic: dict) -> dict:
+	"""Het topic met nieuwe guids voor zichzelf, zijn standpunten en reacties (en de verwijzingen daartussen)."""
+	kopie = copy.deepcopy(topic)
+	kopie["guid"] = str(uuid.uuid4())
+	standpunten_ = {}
+	for sp in kopie.get("viewpoints") or []:
+		standpunten_[sp.get("guid")] = sp["guid"] = str(uuid.uuid4())
+	for r in kopie.get("comments") or []:
+		r["guid"] = str(uuid.uuid4())
+		if r.get("viewpoint_guid"):
+			r["viewpoint_guid"] = standpunten_.get(r["viewpoint_guid"])
+	return kopie
+
+
 def importeer(project, bestand: str) -> dict:
 	"""Lees een .bcfzip (2.1 of 3.0) uit Storage in het project: een bekende guid wordt bijgewerkt, een nieuwe gemaakt,
-	met de maker en datums uit het bestand. Alleen voor wie schrijfrecht op de modelmap heeft."""
+	met de maker en datums uit het bestand. Een topic dat al in een ander project staat, komt erin als kopie met een
+	nieuwe guid. Alleen voor wie schrijfrecht op de modelmap heeft."""
 	project = _project(project)
 	_vereis_meedoen(project)
 	if not _schrijver(project):
@@ -809,9 +825,16 @@ def importeer(project, bestand: str) -> dict:
 	except bcfzip.BcfOngeldig as fout:
 		_weiger(_("Dit is geen leesbaar BCF-bestand: {0}").format(fout), "bcfzip_ongeldig")
 	_vul_instellingen_aan(project, topics)
-	telling = {"nieuw": 0, "bijgewerkt": 0, "overgeslagen": 0, "toewijzingen_vervallen": 0}
+	telling = {"nieuw": 0, "bijgewerkt": 0, "gekopieerd": 0, "overgeslagen": 0, "toewijzingen_vervallen": 0}
 	verwant: dict[str, list[str]] = {}
+	kopieen: dict[str, str] = {}
 	for topic in topics:
+		elders = frappe.db.get_value(ISSUE, topic.get("guid"), "project") if topic.get("guid") else None
+		if elders and elders != project.name:
+			kopie = _als_kopie(topic)
+			kopieen[str(topic["guid"])] = kopie["guid"]
+			topic = kopie
+			telling["gekopieerd"] += 1
 		guid = _importeer_topic(project, topic, telling)
 		if guid:
 			verwant[guid] = [r.get("related_topic_guid") for r in topic.get("related_topics") or []]
@@ -819,7 +842,7 @@ def importeer(project, bestand: str) -> dict:
 	for guid, guids in verwant.items():
 		geldig = [
 			g
-			for g in dict.fromkeys(guids)
+			for g in dict.fromkeys(kopieen.get(str(g), g) for g in guids)
 			if g and g != guid and frappe.db.get_value(ISSUE, g, "project") == project.name
 		]
 		issue = frappe.get_doc(ISSUE, guid)

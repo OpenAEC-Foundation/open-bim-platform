@@ -115,5 +115,6 @@
   "botsing_afstand": "{{mm}} mm",
   "naar_issue": "Create issue",
   "heeft_issue": "Issue",
-  "issue_gemaakt": "Issue “{{titel}}” created."
+  "issue_gemaakt": "Issue “{{titel}}” created.",
+  "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again"
 }
