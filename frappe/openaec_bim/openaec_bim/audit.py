@@ -1,4 +1,5 @@
-"""Het auditlog: elke wijziging aan een BIM-project, issue, standpunt of reactie wordt een regel in BIM Auditregel.
+"""Het auditlog: elke wijziging aan een BIM-project, issue, standpunt, reactie, botsingsronde of botsing wordt een regel
+in BIM Auditregel (botsingen die een ronde in één keer aanmaakt niet: die staan in de ronde).
 
 De bron (de BCF-API, de werkplek) zet de aanroeper in `frappe.flags.bim_bron`; zonder bron is het `achtergrond`.
 Een eigen handeling (bijvoorbeeld `geïmporteerd`) zet de aanroeper op het document in `doc.flags.bim_handeling`.
@@ -19,8 +20,10 @@ KOP = ("tijd", "gebruiker", "handeling", "doctype", "object", "bron")
 def _project(doc) -> str | None:
 	if doc.doctype == "BIM Project":
 		return doc.name
-	if doc.doctype == "BIM Issue":
+	if doc.doctype in ("BIM Issue", "BIM Botsingsronde"):
 		return doc.project
+	if doc.doctype == "BIM Botsing":
+		return frappe.db.get_value("BIM Botsingsronde", doc.ronde, "project")
 	return frappe.db.get_value("BIM Issue", doc.get("issue"), "project")
 
 

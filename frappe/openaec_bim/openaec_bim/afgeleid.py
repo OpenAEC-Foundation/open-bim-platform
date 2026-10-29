@@ -58,23 +58,35 @@ def laatste(bestand: str, versie: int):
 	return frappe.get_doc(DOCTYPE, naam) if naam else None
 
 
-def start(bestand: str, versie: int):
-	"""Een nieuwe omzetting van deze versie: plek in de bucket, ondertekende adressen, taak bij de kern."""
+def getoonde_versie(bestand: str) -> int | None:
+	"""De versie die het project van dit bestand toont: de laatste die omgezet is."""
+	versie = frappe.db.get_value(DOCTYPE, {"bestand": bestand, "status": "klaar"}, "versie", order_by="versie desc")
+	return cint(versie) or None
+
+
+def bron(bestand: str, versie: int) -> dict:
+	"""Een ondertekend leesadres van de IFC van deze versie voor de kern, met grootte en (als bekend) sha256."""
 	gegevens = frappe.db.get_value(
 		"Bestandsversie", {"bestand": bestand, "volgnummer": cint(versie)}, ["s3_sleutel", "sha256", "grootte"], as_dict=True
 	)
 	if not gegevens or not gegevens.s3_sleutel:
 		frappe.throw(_("Versie bestaat niet"), frappe.DoesNotExistError)
+	uit = {"url": leesadres(gegevens.s3_sleutel, GELDIG_BRON), "grootte": cint(gegevens.grootte)}
+	sha256 = (gegevens.sha256 or "").lower()
+	if _SHA256.fullmatch(sha256):
+		uit["sha256"] = sha256
+	return uit
+
+
+def start(bestand: str, versie: int):
+	"""Een nieuwe omzetting van deze versie: plek in de bucket, ondertekende adressen, taak bij de kern."""
+	bron_ = bron(bestand, versie)
 	doc = frappe.get_doc({"doctype": DOCTYPE, "bestand": bestand, "versie": cint(versie), "status": "wacht"})
 	doc.insert(ignore_permissions=True)
 	doc.prefix = _s3()._met_prefix(f"bim/afgeleid/{bestand}/{cint(versie)}/{doc.name}")
-	bron = {"url": leesadres(gegevens.s3_sleutel, GELDIG_BRON), "grootte": cint(gegevens.grootte)}
-	sha256 = (gegevens.sha256 or "").lower()
-	if _SHA256.fullmatch(sha256):
-		bron["sha256"] = sha256
-	doelen = {naam: schrijfadres(f"{doc.prefix}/{naam}", GELDIG_DOEL) for naam in onderdelen(cint(gegevens.grootte))}
+	doelen = {naam: schrijfadres(f"{doc.prefix}/{naam}", GELDIG_DOEL) for naam in onderdelen(bron_["grootte"])}
 	try:
-		doc.kern_taak = kern.start_omzetten(bron, doelen)
+		doc.kern_taak = kern.start_omzetten(bron_, doelen)
 	except kern.KernFout as fout:
 		doc.status = "fout"
 		doc.fout = {"error_code": fout.code, "melding": str(fout)}
@@ -116,13 +128,14 @@ def bijwerken(doc) -> None:
 
 
 def volg_lopende() -> None:
-	"""Geplande taak: elke lopende omzetting en versiekoppeling bijwerken."""
-	from openaec_bim import koppeling
+	"""Geplande taak: elke lopende omzetting, versiekoppeling en botsingsronde bijwerken."""
+	from openaec_bim import botsingen, koppeling
 
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
 		bijwerken(frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
 	koppeling.volg_lopende()
+	botsingen.volg_lopende()
 
 
 def lees_object(sleutel: str) -> bytes:

@@ -8,13 +8,16 @@ app_license = "NOASSERTION"
 
 required_apps = ["frappe", "openaec_storage"]
 
-# Elke wijziging aan projecten, issues, standpunten en reacties komt in het auditlog (openaec_bim.audit).
+# Elke wijziging aan projecten, issues, standpunten, reacties en botsingen komt in het auditlog (openaec_bim.audit).
 _audit = {
 	"after_insert": "openaec_bim.audit.aangemaakt",
 	"on_update": "openaec_bim.audit.gewijzigd",
 	"on_trash": "openaec_bim.audit.verwijderd",
 }
-doc_events = {doctype: _audit for doctype in ("BIM Project", "BIM Issue", "BIM Standpunt", "BIM Reactie")}
+doc_events = {
+	doctype: _audit
+	for doctype in ("BIM Project", "BIM Issue", "BIM Standpunt", "BIM Reactie", "BIM Botsingsronde", "BIM Botsing")
+}
 
 # Lopende omzettingen bij de kern volgen, ook als niemand het project open heeft.
 scheduler_events = {"cron": {"* * * * *": ["openaec_bim.afgeleid.volg_lopende"]}}

@@ -249,9 +249,7 @@ def _elementen(issue) -> list[dict]:
 			uit.append({"ifc_guid": e.globalid, "bestand": e.bestand or None, "versie": None, "teruggevonden": False})
 			continue
 		if e.bestand not in getoond:
-			getoond[e.bestand] = frappe.db.get_value(
-				afgeleid.DOCTYPE, {"bestand": e.bestand, "status": "klaar"}, "versie", order_by="versie desc"
-			)
+			getoond[e.bestand] = afgeleid.getoonde_versie(e.bestand)
 		versie = cint(e.versie)
 		doel = cint(getoond[e.bestand]) or versie
 		gevonden = koppeling.huidig(e.bestand, e.globalid, versie, doel) if doel > versie else e.globalid

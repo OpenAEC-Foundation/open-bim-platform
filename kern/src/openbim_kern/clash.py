@@ -26,6 +26,7 @@ class ElementRef(BaseModel):
     sleutel: str
     versie: str
     globalid: str
+    klasse: str | None = None
 
 
 class Botsing(BaseModel):
@@ -65,7 +66,7 @@ def find_clashes(
         for m in models:
             for e in _elements(files[m.pad], m.klassen):
                 elements.append(e)
-                refs[e.GlobalId] = ElementRef(sleutel=m.sleutel, versie=m.versie, globalid=e.GlobalId)
+                refs[e.GlobalId] = ElementRef(sleutel=m.sleutel, versie=m.versie, globalid=e.GlobalId, klasse=e.is_a())
         return elements, refs
 
     elements_a, refs_a = side(set_a)

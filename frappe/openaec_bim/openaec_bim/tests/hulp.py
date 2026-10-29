@@ -16,6 +16,8 @@ INDEX = {"schema": "IFC4", "omzetter": "kern-0.1.0+fragments-3.6.0", "delen": [{
 
 BIM_DOCTYPES = (
 	"BIM Auditregel",
+	"BIM Botsing",
+	"BIM Botsingsronde",
 	"BIM Reactie",
 	"BIM Standpunt",
 	"BIM Issue",

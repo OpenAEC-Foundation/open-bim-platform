@@ -31,6 +31,11 @@ def test_duct_through_wall_is_a_hard_clash(ifc_small):
     assert hit.afstand == pytest.approx(0.2, abs=0.01)
 
 
+def test_each_element_carries_its_ifc_class(ifc_small):
+    found = find_clashes([model(ifc_small, ["IfcDuctSegment"])], [model(ifc_small, ["IfcWall"])], "hard", 0.0)
+    assert {(c.a.klasse, c.b.klasse) for c in found} == {("IfcDuctSegment", "IfcWall")}
+
+
 def test_tolerance_ignores_shallow_penetrations(ifc_small):
     assert find_clashes([model(ifc_small, ["IfcDuctSegment"])], [model(ifc_small, ["IfcWall"])], "hard", 1.0) == []
 
