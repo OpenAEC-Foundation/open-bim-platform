@@ -101,18 +101,24 @@ def _model(bestand: dict, discipline: str, doc) -> dict:
 def project(map: str) -> dict:
 	"""De modellen van een modelmap met hun stand. Een versie zonder omzetting wordt nu klaargezet bij de kern."""
 	map_doc = _modelmap(map)
-	modellen = []
+	stand = []
 	for bestand, discipline in ifc_in_map(map_doc):
 		versie = cint(bestand.huidige_versie)
 		doc = afgeleid.laatste(bestand.name, versie)
-		if doc is None:
-			doc = afgeleid.start(bestand.name, versie)
-		elif doc.status in ("wacht", "bezig"):
+		if doc and doc.status in ("wacht", "bezig"):
 			afgeleid.zonder_botsing(afgeleid.bijwerken, doc)
 		for lopend in frappe.get_all(
 			koppeling.DOCTYPE, {"bestand": bestand.name, "naar_versie": versie, "status": ("in", ("wacht", "bezig"))}, pluck="name"
 		):
 			afgeleid.zonder_botsing(koppeling.bijwerken, frappe.get_doc(koppeling.DOCTYPE, lopend))
+		stand.append((bestand, discipline, versie, doc))
+	# Pas na het bijwerken nieuw werk bij de kern starten: een bijwerking die MariaDB terugdraait (1020) neemt dan
+	# geen taak mee die dit verzoek al gestart had.
+	modellen = []
+	for bestand, discipline, versie, doc in stand:
+		if doc is None:
+			doc = afgeleid.start(bestand.name, versie)
+		koppeling.herstel(bestand.name)
 		modellen.append(_model(bestand, discipline, doc))
 	return {"project": map_doc.naam, "werkwijze": "bestanden", "modellen": modellen}
 

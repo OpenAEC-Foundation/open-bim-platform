@@ -140,6 +140,13 @@ def zonder_botsing(stap, *args) -> None:
 		except frappe.db.OperationalError:
 			# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid, en het savepoint met haar.
 			frappe.db.rollback()
+		# Het document in het geheugen kan al een stand hebben die niet is opgeslagen.
+		for doc in args:
+			if hasattr(doc, "reload") and getattr(doc, "name", None):
+				try:
+					doc.reload()
+				except frappe.DoesNotExistError:
+					pass
 
 
 def volg_lopende() -> None:

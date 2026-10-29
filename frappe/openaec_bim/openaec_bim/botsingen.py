@@ -126,6 +126,12 @@ def bijwerken(doc) -> None:
 		taak = {"status": "fout", "fout": {"error_code": "taak_onbekend", "melding": str(fout)}}
 	status = taak.get("status")
 	if status == "klaar":
+		if _wacht_op_koppeling(doc):
+			# De vorige ronde volgen kan pas als de koppeling er is: anders lijkt elke botsing opgelost.
+			if doc.status != "bezig":
+				doc.status = "bezig"
+				doc.save(ignore_permissions=True)
+			return
 		verwerk(doc.name)
 		doc.reload()
 		return
@@ -153,10 +159,26 @@ def _element(ref: dict) -> dict:
 	return {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
 
 
+def _wacht_op_koppeling(doc) -> bool:
+	"""Loopt er nog een koppeling tussen de versies van de vorige ronde en die van deze?"""
+	if not doc.vorige_ronde:
+		return False
+	vorige = json.loads(frappe.db.get_value(RONDE, doc.vorige_ronde, "bron_versies") or "{}")
+	for bestand, versie in json.loads(doc.bron_versies or "{}").items():
+		van = cint(vorige.get(bestand, versie))
+		if van < cint(versie) and not koppeling.volg(bestand, "", van, cint(versie))[1]:
+			if koppeling.keten_loopt(bestand, van, cint(versie)):
+				return True
+	return False
+
+
 def _gevolgd(element: dict, versies: dict) -> dict | None:
-	"""Het element in de versie van deze ronde, langs de versiekoppeling; None als het niet is teruggevonden."""
+	"""Het element in de versie van deze ronde, langs de versiekoppeling; None als het niet is teruggevonden. Is de
+	keten blijvend onvolledig (de koppeling is mislukt), dan dezelfde GlobalId: liever dat dan elke botsing opgelost."""
 	naar = cint(versies.get(element["bestand"], element["versie"]))
-	globalid = koppeling.huidig(element["bestand"], element["globalid"], cint(element["versie"]), naar)
+	globalid, compleet = koppeling.volg(element["bestand"], element["globalid"], cint(element["versie"]), naar)
+	if not compleet:
+		globalid = element["globalid"]
 	return None if globalid is None else {"bestand": element["bestand"], "versie": str(naar), "globalid": globalid}
 
 
@@ -170,8 +192,9 @@ def _vorige(doc, versies: dict) -> dict[str, tuple[dict, dict, dict]]:
 		nieuw_a, nieuw_b = _gevolgd(a, versies), _gevolgd(b, versies)
 		if nieuw_a and nieuw_b:
 			uit[_sleutel(nieuw_a, nieuw_b)] = (rij, nieuw_a, nieuw_b)
-		else:
-			uit[f"weg:{rij.sleutel}"] = (rij, a, b)  # een element is verdwenen: de botsing is opgelost
+		elif rij.status != "opgelost":
+			# Een element is verdwenen: de botsing is opgelost. Eén keer meegeven, daarna kan ze niet terugkomen.
+			uit[f"weg:{rij.sleutel}"] = (rij, a, b)
 	return uit
 
 

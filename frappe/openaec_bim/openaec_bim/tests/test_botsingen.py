@@ -44,13 +44,15 @@ class TestBotsingen(ProjectTest):
 		sleutel = "|".join(sorted((f"{self.constructie}:{a}", f"{self.installaties}:{b}")))
 		return frappe.get_doc("BIM Botsing", {"ronde": ronde, "sleutel": sleutel})
 
-	def nieuwe_versie_installaties(self, terugval=()):
+	def nieuwe_versie_installaties(self, terugval=(), niet_gevonden=(), klaar=True):
 		frappe.set_user(self.lid)
 		upload(self.ruimte, "installaties.ifc", b"ISO-10303-21; i2", map_naam=self.map, basis_versie=1)
 		self.model_klaar(self.installaties, 2)
 		k = frappe.get_last_doc(koppeling_mod.DOCTYPE, {"bestand": self.installaties})
-		self.kern.taken[k.kern_taak] = uitkomst(terugval=terugval)
-		koppeling_mod.bijwerken(k)
+		if klaar:
+			self.kern.taken[k.kern_taak] = uitkomst(terugval=terugval, niet_gevonden=niet_gevonden)
+			koppeling_mod.bijwerken(k)
+		return k
 
 	def test_ronde_start_met_de_versies_van_nu(self):
 		ronde = self.start()
@@ -128,6 +130,38 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual({c["ifc_guid"] for c in sp["components"]["selection"]}, {"w1", "k1"})
 		self.assertEqual(frappe.db.get_value("BIM Botsing", b.name, "issue"), t["guid"])
 		self.assertNotIn("/v1/tools/eigenschappen", [pad for _m, pad, _j in self.kern.verzoeken])
+
+	def test_een_ronde_wacht_op_een_koppeling_die_nog_loopt(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		botsingen.zet_status(self.botsing(eerste, "w1", "k1").name, "genegeerd")
+		k = self.nieuwe_versie_installaties(klaar=False)
+		tweede = self.ronde_met([("w1", "k2")])
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", tweede, "status"), "bezig")
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": tweede}), 0)
+		self.kern.taken[k.kern_taak] = uitkomst(terugval=[("k1", "k2")])
+		koppeling_mod.bijwerken(k)
+		botsingen.bijwerken(frappe.get_doc("BIM Botsingsronde", tweede))
+		self.assertEqual(self.botsing(tweede, "w1", "k2").status, "genegeerd")
+
+	def test_een_kapotte_keten_volgt_de_botsingen_op_globalid(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		botsingen.zet_status(self.botsing(eerste, "w1", "k1").name, "genegeerd")
+		k = self.nieuwe_versie_installaties(klaar=False)
+		self.kern.taken[k.kern_taak] = {"status": "fout", "fout": {"error_code": "interne_fout", "melding": "kapot"}}
+		koppeling_mod.bijwerken(k)
+		for _ in range(koppeling_mod.MAX_POGINGEN - 1):
+			frappe.get_doc({**k.as_dict(), "name": None, "status": "fout", "kern_taak": None}).insert(ignore_permissions=True)
+		tweede = self.ronde_met([("w1", "k1")])
+		b = self.botsing(tweede, "w1", "k1")
+		self.assertEqual((b.status, json.loads(b.element_b)["versie"]), ("genegeerd", "2"))
+
+	def test_een_verdwenen_element_gaat_een_keer_mee_als_opgelost(self):
+		self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		self.nieuwe_versie_installaties(niet_gevonden=["k2"])
+		tweede = self.ronde_met([("w1", "k1")])
+		self.assertEqual(self.botsing(tweede, "w2", "k2").status, "opgelost")
+		derde = self.ronde_met([("w1", "k1")])
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": derde}), 1)
 
 	def test_een_issue_van_een_botsing_kan_verwijderd_worden(self):
 		eerste = self.ronde_met([("w1", "k1")])

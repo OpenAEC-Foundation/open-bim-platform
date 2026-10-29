@@ -40,6 +40,28 @@ class TestApi(IntegrationTestCase):
 	def maak_klaar(self, bestand, frag=b"FRAG!", sqlite=b"SQLITE"):
 		return maak_klaar(self.kern, bestand, frag=frag, sqlite=sqlite)
 
+	def test_project_werkt_eerst_bij_en_start_daarna(self):
+		# Een teruggedraaide bijwerking (MariaDB 1020) mag geen omzetting wissen die dit verzoek al startte.
+		afgeleid.start(self.wand, 1)
+		volgorde = []
+		echt_start = afgeleid.start
+		with (
+			patch.object(afgeleid, "bijwerken", side_effect=lambda doc: volgorde.append("bijwerken")),
+			patch.object(afgeleid, "start", side_effect=lambda *a: volgorde.append("start") or echt_start(*a)),
+		):
+			api.project(map=self.map)
+		self.assertEqual(volgorde, ["bijwerken", "start"])
+
+	def test_na_een_terugdraai_toont_het_document_de_opgeslagen_stand(self):
+		doc = afgeleid.start(self.wand, 1)
+
+		def half(d):
+			d.status = "klaar"
+			raise frappe.QueryDeadlockError("1020")
+
+		afgeleid.zonder_botsing(half, doc)
+		self.assertEqual(doc.status, "wacht")
+
 	def test_project_overleeft_een_gelijktijdige_bijwerking(self):
 		# De viewer vraagt het project elke paar seconden, ook terwijl de planner dezelfde omzetting bijwerkt: dan
 		# botst het opslaan (MariaDB 1020 of een verouderde tijdstempel). Die keer slaat het project dat over.

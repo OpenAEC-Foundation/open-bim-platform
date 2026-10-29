@@ -117,3 +117,20 @@ def test_a_removed_and_a_new_element_with_the_same_name_are_not_linked(ifc_small
     k = link_versions(db_v1, index(v1, tmp_path, "v2"))
     assert gid in k.niet_gevonden
     assert all(p.van != gid for p in k.terugval)
+
+
+def test_an_index_without_the_identity_table_asks_for_a_new_conversion(ifc_small, tmp_path):
+    import sqlite3
+
+    from openbim_kern.errors import KernError
+
+    v1 = ifcopenshell.open(str(ifc_small))
+    oud, nieuw = index(v1, tmp_path, "v1"), index(v1, tmp_path, "v2")
+    with sqlite3.connect(oud) as con:
+        con.execute("DROP TABLE identiteit")
+    with pytest.raises(KernError) as fout:
+        link_versions(oud, nieuw)
+    assert fout.value.error_code == "vorige_index_verouderd"
+    with pytest.raises(KernError) as fout:
+        link_versions(nieuw, oud)
+    assert fout.value.error_code == "nieuwe_index_verouderd"

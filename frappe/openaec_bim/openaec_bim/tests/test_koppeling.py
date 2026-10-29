@@ -1,5 +1,6 @@
 import hashlib
 import json
+from unittest.mock import patch
 
 import frappe
 from openaec_storage.tests.hulp import upload
@@ -73,6 +74,37 @@ class TestKoppeling(ProjectTest):
 		self.kern.taken[k.kern_taak] = {"status": "fout", "fout": {"error_code": "index_ongeldig", "melding": "kapot"}}
 		koppeling_mod.bijwerken(k)
 		self.assertEqual((k.status, json.loads(k.fout)["error_code"]), ("fout", "index_ongeldig"))
+
+	def test_een_koppeling_na_een_storing_van_de_kern_wordt_hersteld(self):
+		from openaec_bim.kern import KernFout
+
+		with patch("openaec_bim.kern.start_koppelen", side_effect=KernFout("kern_onbereikbaar", "weg")):
+			k = self.tweede_versie()
+		self.assertEqual(k.status, "fout")
+		koppeling_mod.herstel(self.constructie)
+		pogingen = frappe.get_all(koppeling_mod.DOCTYPE, {"bestand": self.constructie}, ["status"], order_by="creation asc")
+		self.assertEqual([p.status for p in pogingen], ["fout", "wacht"])
+		# Ook de tweede poging mislukt, en daarna elke nieuwe: na MAX_POGINGEN houdt het op.
+		tweede = frappe.get_last_doc(koppeling_mod.DOCTYPE, {"bestand": self.constructie})
+		self.kern.taken[tweede.kern_taak] = {"status": "fout", "fout": {"error_code": "interne_fout", "melding": "kapot"}}
+		koppeling_mod.bijwerken(tweede)
+		with patch("openaec_bim.kern.start_koppelen", side_effect=KernFout("kern_onbereikbaar", "weg")):
+			for _ in range(5):
+				koppeling_mod.herstel(self.constructie)
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.constructie}), koppeling_mod.MAX_POGINGEN)
+
+	def test_een_verouderde_index_wordt_opnieuw_omgezet_en_dan_gekoppeld(self):
+		k = self.tweede_versie()
+		self.kern.taken[k.kern_taak] = {"status": "fout", "fout": {"error_code": "vorige_index_verouderd", "melding": "oud"}}
+		koppeling_mod.bijwerken(k)
+		koppeling_mod.herstel(self.constructie)
+		self.assertEqual(frappe.db.count(afgeleid.DOCTYPE, {"bestand": self.constructie, "versie": 1}), 2)
+		koppeling_mod.herstel(self.constructie)
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.constructie}), 1)
+		self.model_klaar(self.constructie, 1)
+		koppeling_mod.herstel(self.constructie)
+		laatste = frappe.get_last_doc(koppeling_mod.DOCTYPE, {"bestand": self.constructie})
+		self.assertEqual((laatste.status, laatste.van_versie, laatste.naar_versie), ("wacht", 1, 2))
 
 	def test_huidig_volgt_de_keten(self):
 		self.maak(1, 2, terugval=[("a1", "a2")])

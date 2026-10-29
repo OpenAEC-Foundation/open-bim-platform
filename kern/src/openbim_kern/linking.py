@@ -16,6 +16,8 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
+from .errors import KernError
+
 
 class Paar(BaseModel):
     van: str
@@ -30,9 +32,17 @@ class Koppeling(BaseModel):
     matchrate: float
 
 
-def _identities(db: Path) -> dict[str, tuple]:
+def _identities(db: Path, rol: str) -> dict[str, tuple]:
     with closing(sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)) as con:
-        rows = con.execute("SELECT globalid, ifc_class, type_name, name, storey_name, x, y, z FROM identiteit")
+        try:
+            rows = con.execute("SELECT globalid, ifc_class, type_name, name, storey_name, x, y, z FROM identiteit")
+        except sqlite3.OperationalError as fout:
+            # An index of a conversion from before the identity table: the version has to be converted again.
+            raise KernError(
+                f"{rol}_index_verouderd",
+                f"De index van de {rol} versie heeft geen identiteitstabel.",
+                f"Zet de {rol} versie opnieuw om en koppel daarna opnieuw.",
+            ) from fout
         return {gid: rest for gid, *rest in rows}
 
 
@@ -51,7 +61,7 @@ def _match_unique(
 
 
 def link_versions(old_db: Path, new_db: Path) -> Koppeling:
-    old, new = _identities(old_db), _identities(new_db)
+    old, new = _identities(old_db, "vorige"), _identities(new_db, "nieuwe")
     on_globalid = old.keys() & new.keys()
     old_left = {g: v for g, v in old.items() if g not in on_globalid}
     new_left = {g: v for g, v in new.items() if g not in on_globalid}

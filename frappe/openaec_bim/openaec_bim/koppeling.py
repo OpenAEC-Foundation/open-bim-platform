@@ -8,11 +8,14 @@ import json
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, get_datetime
 
 from openaec_bim import afgeleid, kern
 
 DOCTYPE = "BIM Versiekoppeling"
+MAX_POGINGEN = 3
+# Een index van vóór de identiteitstabel: die versie eerst opnieuw omzetten (veld met de versie).
+INDEX_VEROUDERD = {"vorige_index_verouderd": "van_versie", "nieuwe_index_verouderd": "naar_versie"}
 
 
 def _bron(omzetting) -> dict:
@@ -85,6 +88,50 @@ def volg_lopende() -> None:
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
 		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
+	herstel()
+	frappe.db.commit()
+
+
+def _pogingen(paar: dict) -> int:
+	return frappe.db.count(DOCTYPE, paar)
+
+
+def herstel(bestand: str | None = None) -> None:
+	"""Een mislukte koppeling opnieuw: na een storing meteen, bij een verouderde index na een nieuwe omzetting van die
+	versie; hoogstens MAX_POGINGEN keer per paar versies. Anders blijft een keten voorgoed onvolledig."""
+	filters = {"status": "fout", **({"bestand": bestand} if bestand else {})}
+	for k in frappe.get_all(
+		DOCTYPE, filters, ["name", "bestand", "van_versie", "naar_versie", "fout", "creation"], order_by="creation desc"
+	):
+		paar = {"bestand": k.bestand, "van_versie": k.van_versie, "naar_versie": k.naar_versie}
+		if frappe.db.get_value(DOCTYPE, paar, "name", order_by="creation desc") != k.name or _pogingen(paar) >= MAX_POGINGEN:
+			continue  # er is al een nieuwere poging, of het is genoeg geweest
+		code = (json.loads(k.fout) if k.fout else {}).get("error_code")
+		if code in INDEX_VEROUDERD:
+			versie = cint(k[INDEX_VEROUDERD[code]])
+			omzetting = afgeleid.laatste(k.bestand, versie)
+			if omzetting is None:
+				continue
+			if get_datetime(omzetting.creation) <= get_datetime(k.creation):
+				if omzetting.status == "klaar":
+					afgeleid.start(k.bestand, versie)  # een nieuwe index, met de identiteitstabel
+				continue
+			if omzetting.status != "klaar":
+				continue  # de nieuwe omzetting loopt nog
+		start(k.bestand, cint(k.van_versie), cint(k.naar_versie))
+
+
+def keten_loopt(bestand: str, van_versie: int, naar_versie: int) -> bool:
+	"""Komt er nog een koppeling tussen deze versies (een koppeling of omzetting loopt, of een herstel volgt)?"""
+	versies = ("between", [cint(van_versie), cint(naar_versie)])
+	if frappe.db.exists(DOCTYPE, {"bestand": bestand, "naar_versie": versies, "status": ("in", ("wacht", "bezig"))}):
+		return True
+	if frappe.db.exists(afgeleid.DOCTYPE, {"bestand": bestand, "versie": versies, "status": ("in", ("wacht", "bezig"))}):
+		return True
+	for k in frappe.get_all(DOCTYPE, {"bestand": bestand, "naar_versie": versies, "status": "fout"}, ["van_versie", "naar_versie"]):
+		if _pogingen({"bestand": bestand, "van_versie": k.van_versie, "naar_versie": k.naar_versie}) < MAX_POGINGEN:
+			return True
+	return False
 
 
 def naar(bestand: str, versie: int) -> dict | None:
@@ -113,6 +160,12 @@ def _kaart(site: str, naam: str) -> tuple[dict[str, str], frozenset[str]]:
 def huidig(bestand: str, globalid: str, van_versie: int, naar_versie: int) -> str | None:
 	"""De GlobalId van dit element in een latere versie, langs de keten van klare koppelingen; None als het element
 	onderweg niet is teruggevonden of de keten nog niet compleet is."""
+	gevonden, compleet = volg(bestand, globalid, van_versie, naar_versie)
+	return gevonden if compleet else None
+
+
+def volg(bestand: str, globalid: str, van_versie: int, naar_versie: int) -> tuple[str | None, bool]:
+	"""(GlobalId in de latere versie of None als het element niet is teruggevonden, of de keten compleet is)."""
 	versie, naar_versie = cint(van_versie), cint(naar_versie)
 	while versie < naar_versie:
 		stap = frappe.db.get_value(
@@ -123,10 +176,10 @@ def huidig(bestand: str, globalid: str, van_versie: int, naar_versie: int) -> st
 			order_by="naar_versie desc",
 		)
 		if not stap:
-			return None
+			return None, False
 		terugval, niet_gevonden = _kaart(frappe.local.site, stap.name)
 		if globalid in niet_gevonden:
-			return None
+			return None, True
 		globalid = terugval.get(globalid, globalid)
 		versie = cint(stap.naar_versie)
-	return globalid if versie == naar_versie else None
+	return (globalid, True) if versie == naar_versie else (None, False)
