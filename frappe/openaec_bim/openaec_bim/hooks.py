@@ -21,3 +21,7 @@ doc_events = {
 
 # Lopende omzettingen bij de kern volgen, ook als niemand het project open heeft.
 scheduler_events = {"cron": {"* * * * *": ["openaec_bim.afgeleid.volg_lopende"]}}
+
+# De BCF-API 3.0 en de Foundation API (/bcf/3.0/..., /foundation/...): alle methoden, ook PUT en DELETE, die
+# Frappe buiten /api/ niet naar een paginarenderer stuurt (openaec_bim.bcf_api.renderer).
+before_request = ["openaec_bim.bcf_api.renderer.voor_verzoek"]
