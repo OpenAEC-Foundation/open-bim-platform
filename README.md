@@ -151,5 +151,6 @@ Dit start de kern op poort 8730 en de werker, uit dezelfde image, met de wachtri
 | `OPENBIM_TIJD_GRENS_S` | max(300 s, 1800 s per GB) | tijdslimiet per omzetproces |
 | `OPENBIM_RIJ_OMZETTEN` | `1` | gelijktijdige taken in de rij `omzetten` |
 | `OPENBIM_RIJ_LICHT` | `4` | gelijktijdige taken in de rij `licht` |
+| `OPENBIM_RIJ_BOTSING` | `1` | gelijktijdige taken in de rij `botsing` (botsingscontrole) |
 
 Onderdeel van de [OpenAEC Foundation](https://github.com/OpenAEC-Foundation). Build free. Build together.

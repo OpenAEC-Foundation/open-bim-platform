@@ -14,6 +14,7 @@ from .calls import SITE_HEADER, call_tool, get_spec, is_authorized, unauthorized
 from .errors import KernError
 from .jobs.store import JobStore, default_store
 from .mcp_server import McpEndpoint
+from .tools import botsingen as _botsingen  # noqa: F401  (registers the tool)
 from .tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
 from .tools import koppelen as _koppelen  # noqa: F401  (registers the tool)
 from .tools import omzetten as _omzetten  # noqa: F401  (registers the tool)

@@ -16,6 +16,7 @@ import psutil
 
 from ..errors import KernError
 from ..processes import kill_tree
+from ..tools import botsingen as _botsingen  # noqa: F401  (registers the tool)
 from ..tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
 from ..tools import koppelen as _koppelen  # noqa: F401  (registers the tool)
 from ..tools import omzetten as _omzetten  # noqa: F401  (registers the tool)
@@ -26,10 +27,12 @@ POLL_S = 0.2
 
 
 def queues_from_env() -> dict[str, int]:
-    """Concurrent jobs per queue: OPENBIM_RIJ_OMZETTEN (default 1) and OPENBIM_RIJ_LICHT (default 4)."""
+    """Concurrent jobs per queue: OPENBIM_RIJ_OMZETTEN (default 1), OPENBIM_RIJ_LICHT (default 4) and
+    OPENBIM_RIJ_BOTSING (default 1)."""
     return {
         "omzetten": int(os.environ.get("OPENBIM_RIJ_OMZETTEN", 1)),
         "licht": int(os.environ.get("OPENBIM_RIJ_LICHT", 4)),
+        "botsing": int(os.environ.get("OPENBIM_RIJ_BOTSING", 1)),
     }
 
 
