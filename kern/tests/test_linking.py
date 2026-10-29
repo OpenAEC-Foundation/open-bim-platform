@@ -102,3 +102,18 @@ def test_koppelen_is_a_long_tool(client, auth, store, httpserver, ifc_small, tmp
     job = client.get(f"/v1/taken/{r.json()['taak']}", headers=auth).json()
     assert job["status"] == "klaar", job
     assert job["uitkomst"]["matchrate"] == 1.0
+
+
+def test_a_removed_and_a_new_element_with_the_same_name_are_not_linked(ifc_small, tmp_path):
+    v1 = ifcopenshell.open(str(ifc_small))
+    for wall in walls(v1):
+        wall.Name = "Wand"
+    db_v1 = index(v1, tmp_path, "v1")
+    removed = walls(v1)[-1]
+    gid = removed.GlobalId
+    ifcopenshell.api.run("root.remove_product", v1, product=removed)
+    nieuw = ifcopenshell.api.run("root.copy_class", v1, product=walls(v1)[0])
+    move(v1, nieuw, 3.0)
+    k = link_versions(db_v1, index(v1, tmp_path, "v2"))
+    assert gid in k.niet_gevonden
+    assert all(p.van != gid for p in k.terugval)

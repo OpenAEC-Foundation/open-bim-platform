@@ -2,8 +2,9 @@
 
 First on GlobalId; for what is left, a fallback on the identity table of the index (openbim_kern.index.identity):
 class, type, name, storey and placement origin, then class, type and name (an element that moved). A fallback key
-links only when it occurs exactly once among the remaining elements of both versions: identical elements are not
-guessed. The match rate is the share of the previous version's elements that was found back.
+links only when it occurs exactly once in each whole version: identical elements are not guessed, and a removed
+element is not linked to a new one that happens to share its name. The match rate is the share of the previous
+version's elements that was found back.
 """
 
 from __future__ import annotations
@@ -35,10 +36,12 @@ def _identities(db: Path) -> dict[str, tuple]:
         return {gid: rest for gid, *rest in rows}
 
 
-def _match_unique(old: dict[str, tuple], new: dict[str, tuple], key) -> list[Paar]:
-    """Pairs whose key occurs exactly once among the remaining elements of both versions."""
-    old_keys = Counter(key(v) for v in old.values())
-    new_keys = Counter(key(v) for v in new.values())
+def _match_unique(
+    old: dict[str, tuple], new: dict[str, tuple], key, old_all: dict[str, tuple], new_all: dict[str, tuple]
+) -> list[Paar]:
+    """Pairs of remaining elements whose key occurs exactly once in each whole version."""
+    old_keys = Counter(key(v) for v in old_all.values())
+    new_keys = Counter(key(v) for v in new_all.values())
     new_by_key = {key(v): gid for gid, v in new.items() if new_keys[key(v)] == 1}
     return [
         Paar(van=gid, naar=new_by_key[key(v)])
@@ -54,7 +57,7 @@ def link_versions(old_db: Path, new_db: Path) -> Koppeling:
     new_left = {g: v for g, v in new.items() if g not in on_globalid}
     fallback: list[Paar] = []
     for key in (lambda v: tuple(v), lambda v: tuple(v[:3])):
-        pairs = _match_unique(old_left, new_left, key)
+        pairs = _match_unique(old_left, new_left, key, old, new)
         fallback += pairs
         for pair in pairs:
             del old_left[pair.van]
