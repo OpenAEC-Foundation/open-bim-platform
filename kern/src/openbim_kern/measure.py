@@ -2,7 +2,8 @@
 
 Each file is converted in its own process with the conversion of the tool `omzetten` (convert_model), so the peak
 memory of IfcOpenShell is measured per file. The output lands in <map>/.afgeleid/ in the layout of the local server,
-so `openbim-kern lokaal <map>` and the viewer can open the folder without converting again.
+so `openbim-kern lokaal <map>` and the viewer can open the folder without converting again. With `compare` the
+cleaned IFC is compared with the source in IfcOpenShell (openbim_kern.compare), after the peak of the index is read.
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from typing import Any
 import psutil
 
 from . import CONVERTER_VERSION
+from .compare import model_differences
 from .local.server import DERIVED, derived_rel, model_files
 from .tools.omzetten import convert_model, own_peak_rss
 
@@ -39,6 +41,7 @@ def measure(
     log: Any = None,
     rows_path: Path | None = None,
     resume: bool = False,
+    compare: bool = False,
 ) -> list[dict[str, Any]]:
     """Convert every model in the folder and return one row per file.
 
@@ -63,7 +66,7 @@ def measure(
         (root / DERIVED).mkdir(exist_ok=True)
         work = Path(tempfile.mkdtemp(prefix=".meting-", dir=root / DERIVED))
         try:
-            outcome = _run_child(context, ifc, work)
+            outcome = _run_child(context, ifc, work, compare)
             if outcome["ok"]:
                 target.mkdir(parents=True, exist_ok=True)
                 for name in outcome["files"]:
@@ -74,9 +77,13 @@ def measure(
                     seconden=outcome["seconden"],
                     fasen=outcome["fasen"],
                     piek_omzetter=outcome["piek_omzetter"],
+                    pieken=outcome["pieken"],
                     piek_index=outcome["piek_index"],
                     sqlite_bytes=(target / "eigenschappen.sqlite").stat().st_size,
+                    opschonen=outcome["opschonen"],
                 )
+                if "verschillen" in outcome:
+                    row["verschillen"] = outcome["verschillen"]
             else:
                 row["fout"] = outcome["fout"]
         finally:
@@ -103,9 +110,9 @@ def _write_rows(rows_path: Path, rows: list[dict[str, Any]]) -> None:
     os.replace(tmp, rows_path)
 
 
-def _run_child(context: Any, ifc: Path, work: Path) -> dict[str, Any]:
+def _run_child(context: Any, ifc: Path, work: Path, compare: bool = False) -> dict[str, Any]:
     results = context.Queue()
-    process = context.Process(target=_measure_one, args=(str(ifc), str(work), results))
+    process = context.Process(target=_measure_one, args=(str(ifc), str(work), results, compare))
     process.start()
     try:
         while True:
@@ -118,22 +125,26 @@ def _run_child(context: Any, ifc: Path, work: Path) -> dict[str, Any]:
         process.join()
 
 
-def _measure_one(ifc: str, work: str, results: Any) -> None:
+def _measure_one(ifc: str, work: str, results: Any, compare: bool = False) -> None:
     """Body of the measuring process."""
     t0 = time.monotonic()
     try:
         converted = convert_model(Path(ifc), Path(work))
-        results.put(
-            {
-                "ok": True,
-                "seconden": time.monotonic() - t0,
-                "fasen": converted.seconds,
-                "piek_omzetter": converted.peak_rss,
-                "piek_index": own_peak_rss(),
-                "delen": [d.model_dump() for d in converted.delen],
-                "files": converted.files,
-            }
-        )
+        outcome = {
+            "ok": True,
+            "seconden": time.monotonic() - t0,
+            "fasen": converted.seconds,
+            "piek_omzetter": converted.peak_rss,
+            "pieken": converted.peaks,
+            "piek_index": own_peak_rss(),
+            "opschonen": converted.cleaning,
+            "delen": [d.model_dump() for d in converted.delen],
+            "files": converted.files,
+        }
+        cleaned = Path(work) / "opgeschoond.ifc"
+        if compare and cleaned.is_file():
+            outcome["verschillen"] = model_differences(Path(ifc), cleaned)
+        results.put(outcome)
     except Exception as exc:  # noqa: BLE001 - every failure becomes a row in the report
         results.put({"ok": False, "fout": f"{type(exc).__name__}: {exc}"})
 
@@ -171,19 +182,19 @@ def render(rows: list[dict[str, Any]], root: Path) -> str:
         f"- Datum: {datetime.now().isoformat(timespec='minutes')}",
         "",
         "| bestand | MB IFC | MB .frag | MB index | s | piek omzetter (MB) | piek IfcOpenShell (MB) | delen "
-        "| s splitsen | s fragments | s index |",
-        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "| s opschonen | s splitsen | s fragments | s index |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for r in rows:
         if "fout" in r:
-            lines.append(f"| `{r['bestand']}` | {r['ifc_bytes'] / MB:.0f} | fout: {r['fout']} |||||||||")
+            lines.append(f"| `{r['bestand']}` | {r['ifc_bytes'] / MB:.0f} | fout: {r['fout']} ||||||||||")
             continue
         f = r["fasen"]
         lines.append(
             f"| `{r['bestand']}` | {r['ifc_bytes'] / MB:.0f} | {r['frag_bytes'] / MB:.1f} "
             f"| {r['sqlite_bytes'] / MB:.1f} "
             f"| {r['seconden']:.1f} | {r['piek_omzetter'] / MB:.0f} | {r['piek_index'] / MB:.0f} | {r['delen']} "
-            f"| {f['splitsen']:.1f} | {f['fragments']:.1f} | {f['index']:.1f} |"
+            f"| {f.get('opschonen', 0):.1f} | {f['splitsen']:.1f} | {f['fragments']:.1f} | {f['index']:.1f} |"
         )
     if ok:
         lines.append(
@@ -191,9 +202,11 @@ def render(rows: list[dict[str, Any]], root: Path) -> str:
             f"| {sum(r['sqlite_bytes'] for r in ok) / MB:.1f} | {sum(r['seconden'] for r in ok):.1f} "
             f"| {max(r['piek_omzetter'] for r in ok) / MB:.0f} (max) "
             f"| {max(r['piek_index'] for r in ok) / MB:.0f} (max) "
-            f"| {sum(r['delen'] for r in ok)} | {sum(r['fasen']['splitsen'] for r in ok):.1f} "
+            f"| {sum(r['delen'] for r in ok)} | {sum(r['fasen'].get('opschonen', 0) for r in ok):.1f} "
+            f"| {sum(r['fasen']['splitsen'] for r in ok):.1f} "
             f"| {sum(r['fasen']['fragments'] for r in ok):.1f} | {sum(r['fasen']['index'] for r in ok):.1f} |"
         )
+    lines += _cleaning_table(ok)
     lines += [
         "",
         f"Geschatte browserpost ({BYTES_PER_FRAGMENTS_BYTE} × .frag): "
@@ -206,6 +219,41 @@ def render(rows: list[dict[str, Any]], root: Path) -> str:
     if failed:
         lines += ["", f"{len(failed)} bestand(en) konden niet worden omgezet; zie de tabel."]
     return "\n".join(lines) + "\n"
+
+
+def _cleaning_table(rows: list[dict[str, Any]]) -> list[str]:
+    """What cleaning did per file, with the peak memory of cleaning and splitting."""
+    rows = [r for r in rows if "opschonen" in r]
+    if not rows:
+        return []
+    lines = [
+        "",
+        "Opschonen (verliesvrij: dubbele records samengevoegd, verweesde weggelaten):",
+        "",
+        "| bestand | MB voor | MB na | records voor | records na | samengevoegd | verweesd | piek opschonen (MB) "
+        "| piek splitsen (MB) | inhoud | meest samengevoegd |",
+        "|---|---:|---:|---:|---:|---:|---:|---:|---:|---|---|",
+    ]
+    for r in rows:
+        c = r["opschonen"]
+        peaks = r.get("pieken", {})
+        split = f"{peaks['splitsen'] / MB:.0f}" if peaks.get("splitsen") else "-"
+        if "overgeslagen" in c:
+            lines.append(f"| `{r['bestand']}` | overgeslagen: {c['overgeslagen']} ||||||| {split} |||")
+            continue
+        top = ", ".join(f"{k} {v}" for k, v in list(c["per_klasse_samengevoegd"].items())[:3])
+        lines.append(
+            f"| `{r['bestand']}` | {c['bytes_voor'] / MB:.0f} | {c['bytes_na'] / MB:.0f} | {c['regels_voor']} "
+            f"| {c['regels_na']} | {c['samengevoegd']} | {c['verweesd']} | {peaks.get('opschonen', 0) / MB:.0f} "
+            f"| {split} | {_compared(r)} | {top} |"
+        )
+    return lines
+
+
+def _compared(row: dict[str, Any]) -> str:
+    if "verschillen" not in row:
+        return "niet vergeleken"
+    return "gelijk" if not row["verschillen"] else f"{len(row['verschillen'])} verschillen"
 
 
 def _setting(name: str, default: int) -> str:

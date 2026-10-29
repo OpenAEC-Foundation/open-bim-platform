@@ -77,7 +77,7 @@ def test_measure_report(tmp_path):
     folder = tmp_path / "Project"
     sources = models.project_folder(folder)
     report = tmp_path / "rapport.md"
-    load("measure").main([str(folder), "--uit", str(report)])
+    load("measure").main([str(folder), "--uit", str(report), "--vergelijk"])
 
     text = report.read_text(encoding="utf-8")
     assert "| bestand |" in text and "wand model.ifc" in text and "kanaal één.ifc" in text
@@ -85,6 +85,10 @@ def test_measure_report(tmp_path):
     rows = json.loads(report.with_suffix(".json").read_text(encoding="utf-8"))
     assert {r["bestand"] for r in rows} == {"Constructie/wand model.ifc", "Installaties/kanaal één.ifc"}
     assert all(r["frag_bytes"] > 0 and r["seconden"] > 0 and r["piek_index"] > 0 for r in rows)
+    # Cleaning: what it did, its peak memory, and the check that the cleaned model has the same content.
+    assert all(r["opschonen"]["regels_na"] < r["opschonen"]["regels_voor"] for r in rows)
+    assert all(r["pieken"]["opschonen"] > 0 and r["fasen"]["opschonen"] > 0 for r in rows)
+    assert all(r["verschillen"] == [] for r in rows) and text.count("| gelijk |") == 2
 
     # A second run with --hervat takes the rows over instead of converting again.
     load("measure").main([str(folder), "--uit", str(report), "--hervat"])
