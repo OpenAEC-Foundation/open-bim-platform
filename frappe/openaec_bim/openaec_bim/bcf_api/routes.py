@@ -20,6 +20,12 @@ OAUTH_AUTORISEER = "/api/method/frappe.integrations.oauth2.authorize"
 OAUTH_TOKEN = "/api/method/frappe.integrations.oauth2.get_token"
 
 
+class InGebruik(frappe.ValidationError):
+	"""Het object is nog in gebruik (een standpunt met een reactie): 409."""
+
+	http_status_code = 409
+
+
 @dataclass(frozen=True)
 class Route:
 	methode: str
@@ -238,3 +244,101 @@ def reactie_wijzig(lichaam, project, guid, reactie):
 def reactie_verwijder(_lichaam, project, guid, reactie):
 	issues.reactie_verwijder(_topic(project, guid), reactie)
 	return 200, None
+
+
+# --- standpunten ---
+
+
+def _standpunt_json(standpunt: dict, guid: str) -> dict:
+	"""Een viewpoint zoals GET het geeft: zonder onderdelen (die hebben eigen paden) en zonder bitmapdata."""
+	uit = {k: v for k, v in standpunt.items() if k != "components"}
+	if uit.get("bitmaps"):
+		uit["bitmaps"] = [{k: v for k, v in b.items() if k != "bitmap_data"} for b in uit["bitmaps"]]
+	mag = frappe.db.get_value(issues.STANDPUNT, standpunt["guid"], "owner") == frappe.session.user or (
+		"update" in issues.topic(guid)["authorization"]["topic_actions"]
+	)
+	uit["authorization"] = {"viewpoint_actions": ["delete"] if mag else []}
+	return uit
+
+
+def _onderdelen(project, guid, vp) -> dict:
+	return issues.standpunt(_topic(project, guid), vp).get("components") or {}
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints")
+def standpunten(_lichaam, project, guid):
+	return 200, [_standpunt_json(s, guid) for s in issues.standpunten(_topic(project, guid))]
+
+
+@route("POST", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints")
+def standpunt_maak(lichaam, project, guid):
+	return 201, _standpunt_json(issues.standpunt_maak(_topic(project, guid), _object(lichaam)), guid)
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}")
+def standpunt(_lichaam, project, guid, vp):
+	return 200, _standpunt_json(issues.standpunt(_topic(project, guid), vp), guid)
+
+
+@route("DELETE", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}")
+def standpunt_verwijder(_lichaam, project, guid, vp):
+	issues.standpunt(_topic(project, guid), vp)
+	if frappe.db.exists(issues.REACTIE, {"issue": guid, "standpunt": vp}):
+		raise InGebruik(_("Er hoort nog een reactie bij dit standpunt; maak die eerst los."))
+	issues.standpunt_verwijder(guid, vp)
+	return 200, None
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}/snapshot")
+def snapshot(_lichaam, project, guid, vp):
+	from werkzeug.wrappers import Response
+
+	inhoud, mime = issues.snapshot(_topic(project, guid), vp)
+	respons = Response(inhoud, status=200, mimetype=mime)
+	respons.headers["Cache-Control"] = "private, no-store"
+	respons.headers["X-Content-Type-Options"] = "nosniff"
+	return respons
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}/selection")
+def selectie(_lichaam, project, guid, vp):
+	return 200, {"selection": _onderdelen(project, guid, vp).get("selection") or []}
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}/coloring")
+def kleuring(_lichaam, project, guid, vp):
+	return 200, {"coloring": _onderdelen(project, guid, vp).get("coloring") or []}
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/viewpoints/{{vp}}/visibility")
+def zichtbaarheid(_lichaam, project, guid, vp):
+	return 200, {"visibility": _onderdelen(project, guid, vp).get("visibility") or {"default_visibility": True}}
+
+
+# --- verwante topics en documentverwijzingen ---
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/related_topics")
+def verwante(_lichaam, project, guid):
+	return 200, issues.verwante(_topic(project, guid))
+
+
+@route("PUT", f"{BCF}/projects/{{project}}/topics/{{guid}}/related_topics")
+def verwante_zet(lichaam, project, guid):
+	guids = [str(_object(r).get("related_topic_guid") or "") for r in _lijst(lichaam)]
+	return 200, issues.verwante_zet(_topic(project, guid), guids)
+
+
+@route("GET", f"{BCF}/projects/{{project}}/topics/{{guid}}/document_references")
+def documentverwijzingen(_lichaam, project, guid):
+	return 200, issues.documentverwijzingen(_topic(project, guid))
+
+
+@route("POST", f"{BCF}/projects/{{project}}/topics/{{guid}}/document_references")
+def documentverwijzing_maak(lichaam, project, guid):
+	return 201, issues.documentverwijzing_maak(_topic(project, guid), _object(lichaam))
+
+
+@route("PUT", f"{BCF}/projects/{{project}}/topics/{{guid}}/document_references/{{ref}}")
+def documentverwijzing_wijzig(lichaam, project, guid, ref):
+	return 200, issues.documentverwijzing_wijzig(_topic(project, guid), ref, _object(lichaam))

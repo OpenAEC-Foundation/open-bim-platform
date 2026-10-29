@@ -16,6 +16,8 @@ Status: fase 0 (fundament) is af en geaccepteerd: tien IFC-bestanden van samen 5
 | [Plan fase 0](docs/superpowers/plans/2026-10-26-fase-0-fundament.md) | kern, omzetten met splitsen, viewer, lokale route |
 | [Plan fase 1a](docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md) | platform-app `openaec_bim` en de viewer in de werkplek |
 | [Meting fase 0](docs/metingen/2026-fase-0.md) | tijden en geheugen per stap, de viewer op het budget, de proef in de werkplek |
+| [Plan fase 1b](docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md) | issues (BCF 3.0), BCF-API, versiekoppeling, auditlog, botsingen |
+| [Conformiteit BCF-API](docs/bcf-conformiteit.md) | de paden van de BCF-API 3.0 op de klantsite, de test en de laatste uitslag |
 
 **Fase 1** maakt issues met BCF 3.0 als datamodel, direct gevolgd door de BCF-API 3.0, en een koppeling van elementen
 over versies heen (op GlobalId, met een terugval als een exporteur GlobalIds verandert), zodat issues en botsingen een

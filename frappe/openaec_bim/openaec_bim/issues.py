@@ -661,6 +661,23 @@ def documentverwijzing_maak(guid: str, data: dict) -> dict:
 	return verwijzing
 
 
+def documentverwijzing_wijzig(guid: str, verwijzing: str, data: dict) -> dict:
+	"""Vervang url, document_guid en beschrijving van een documentverwijzing (zoals PUT in de BCF-API)."""
+	issue, project = _issue(guid)
+	_vereis_wijzigen(issue, project)
+	lijst = _json(issue.documentverwijzingen) or []
+	index = next((i for i, v in enumerate(lijst) if v.get("guid") == verwijzing), None)
+	if index is None:
+		frappe.throw(_("Documentverwijzing bestaat niet"), frappe.DoesNotExistError)
+	if not data.get("url") and not data.get("document_guid"):
+		_weiger(_("Een documentverwijzing heeft een url of een document_guid nodig."), "verwijzing_leeg")
+	nieuw = {"guid": verwijzing, **{k: data[k] for k in ("url", "document_guid", "description") if data.get(k) is not None}}
+	lijst[index] = nieuw
+	issue.documentverwijzingen = json.dumps(lijst)
+	issue.save(ignore_permissions=True)
+	return nieuw
+
+
 # --- .bcfzip: import en export ---
 
 MAX_BCFZIP_BYTES = 512 * 1024 * 1024

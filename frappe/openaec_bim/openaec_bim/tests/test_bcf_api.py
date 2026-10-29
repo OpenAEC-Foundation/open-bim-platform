@@ -1,3 +1,5 @@
+import base64
+
 import frappe
 from frappe.tests.test_api import make_request
 from frappe.utils import get_test_client
@@ -6,6 +8,15 @@ from openaec_storage.tests.hulp import gebruiker
 
 from openaec_bim import issues
 from openaec_bim.tests.hulp import ProjectTest
+from openaec_bim.tests.test_issues import CAMERA, KANAAL, PNG, WAND
+
+KLEUREN = [{"color": "#ff0000", "components": [{"ifc_guid": KANAAL}]}]
+ZICHTBAARHEID = {"default_visibility": False, "exceptions": [{"ifc_guid": WAND}]}
+VIEWPOINT_MET_PNG = {
+	"perspective_camera": CAMERA,
+	"snapshot": {"snapshot_type": "png", "snapshot_data": PNG},
+	"components": {"selection": [{"ifc_guid": WAND}], "coloring": KLEUREN, "visibility": ZICHTBAARHEID},
+}
 
 
 class BcfApiTest(ProjectTest):
@@ -192,3 +203,62 @@ class TestBcfApi(BcfApiTest):
 	def test_een_onbekend_pad_geeft_404(self):
 		self.assertEqual(self.get(f"/bcf/3.0/projects/{self.map}/onbekend").status_code, 404)
 		self.assertEqual(self.vraag("PATCH", self.topics).status_code, 404)
+
+
+class TestBcfApiStandpunten(BcfApiTest):
+	def setUp(self):
+		super().setUp()
+		self.guid = self.post(self.topics, {"title": "Met standpunt"}).json["guid"]
+		self.standpunten = f"{self.topics}/{self.guid}/viewpoints"
+
+	def standpunt(self, **extra):
+		r = self.post(self.standpunten, {**VIEWPOINT_MET_PNG, **extra})
+		self.assertEqual(r.status_code, 201)
+		return r.json
+
+	def test_standpunt_met_snapshot_heen_en_terug(self):
+		vp = self.standpunt()
+		self.assertEqual(vp["snapshot"], {"snapshot_type": "png"})
+		self.assertNotIn("components", vp)
+		r = self.get(f"{self.standpunten}/{vp['guid']}/snapshot")
+		self.assertEqual((r.status_code, r.headers["Content-Type"], r.data), (200, "image/png", base64.b64decode(PNG)))
+		self.assertEqual(self.get(f"{self.standpunten}/{vp['guid']}").json["perspective_camera"], CAMERA)
+
+	def test_selectie_kleuring_en_zichtbaarheid(self):
+		vp = self.standpunt()["guid"]
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/selection").json, {"selection": [{"ifc_guid": WAND}]})
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/coloring").json, {"coloring": KLEUREN})
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/visibility").json, {"visibility": ZICHTBAARHEID})
+
+	def test_een_standpunt_zonder_onderdelen_heeft_lege_onderdelen(self):
+		vp = self.post(self.standpunten, {"perspective_camera": CAMERA}).json["guid"]
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/selection").json, {"selection": []})
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/visibility").json, {"visibility": {"default_visibility": True}})
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}/snapshot").status_code, 404)
+
+	def test_standpunten_lijst_en_verwijderen(self):
+		vp = self.standpunt()["guid"]
+		self.assertEqual([v["guid"] for v in self.get(self.standpunten).json], [vp])
+		reactie = self.post(f"{self.topics}/{self.guid}/comments", {"comment": "Hier", "viewpoint_guid": vp}).json["guid"]
+		self.assertEqual(self.delete(f"{self.standpunten}/{vp}").status_code, 409)
+		self.assertEqual(self.delete(f"{self.topics}/{self.guid}/comments/{reactie}").status_code, 200)
+		self.assertEqual(self.delete(f"{self.standpunten}/{vp}").status_code, 200)
+		self.assertEqual(self.get(f"{self.standpunten}/{vp}").status_code, 404)
+
+	def test_verwante_topics_zetten(self):
+		ander = self.post(self.topics, {"title": "Ander"}).json["guid"]
+		r = self.put(f"{self.topics}/{self.guid}/related_topics", [{"related_topic_guid": ander}])
+		self.assertEqual((r.status_code, [t["related_topic_guid"] for t in r.json]), (200, [ander]))
+		self.assertEqual(self.get(f"{self.topics}/{self.guid}/related_topics").json, [{"related_topic_guid": ander}])
+		self.assertEqual(self.put(f"{self.topics}/{self.guid}/related_topics", [{"related_topic_guid": "weg"}]).status_code, 400)
+		self.assertEqual(self.put(f"{self.topics}/{self.guid}/related_topics", {"geen": "lijst"}).status_code, 400)
+
+	def test_documentverwijzingen(self):
+		pad = f"{self.topics}/{self.guid}/document_references"
+		r = self.post(pad, {"url": "https://voorbeeld.nl/eis.pdf", "description": "Eis"})
+		self.assertEqual(r.status_code, 201)
+		ref = r.json["guid"]
+		r = self.put(f"{pad}/{ref}", {"url": "https://voorbeeld.nl/eis-2.pdf", "description": "Eis, versie 2"})
+		self.assertEqual((r.status_code, r.json["description"]), (200, "Eis, versie 2"))
+		self.assertEqual(self.get(pad).json, [{"guid": ref, "url": "https://voorbeeld.nl/eis-2.pdf", "description": "Eis, versie 2"}])
+		self.assertEqual(self.put(f"{pad}/onbekend", {"url": "https://voorbeeld.nl"}).status_code, 404)

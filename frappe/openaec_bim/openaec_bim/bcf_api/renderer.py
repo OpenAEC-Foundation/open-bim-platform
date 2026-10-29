@@ -62,7 +62,7 @@ def afhandelen(request) -> Response:
 	frappe.local.response.pop("foutcode", None)
 	try:
 		uitkomst = route.functie(lichaam, **parameters)
-	except issues.VerouderdeVersie as fout:
+	except (issues.VerouderdeVersie, routes.InGebruik) as fout:
 		return _fout(409, _melding(fout))
 	except frappe.AuthenticationError as fout:
 		return _fout(401, _melding(fout))
