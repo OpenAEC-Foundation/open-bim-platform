@@ -135,7 +135,11 @@ def zonder_botsing(stap, *args) -> None:
 	try:
 		stap(*args)
 	except (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
-		frappe.db.rollback(save_point="openaec_bim_bijwerken")
+		try:
+			frappe.db.rollback(save_point="openaec_bim_bijwerken")
+		except frappe.db.OperationalError:
+			# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid, en het savepoint met haar.
+			frappe.db.rollback()
 
 
 def volg_lopende() -> None:

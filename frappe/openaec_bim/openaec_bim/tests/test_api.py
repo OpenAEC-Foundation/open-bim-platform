@@ -48,6 +48,17 @@ class TestApi(IntegrationTestCase):
 			with patch.object(afgeleid, "bijwerken", side_effect=fout):
 				project = api.project(map=self.map)
 			self.assertEqual({m["status"] for m in project["modellen"]}, {"wacht"})
+		# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid: het savepoint bestaat niet meer.
+		def terugdraaien(save_point=None):
+			if save_point:
+				raise frappe.db.OperationalError(1305, "savepoint bestaat niet")
+
+		with (
+			patch.object(afgeleid, "bijwerken", side_effect=frappe.QueryDeadlockError("1020")),
+			patch.object(frappe.db, "rollback", side_effect=terugdraaien) as terug,
+		):
+			api.project(map=self.map)
+		self.assertEqual([c.kwargs for c in terug.call_args_list[:2]], [{"save_point": "openaec_bim_bijwerken"}, {}])
 
 	def test_project_zet_de_omzettingen_klaar(self):
 		project = api.project(map=self.map)
