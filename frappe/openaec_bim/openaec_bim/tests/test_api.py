@@ -1,42 +1,15 @@
 import hashlib
-import json
 from unittest.mock import patch
 from urllib.parse import unquote
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from openaec_storage import api as opslag
-from openaec_storage import s3
 from openaec_storage.tests.hulp import NagebootsteS3, gebruiker, ruim_op, ruimte, upload
 
 from openaec_bim import afgeleid, api, leestoken
 from openaec_bim.kern import KernFout
-
-INDEX = {"schema": "IFC4", "omzetter": "kern-0.1.0+fragments-3.6.0", "delen": [{"naam": "model.frag", "bytes": 5}]}
-
-
-class NepKern:
-	"""Bootst de BIM-kern na: legt de verzoeken vast en geeft per taak de stand die de test zet."""
-
-	def __init__(self):
-		self.verzoeken = []
-		self.taken = {}
-		self.elementen = {}
-
-	def roep(self, methode, pad, json=None):
-		self.verzoeken.append((methode, pad, json))
-		if pad == "/v1/tools/omzetten":
-			taak = f"taak-{len(self.taken) + 1}"
-			self.taken[taak] = {"status": "wacht", "voortgang": 0}
-			return {"taak": taak}
-		if pad.startswith("/v1/taken/"):
-			taak = pad.rsplit("/", 1)[1]
-			if taak not in self.taken:
-				raise KernFout("taak_onbekend", "Er is geen taak.")
-			return self.taken[taak]
-		if pad == "/v1/tools/eigenschappen":
-			return {"elementen": self.elementen}
-		raise AssertionError(pad)
+from openaec_bim.tests.hulp import NepKern, maak_klaar
 
 
 class TestApi(IntegrationTestCase):
@@ -65,16 +38,49 @@ class TestApi(IntegrationTestCase):
 		ruim_op()
 
 	def maak_klaar(self, bestand, frag=b"FRAG!", sqlite=b"SQLITE"):
-		"""Zet de taak van dit bestand op klaar, met de uitvoer in de bucket zoals de kern hem aflevert."""
-		doc = afgeleid.laatste(bestand, 1)
-		for naam, inhoud in (("index.json", json.dumps(INDEX).encode()), ("model.frag", frag), ("eigenschappen.sqlite", sqlite)):
-			s3.zet(f"{doc.prefix}/{naam}", inhoud)
-		self.kern.taken[doc.kern_taak] = {
-			"status": "klaar",
-			"voortgang": 1.0,
-			"uitkomst": {"omzetter": INDEX["omzetter"], "delen": [{"naam": "model.frag", "bytes": len(frag), "verdiepingen": []}]},
-		}
-		return doc
+		return maak_klaar(self.kern, bestand, frag=frag, sqlite=sqlite)
+
+	def test_project_werkt_eerst_bij_en_start_daarna(self):
+		# Een teruggedraaide bijwerking (MariaDB 1020) mag geen omzetting wissen die dit verzoek al startte.
+		afgeleid.start(self.wand, 1)
+		volgorde = []
+		echt_start = afgeleid.start
+		with (
+			patch.object(afgeleid, "bijwerken", side_effect=lambda doc: volgorde.append("bijwerken")),
+			patch.object(afgeleid, "start", side_effect=lambda *a: volgorde.append("start") or echt_start(*a)),
+		):
+			api.project(map=self.map)
+		self.assertEqual(volgorde, ["bijwerken", "start"])
+
+	def test_na_een_terugdraai_toont_het_document_de_opgeslagen_stand(self):
+		doc = afgeleid.start(self.wand, 1)
+
+		def half(d):
+			d.status = "klaar"
+			raise frappe.QueryDeadlockError("1020")
+
+		afgeleid.zonder_botsing(half, doc)
+		self.assertEqual(doc.status, "wacht")
+
+	def test_project_overleeft_een_gelijktijdige_bijwerking(self):
+		# De viewer vraagt het project elke paar seconden, ook terwijl de planner dezelfde omzetting bijwerkt: dan
+		# botst het opslaan (MariaDB 1020 of een verouderde tijdstempel). Die keer slaat het project dat over.
+		api.project(map=self.map)
+		for fout in (frappe.QueryDeadlockError("1020"), frappe.TimestampMismatchError("ouder")):
+			with patch.object(afgeleid, "bijwerken", side_effect=fout):
+				project = api.project(map=self.map)
+			self.assertEqual({m["status"] for m in project["modellen"]}, {"wacht"})
+		# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid: het savepoint bestaat niet meer.
+		def terugdraaien(save_point=None):
+			if save_point:
+				raise frappe.db.OperationalError(1305, "savepoint bestaat niet")
+
+		with (
+			patch.object(afgeleid, "bijwerken", side_effect=frappe.QueryDeadlockError("1020")),
+			patch.object(frappe.db, "rollback", side_effect=terugdraaien) as terug,
+		):
+			api.project(map=self.map)
+		self.assertEqual([c.kwargs for c in terug.call_args_list[:2]], [{"save_point": "openaec_bim_bijwerken"}, {}])
 
 	def test_project_zet_de_omzettingen_klaar(self):
 		project = api.project(map=self.map)

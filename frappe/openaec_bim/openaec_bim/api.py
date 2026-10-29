@@ -14,7 +14,7 @@ from frappe import _
 from frappe.utils import cint
 from werkzeug.wrappers import Response
 
-from openaec_bim import afgeleid, kern, leestoken
+from openaec_bim import afgeleid, kern, koppeling, leestoken
 
 MAX_GLOBALIDS = 1000
 LEESBLOK = 256 * 1024
@@ -93,6 +93,7 @@ def _model(bestand: dict, discipline: str, doc) -> dict:
 		"fout": _json(doc.fout) if doc and doc.status == "fout" else None,
 		"delen": [{"naam": d["naam"], "bytes": cint(d["bytes"])} for d in (_json(doc.delen) or [])] if klaar else [],
 		"index": _json(doc.samenvatting) if klaar else None,
+		"koppeling": koppeling.naar(bestand.name, cint(bestand.huidige_versie)) if klaar else None,
 	}
 
 
@@ -100,14 +101,24 @@ def _model(bestand: dict, discipline: str, doc) -> dict:
 def project(map: str) -> dict:
 	"""De modellen van een modelmap met hun stand. Een versie zonder omzetting wordt nu klaargezet bij de kern."""
 	map_doc = _modelmap(map)
-	modellen = []
+	stand = []
 	for bestand, discipline in ifc_in_map(map_doc):
 		versie = cint(bestand.huidige_versie)
 		doc = afgeleid.laatste(bestand.name, versie)
+		if doc and doc.status in ("wacht", "bezig"):
+			afgeleid.zonder_botsing(afgeleid.bijwerken, doc)
+		for lopend in frappe.get_all(
+			koppeling.DOCTYPE, {"bestand": bestand.name, "naar_versie": versie, "status": ("in", ("wacht", "bezig"))}, pluck="name"
+		):
+			afgeleid.zonder_botsing(koppeling.bijwerken, frappe.get_doc(koppeling.DOCTYPE, lopend))
+		stand.append((bestand, discipline, versie, doc))
+	# Pas na het bijwerken nieuw werk bij de kern starten: een bijwerking die MariaDB terugdraait (1020) neemt dan
+	# geen taak mee die dit verzoek al gestart had.
+	modellen = []
+	for bestand, discipline, versie, doc in stand:
 		if doc is None:
 			doc = afgeleid.start(bestand.name, versie)
-		elif doc.status in ("wacht", "bezig"):
-			afgeleid.bijwerken(doc)
+		koppeling.herstel(bestand.name)
 		modellen.append(_model(bestand, discipline, doc))
 	return {"project": map_doc.naam, "werkwijze": "bestanden", "modellen": modellen}
 
@@ -116,7 +127,7 @@ def _klaar(bestand: str, versie):
 	_bestand(bestand)
 	doc = afgeleid.laatste(bestand, cint(versie))
 	if doc and doc.status in ("wacht", "bezig"):
-		afgeleid.bijwerken(doc)  # misschien is de kern al klaar en heeft niemand het nog gezien
+		afgeleid.zonder_botsing(afgeleid.bijwerken, doc)  # misschien is de kern al klaar en heeft niemand het gezien
 	if not doc or doc.status != "klaar":
 		raise NogNietKlaar(_("Dit model is nog niet omgezet."))
 	return doc

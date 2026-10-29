@@ -62,3 +62,7 @@ describe("LocalHost", () => {
 test("sourceKey includes version", () => {
   expect(sourceKey({ soort: "bestand", sleutel: "a.ifc", versie: "abc" })).toBe("bestand:a.ifc@abc");
 });
+
+test("LocalHost has no coordination: issues and clashes live in the SuperCloud", () => {
+  expect(new LocalHost("http://x").coordinatie).toBeUndefined();
+});

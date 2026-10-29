@@ -48,4 +48,45 @@ describe("WerkplekHost", () => {
     expect(WerkplekHost.fromWindow({ werkplekBim: k } as unknown as Window)).toBeInstanceOf(WerkplekHost);
     expect(WerkplekHost.fromWindow({} as Window)).toBeNull();
   });
+
+  test("coordinatie sends bim.issue_bewaar and returns the topic", async () => {
+    const topic = { guid: "a0c1f6a2-5a40-4b8e-9d60-1c0f4b1c0001", title: "Wand" };
+    const { kanaal: k, vraag } = kanaal(() => topic);
+    expect(await new WerkplekHost(k).coordinatie.issueBewaar({ title: "Wand" })).toEqual(topic);
+    expect(vraag).toHaveBeenCalledWith("bim.issue_bewaar", { topic: { title: "Wand" } });
+  });
+
+  test("coordinatie passes guids, rounds and clashes to the guest page", async () => {
+    const { kanaal: k, vraag } = kanaal(() => []);
+    const c = new WerkplekHost(k).coordinatie;
+    await c.reacties("g1");
+    await c.standpunten("g1");
+    await c.standpuntBewaar("g1", { perspective_camera: undefined });
+    await c.botsingsrondeStart([{ bestand: "b1" }], [{ bestand: "b2", klassen: ["IfcDuctSegment"] }], "hard", 0.01);
+    await c.botsingStatus("x1", "genegeerd");
+    expect(vraag).toHaveBeenCalledWith("bim.reacties", { guid: "g1" });
+    expect(vraag).toHaveBeenCalledWith("bim.standpunten", { guid: "g1" });
+    expect(vraag).toHaveBeenCalledWith("bim.standpunt_bewaar", { guid: "g1", standpunt: { perspective_camera: undefined } });
+    expect(vraag).toHaveBeenCalledWith("bim.botsingsronde_start", {
+      set_a: [{ bestand: "b1" }],
+      set_b: [{ bestand: "b2", klassen: ["IfcDuctSegment"] }],
+      botsingsoort: "hard",
+      tolerantie: 0.01,
+    });
+    expect(vraag).toHaveBeenCalledWith("bim.botsing_status", { botsing: "x1", status: "genegeerd" });
+  });
+
+  test("a cancelled import is null", async () => {
+    const { kanaal: k } = kanaal(() => null);
+    expect(await new WerkplekHost(k).coordinatie.bcfImport()).toBeNull();
+  });
+
+  test("a field of the bridge envelope (soort, id, werkplek) never travels in a request", async () => {
+    const { kanaal: k, vraag } = kanaal(() => null);
+    const host = new WerkplekHost(k);
+    await expect(
+      (host as unknown as { vraag(s: string, e: Record<string, unknown>): Promise<unknown> }).vraag("bim.x", { soort: "hard" }),
+    ).rejects.toBeInstanceOf(HostError);
+    expect(vraag).not.toHaveBeenCalled();
+  });
 });

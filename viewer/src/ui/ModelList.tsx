@@ -1,6 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { sourceKey, type ModelInfo, type ModelStatus } from "../host/BimHost";
 import { estimateBytes } from "../model/budget";
+import { koppelWaarschuwing } from "../model/issues";
 import { formatBytes } from "./format";
 
 const BADGE: Record<ModelStatus, string> = {
@@ -116,6 +117,20 @@ function ModelRow({ model, on, isLoaded, isLoading, onToggle }: RowProps) {
         {ready && ` · ${formatBytes(estimateBytes(model), i18n.language)}`}
       </span>
       {model.status === "fout" && model.fout && <span className="model-list__error">{model.fout.melding}</span>}
+      {model.koppeling && !koppelWaarschuwing(model.koppeling.matchrate) && (
+        <span className="model-list__meta model-list__koppeling">
+          {t("koppeling", { vorige: model.koppeling.vorige_versie, procent: Math.round(model.koppeling.matchrate * 100) })}
+        </span>
+      )}
+      {koppelWaarschuwing(model.koppeling?.matchrate) && model.koppeling && (
+        <span className="model-list__warning">
+          {t("koppeling_onzeker", {
+            versie: model.bron.versie,
+            vorige: model.koppeling.vorige_versie,
+            procent: Math.round(model.koppeling.matchrate * 100),
+          })}
+        </span>
+      )}
     </li>
   );
 }

@@ -18,6 +18,7 @@ services:
     environment:
       OPENBIM_RIJ_OMZETTEN: ${OPENBIM_RIJ_OMZETTEN:-1}
       OPENBIM_RIJ_LICHT: ${OPENBIM_RIJ_LICHT:-4}
+      OPENBIM_RIJ_BOTSING: ${OPENBIM_RIJ_BOTSING:-1}
     volumes:
       - data:/data
     healthcheck:

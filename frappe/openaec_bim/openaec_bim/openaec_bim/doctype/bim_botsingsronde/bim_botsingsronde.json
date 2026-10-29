@@ -1,0 +1,126 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 13:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "owner": "Administrator",
+ "states": [],
+ "autoname": "hash",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 0,
+ "name": "BIM Botsingsronde",
+ "description": "Een botsingscontrole tussen twee sets modellen van een project, op de versies van het moment van starten.",
+ "fields": [
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "BIM Project",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "titel",
+   "fieldtype": "Data",
+   "label": "Titel",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "set_a",
+   "fieldtype": "JSON",
+   "label": "Set A"
+  },
+  {
+   "fieldname": "set_b",
+   "fieldtype": "JSON",
+   "label": "Set B"
+  },
+  {
+   "fieldname": "soort",
+   "fieldtype": "Select",
+   "label": "Soort",
+   "options": "hard\nafstand",
+   "default": "hard"
+  },
+  {
+   "fieldname": "tolerantie",
+   "fieldtype": "Float",
+   "label": "Tolerantie (m)",
+   "precision": "4"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "wacht\nbezig\nklaar\nfout",
+   "default": "wacht",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "kern_taak",
+   "fieldtype": "Data",
+   "label": "Taak bij de kern"
+  },
+  {
+   "fieldname": "bron_versies",
+   "fieldtype": "JSON",
+   "label": "Versies"
+  },
+  {
+   "fieldname": "resultaat",
+   "fieldtype": "Data",
+   "label": "Resultaat in de bucket"
+  },
+  {
+   "fieldname": "aantal",
+   "fieldtype": "Int",
+   "label": "Botsingen",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "vorige_ronde",
+   "fieldtype": "Link",
+   "label": "Vorige ronde",
+   "options": "BIM Botsingsronde"
+  },
+  {
+   "fieldname": "fout",
+   "fieldtype": "JSON",
+   "label": "Fout"
+  }
+ ],
+ "field_order": [
+  "project",
+  "titel",
+  "set_a",
+  "set_b",
+  "soort",
+  "tolerantie",
+  "status",
+  "kern_taak",
+  "bron_versies",
+  "resultaat",
+  "aantal",
+  "vorige_ronde",
+  "fout"
+ ],
+ "title_field": "titel"
+}

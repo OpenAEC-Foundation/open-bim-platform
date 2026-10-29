@@ -14,6 +14,7 @@ import ifcopenshell.util.element as element_util
 from typing_extensions import TypedDict
 
 from ..errors import KernError
+from .identity import index_identity
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS elements (
@@ -117,6 +118,7 @@ def index_model(model: ifcopenshell.file, db: Path) -> None:
                 con.execute("INSERT OR IGNORE INTO materials VALUES (?,?)", (gid, material))
             for system, code, name in _classifications(el):
                 con.execute("INSERT OR IGNORE INTO classifications VALUES (?,?,?,?)", (gid, system, code, name))
+        index_identity(model, con)
         con.commit()
 
 
