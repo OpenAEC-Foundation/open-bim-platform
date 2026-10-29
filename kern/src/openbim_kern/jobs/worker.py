@@ -17,6 +17,7 @@ import psutil
 from ..errors import KernError
 from ..processes import kill_tree
 from ..tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
+from ..tools import koppelen as _koppelen  # noqa: F401  (registers the tool)
 from ..tools import omzetten as _omzetten  # noqa: F401  (registers the tool)
 from ..tools.registry import PROGRESS_PARAM, REGISTRY, ToolSpec
 from .store import Job, JobStore
