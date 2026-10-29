@@ -251,6 +251,18 @@ class TestBcfImportExport(ProjectTest):
 		self.assertEqual((uit["bijgewerkt"], uit["verouderd"]), (1, 0))
 		self.assertEqual(issues.topic(G1)["title"], "Later gewijzigd in het andere programma")
 
+	def test_een_import_zoekt_de_elementen_in_een_keer_op(self):
+		self.model_klaar(self.constructie)
+		self.kern.elementen = {WAND: {"klasse": "IfcWall"}, KANAAL: {"klasse": "IfcDuctSegment"}}
+		topics = [
+			volledig_topic(G1, viewpoints=[{**standpunt(V1), "components": {"selection": [{"ifc_guid": WAND}]}}], comments=[]),
+			volledig_topic(G2, viewpoints=[{**standpunt(V2), "components": {"selection": [{"ifc_guid": KANAAL}]}}], comments=[]),
+		]
+		issues.importeer(self.project, self.bcfzip(topics))
+		vragen = [p for _m, p, _j in self.kern.verzoeken if p == "/v1/tools/eigenschappen"]
+		self.assertEqual(len(vragen), 1)
+		self.assertEqual(frappe.get_all("BIM Issue Element", {"parent": G2}, pluck="bestand"), [self.constructie])
+
 	def test_verwante_issues_uit_hetzelfde_bestand(self):
 		topics = [volledig_topic(viewpoints=[], comments=[]), volledig_topic(G2, title="Tweede", viewpoints=[], comments=[])]
 		issues.importeer(self.project, self.bcfzip(topics))

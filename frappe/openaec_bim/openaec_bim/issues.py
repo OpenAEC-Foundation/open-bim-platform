@@ -538,7 +538,8 @@ def zoek_elementen(project, globalids: list[str]) -> dict[str, tuple[str, str]]:
 	return gevonden
 
 
-def _voeg_elementen_toe(issue, project, selectie: list[dict]) -> None:
+def _nieuwe_globalids(issue, selectie: list[dict]) -> list[str]:
+	"""De GlobalIds uit de selectie die het issue nog niet als element heeft."""
 	bekend = {e.globalid for e in issue.elementen}
 	nieuw = []
 	for component in selectie or []:
@@ -546,9 +547,16 @@ def _voeg_elementen_toe(issue, project, selectie: list[dict]) -> None:
 		if globalid and globalid not in bekend:
 			nieuw.append(globalid)
 			bekend.add(globalid)
+	return nieuw
+
+
+def _voeg_elementen_toe(issue, project, selectie: list[dict], plekken: dict | None = None) -> None:
+	"""De selectie als elementen van het issue, met bestand en versie uit de index (of uit `plekken`, al opgezocht)."""
+	nieuw = _nieuwe_globalids(issue, selectie)
 	if not nieuw:
 		return
-	plekken = zoek_elementen(project, nieuw)
+	if plekken is None:
+		plekken = zoek_elementen(project, nieuw)
 	for globalid in nieuw:
 		bestand, versie = plekken.get(globalid, (None, None))
 		issue.append("elementen", {"globalid": globalid, "bestand": bestand, "versie": versie})
@@ -784,7 +792,7 @@ def _importeer_reacties(issue, topic: dict) -> None:
 			doc.save(ignore_permissions=True)
 
 
-def _importeer_topic(project, topic: dict, telling: dict) -> str | None:
+def _importeer_topic(project, topic: dict, telling: dict) -> tuple[str, list[dict]] | None:
 	try:
 		guid = str(uuid.UUID(str(topic.get("guid"))))
 	except ValueError:
@@ -824,8 +832,7 @@ def _importeer_topic(project, topic: dict, telling: dict) -> str | None:
 			_nieuw_standpunt(issue, sp, _snapshot_of_niets(sp.get("snapshot")))
 			selectie += (sp.get("components") or {}).get("selection") or []
 	_importeer_reacties(issue, topic)
-	_voeg_elementen_toe(issue, project, selectie)
-	return guid
+	return guid, selectie
 
 
 def _als_kopie(topic: dict) -> dict:
@@ -858,6 +865,7 @@ def importeer(project, bestand: str) -> dict:
 	_vul_instellingen_aan(project, topics)
 	telling = {"nieuw": 0, "bijgewerkt": 0, "verouderd": 0, "gekopieerd": 0, "overgeslagen": 0, "toewijzingen_vervallen": 0}
 	verwant: dict[str, list[str]] = {}
+	selecties: dict[str, list[dict]] = {}
 	kopieen: dict[str, str] = {}
 	for topic in topics:
 		elders = frappe.db.get_value(ISSUE, topic.get("guid"), "project") if topic.get("guid") else None
@@ -866,9 +874,15 @@ def importeer(project, bestand: str) -> dict:
 			kopieen[str(topic["guid"])] = kopie["guid"]
 			topic = kopie
 			telling["gekopieerd"] += 1
-		guid = _importeer_topic(project, topic, telling)
-		if guid:
+		uitkomst = _importeer_topic(project, topic, telling)
+		if uitkomst:
+			guid, selecties[guid] = uitkomst
 			verwant[guid] = [r.get("related_topic_guid") for r in topic.get("related_topics") or []]
+	# De elementen van alle topics in één keer opzoeken: één vraag aan de kern per model, niet per topic.
+	globalids = sorted({g for guid, sel in selecties.items() for g in _nieuwe_globalids(frappe.get_doc(ISSUE, guid), sel)})
+	plekken = zoek_elementen(project, globalids) if globalids else {}
+	for guid, selectie in selecties.items():
+		_voeg_elementen_toe(frappe.get_doc(ISSUE, guid), project, selectie, plekken)
 	# Verwante issues pas na alle topics: ze kunnen later in hetzelfde bestand staan.
 	for guid, guids in verwant.items():
 		geldig = [
