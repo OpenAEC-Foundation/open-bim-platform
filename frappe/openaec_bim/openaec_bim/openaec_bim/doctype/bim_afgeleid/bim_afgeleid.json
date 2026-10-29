@@ -1,0 +1,52 @@
+{
+ "actions": [],
+ "autoname": "hash",
+ "creation": "2026-10-28 01:00:00.000000",
+ "description": "De omzetting van één versie van een IFC-bestand door de BIM-kern: status, taak bij de kern en de plek van de uitvoer in de bucket.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "bestand",
+  "versie",
+  "status",
+  "voortgang",
+  "kern_taak",
+  "omzetter",
+  "prefix",
+  "frag_bytes",
+  "delen",
+  "samenvatting",
+  "eigenschappen_sha256",
+  "fout",
+  "laatst_geopend"
+ ],
+ "fields": [
+  {"fieldname": "bestand", "fieldtype": "Link", "in_list_view": 1, "label": "Bestand", "options": "Opslagbestand", "reqd": 1, "search_index": 1},
+  {"fieldname": "versie", "fieldtype": "Int", "in_list_view": 1, "label": "Versie", "reqd": 1},
+  {"default": "wacht", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "label": "Status", "options": "wacht\nbezig\nklaar\nfout", "search_index": 1},
+  {"fieldname": "voortgang", "fieldtype": "Float", "label": "Voortgang"},
+  {"fieldname": "kern_taak", "fieldtype": "Data", "label": "Taak bij de kern"},
+  {"fieldname": "omzetter", "fieldtype": "Data", "label": "Omzetter"},
+  {"description": "Waar de uitvoer van deze omzetting in de bucket staat (nooit overschreven).", "fieldname": "prefix", "fieldtype": "Data", "label": "Plek in de bucket", "length": 500},
+  {"fieldname": "frag_bytes", "fieldtype": "Int", "label": "Bytes aan fragments"},
+  {"fieldname": "delen", "fieldtype": "JSON", "label": "Delen"},
+  {"description": "index.json van de omzetting.", "fieldname": "samenvatting", "fieldtype": "JSON", "label": "Samenvatting"},
+  {"fieldname": "eigenschappen_sha256", "fieldtype": "Data", "label": "SHA-256 van eigenschappen.sqlite"},
+  {"fieldname": "fout", "fieldtype": "JSON", "label": "Fout"},
+  {"fieldname": "laatst_geopend", "fieldtype": "Datetime", "label": "Laatst geopend"}
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-28 01:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "name": "BIM Afgeleid",
+ "owner": "Administrator",
+ "permissions": [
+  {"create": 1, "delete": 1, "read": 1, "report": 1, "role": "System Manager", "write": 1}
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": [],
+ "track_changes": 1
+}

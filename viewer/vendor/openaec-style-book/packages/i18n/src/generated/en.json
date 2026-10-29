@@ -1,0 +1,62 @@
+{
+  "action": {
+    "ok": "OK",
+    "cancel": "Cancel",
+    "save": "Save",
+    "save-as": "Save as",
+    "close": "Close",
+    "delete": "Delete",
+    "edit": "Edit",
+    "apply": "Apply",
+    "reset": "Reset",
+    "yes": "Yes",
+    "no": "No",
+    "export": "Export",
+    "import": "Import",
+    "print": "Print",
+    "copy": "Copy",
+    "cut": "Cut",
+    "paste": "Paste",
+    "undo": "Undo",
+    "redo": "Redo",
+    "search": "Search",
+    "open": "Open",
+    "new": "New",
+    "preferences": "Preferences"
+  },
+  "window": {
+    "minimize": "Minimize",
+    "maximize": "Maximize",
+    "restore": "Restore"
+  },
+  "status": {
+    "ready": "Ready"
+  },
+  "panel": {
+    "explorer": "Explorer",
+    "properties": "Properties"
+  },
+  "ribbon": {
+    "tab": {
+      "file": "File",
+      "help": "Help",
+      "viewer3d": "3D Viewer"
+    },
+    "group": {
+      "file": "File",
+      "navigation": "Navigation",
+      "analysis": "Analysis",
+      "display": "Display"
+    }
+  },
+  "command": {
+    "view": {
+      "load-model": "Load model",
+      "orbit": "Orbit",
+      "fit-all": "Fit all",
+      "section": "Section",
+      "measure": "Measure",
+      "wireframe": "Wireframe"
+    }
+  }
+}

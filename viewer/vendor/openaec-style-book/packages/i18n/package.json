@@ -1,0 +1,18 @@
+{
+  "name": "@openaec/i18n",
+  "version": "0.1.0",
+  "description": "Gedeelde OpenAEC-termen (nl, en) voor i18next",
+  "license": "MIT",
+  "author": "OpenAEC Foundation",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAEC-Foundation/OpenAEC-style-book",
+    "directory": "packages/i18n"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "files": ["src/", "README.md"],
+  "devDependencies": { "typescript": "^5.6.0" }
+}

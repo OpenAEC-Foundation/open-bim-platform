@@ -1,0 +1,62 @@
+{
+  "action": {
+    "ok": "OK",
+    "cancel": "Annuleren",
+    "save": "Opslaan",
+    "save-as": "Opslaan als",
+    "close": "Sluiten",
+    "delete": "Verwijderen",
+    "edit": "Bewerken",
+    "apply": "Toepassen",
+    "reset": "Herstellen",
+    "yes": "Ja",
+    "no": "Nee",
+    "export": "Exporteren",
+    "import": "Importeren",
+    "print": "Afdrukken",
+    "copy": "Kopiëren",
+    "cut": "Knippen",
+    "paste": "Plakken",
+    "undo": "Ongedaan maken",
+    "redo": "Opnieuw",
+    "search": "Zoeken",
+    "open": "Openen",
+    "new": "Nieuw",
+    "preferences": "Voorkeuren"
+  },
+  "window": {
+    "minimize": "Minimaliseren",
+    "maximize": "Maximaliseren",
+    "restore": "Herstellen"
+  },
+  "status": {
+    "ready": "Gereed"
+  },
+  "panel": {
+    "explorer": "Verkenner",
+    "properties": "Eigenschappen"
+  },
+  "ribbon": {
+    "tab": {
+      "file": "Bestand",
+      "help": "Help",
+      "viewer3d": "3D Viewer"
+    },
+    "group": {
+      "file": "Bestand",
+      "navigation": "Navigatie",
+      "analysis": "Analyse",
+      "display": "Weergave"
+    }
+  },
+  "command": {
+    "view": {
+      "load-model": "Model laden",
+      "orbit": "Roteren",
+      "fit-all": "Passend",
+      "section": "Doorsnede",
+      "measure": "Meten",
+      "wireframe": "Draadmodel"
+    }
+  }
+}
