@@ -213,8 +213,9 @@ Per bestandsversie maakt de BIM-kern:
   `(bestand, GlobalId)` en blijft dat over versies. Exporteurs houden GlobalIds niet altijd vast (in de opslagproef
   verdwenen er over vijf maanden 1 707 en kwamen er 2 487 bij in één model). Daarom maakt de kern bij elke nieuwe
   versie een **versiekoppeling** naar de vorige: eerst op GlobalId, dan voor wat overblijft een **terugval** op
-  klasse, type, naam, plaatsing en geometrie (de begrenzingsdoos per element in fase 1, de mesh-hash uit het manifest
-  vanaf fase 2). De koppeling levert een **matchrate** (het deel van de elementen van de vorige versie dat is
+  klasse, type, naam, verdieping en de oorsprong van de plaatsing (fase 1, zonder geometriedoorgang: alleen een sleutel
+  die precies één keer voorkomt telt), en vanaf fase 2 ook de geometrie (de mesh-hash uit het manifest). De koppeling
+  levert een **matchrate** (het deel van de elementen van de vorige versie dat is
   teruggevonden). Issues, botsingen en statussen verwijzen naar het element, niet naar één versie: ze reizen mee met de
   koppeling, een element dat niet terug te vinden is krijgt de melding "niet teruggevonden in versie n", en een
   matchrate onder een drempel (mijn voorstel: 90 %) geeft een waarschuwing bij de nieuwe versie.
@@ -288,12 +289,11 @@ DocTypes (eerste opzet):
 
 | DocType | Velden (kern) |
 |---|---|
-| `BIM Project` | `naam`, `ruimte`, `werkwijze` (`bestanden`, `ifcgit`, `ifcx`), `modelmappen` (tabel), `lezers_mogen_reageren`, `georeferentie` (keuze: eerste model / vast punt) |
+| `BIM Project` | `naam` (de id van de modelmap), `ruimte`, `werkwijze` (`bestanden`, `ifcgit`, `ifcx`), `modelmappen` (tabel), `lezers_mogen_reageren`, `georeferentie` (keuze: eerste model / vast punt), en de BCF-uitbreidingen: toegestane soorten, statussen, prioriteiten, fasen en labels, `standaard_status` |
 | `BIM Model` | `project`, `bestand` (Link Opslagbestand), `discipline` (afgeleid uit de submap of de naam, aanpasbaar), `zichtbaar_standaard` |
 | `BIM Afgeleid` | `bestand`, `versie`, `omzetter`, `status` (`wacht`, `bezig`, `klaar`, `fout`), `delen`, `bytes`, `fout`, `laatst_geopend` |
 | `BIM Taak` | `soort`, `project`, `status`, `voortgang`, `kern_taak`, `gestart_door`, `uitkomst` |
 | `BIM Issue` | BCF-topic: `guid`, `titel`, `beschrijving`, `status`, `soort`, `prioriteit`, `fase`, `toegewezen_aan`, `vervaldatum`, `labels`, `verwante_issues`, `documentverwijzingen`, `elementen` (element-identiteit uit 5.3, met de versie waarin het gezien is; mag leeg zijn), `standpunten` (tabel: camera, doorsneden, zichtbaarheid, markering, schermafbeelding) |
-| `BIM Issue-instellingen` | per project de BCF-uitbreidingen: toegestane soorten, statussen, prioriteiten, fasen en labels, en de gebruikers aan wie toegewezen mag worden |
 | `BIM Reactie` | `issue`, `tekst`, `standpunt?` |
 | `BIM Containerstatus` (fase 2) | `bestand`, `versie`, `staat` (`wip`, `gedeeld`, `gepubliceerd`, `gearchiveerd`), `statuscode`, `revisiecode`, `taakteam`, `geldig_vanaf` (zie 5.8) |
 | `BIM Goedkeuring` (fase 2) | `container`, `van_staat`, `naar_staat`, `stap` (`controle`, `review`, `goedkeuring`), `door`, `besluit`, `opmerking`, `ids_uitslag?`, `tijd` |
