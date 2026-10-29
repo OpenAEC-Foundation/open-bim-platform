@@ -2,7 +2,7 @@ import sqlite3
 
 import ifcopenshell
 
-from openbim_kern.index.properties import build_property_index, read_properties
+from openbim_kern.index.properties import build_property_index, count_elements, read_properties
 from openbim_kern.index.spatial import build_spatial_tree, build_summary
 
 
@@ -108,3 +108,34 @@ def test_index_spatial_objects(ifc_small, tmp_path):
 def test_summary_counts_spatial(ifc_small):
     s = build_summary(ifc_small)["aantallen_per_klasse"]
     assert s["IfcBuildingStorey"] == 2 and s["IfcSite"] == 1
+
+
+def test_index_types(ifc_small, tmp_path):
+    # Types are indexed too, so a reader can show the name of an element's type and the properties of the type.
+    import ifcopenshell.api
+
+    model = ifcopenshell.open(str(ifc_small))
+    wall = model.by_type("IfcWall")[0]
+    wall_type = ifcopenshell.api.run("root.create_entity", model, ifc_class="IfcWallType", name="Binnenwand 100")
+    ifcopenshell.api.run("type.assign_type", model, related_objects=[wall], relating_type=wall_type)
+    pset = ifcopenshell.api.run("pset.add_pset", model, product=wall_type, name="Pset_WallCommon")
+    ifcopenshell.api.run("pset.edit_pset", model, pset=pset, properties={"AcousticRating": "R40"})
+    model.write(str(tmp_path / "m.ifc"))
+    build_property_index(tmp_path / "m.ifc", tmp_path / "e.sqlite")
+    got = read_properties(tmp_path / "e.sqlite", [wall.GlobalId, wall_type.GlobalId])
+    assert got[wall.GlobalId]["type"] == wall_type.GlobalId
+    assert got[wall_type.GlobalId]["klasse"] == "IfcWallType"
+    assert got[wall_type.GlobalId]["naam"] == "Binnenwand 100"
+    assert got[wall_type.GlobalId]["psets"]["Pset_WallCommon"]["AcousticRating"] == "R40"
+    # Types are not elements: the counts per class leave them out.
+    assert "IfcWallType" not in count_elements(tmp_path / "e.sqlite")["aantallen_per_klasse"]
+
+
+def test_read_an_index_without_types(ifc_small, tmp_path):
+    # An index made before types were indexed still reads; a type GlobalId is then simply absent.
+    db = tmp_path / "e.sqlite"
+    build_property_index(ifc_small, db)
+    with sqlite3.connect(db) as con:
+        con.execute("DROP TABLE IF EXISTS types")
+    assert read_properties(db, ["0000000000000000000000"]) == {}
+    assert read_properties(db, [first_wall_globalid(ifc_small)])

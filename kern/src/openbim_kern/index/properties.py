@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS properties (
 CREATE TABLE IF NOT EXISTS materials (globalid TEXT, material TEXT, UNIQUE (globalid, material));
 CREATE TABLE IF NOT EXISTS classifications (
     globalid TEXT, system TEXT, code TEXT, name TEXT, UNIQUE (globalid, system, code));
+CREATE TABLE IF NOT EXISTS types (globalid TEXT PRIMARY KEY, ifc_class TEXT, name TEXT);
 """
 
 
@@ -98,6 +99,11 @@ def index_model(model: ifcopenshell.file, db: Path) -> None:
     with closing(sqlite3.connect(db)) as con:
         con.executescript(SCHEMA)
         indexed = [*model.by_type("IfcProject"), *model.by_type("IfcProduct")]
+        # Types in a table of their own: a reader can show the name and properties of an element's type, and the
+        # counts per class (elements) leave them out.
+        for type_ in model.by_type("IfcTypeObject"):
+            con.execute("INSERT OR IGNORE INTO types VALUES (?,?,?)", (type_.GlobalId, type_.is_a(), type_.Name))
+            _index_sets(con, type_)
         for el in indexed:
             gid = el.GlobalId
             type_ = element_util.get_type(el) if el.is_a("IfcObject") else None
@@ -106,20 +112,25 @@ def index_model(model: ifcopenshell.file, db: Path) -> None:
                 "INSERT OR IGNORE INTO elements VALUES (?,?,?,?,?)",
                 (gid, el.is_a(), el.Name, type_.GlobalId if type_ else None, storey.GlobalId if storey else None),
             )
-            for kind, kwargs in (("pset", {"psets_only": True}), ("qto", {"qtos_only": True})):
-                for set_name, props in element_util.get_psets(el, **kwargs).items():
-                    for name, value in props.items():
-                        if name == "id":
-                            continue
-                        con.execute(
-                            "INSERT OR IGNORE INTO properties VALUES (?,?,?,?,?,?)",
-                            (gid, set_name, name, json.dumps(_json_safe(value)), None, kind),
-                        )
+            _index_sets(con, el)
             for material in _materials(el):
                 con.execute("INSERT OR IGNORE INTO materials VALUES (?,?)", (gid, material))
             for system, code, name in _classifications(el):
                 con.execute("INSERT OR IGNORE INTO classifications VALUES (?,?,?,?)", (gid, system, code, name))
         con.commit()
+
+
+def _index_sets(con: sqlite3.Connection, entity: ifcopenshell.entity_instance) -> None:
+    """The property and quantity sets of an element or type."""
+    for kind, kwargs in (("pset", {"psets_only": True}), ("qto", {"qtos_only": True})):
+        for set_name, props in element_util.get_psets(entity, **kwargs).items():
+            for name, value in props.items():
+                if name == "id":
+                    continue
+                con.execute(
+                    "INSERT OR IGNORE INTO properties VALUES (?,?,?,?,?,?)",
+                    (entity.GlobalId, set_name, name, json.dumps(_json_safe(value)), None, kind),
+                )
 
 
 def count_elements(db: Path) -> dict[str, dict[str, int]]:
@@ -159,10 +170,14 @@ def read_properties(db: Path, globalids: list[str]) -> dict[str, ElementProperti
 def _read(db: Path, globalids: list[str]) -> dict[str, ElementProperties]:
     result: dict[str, ElementProperties] = {}
     with closing(sqlite3.connect(f"{db.resolve().as_uri()}?mode=ro", uri=True)) as con:
+        # An index from before types were indexed has no table `types`.
+        has_types = con.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='types'").fetchone()
         for gid in dict.fromkeys(globalids):
             row = con.execute(
                 "SELECT ifc_class, name, type_globalid, storey_globalid FROM elements WHERE globalid=?", (gid,)
             ).fetchone()
+            if row is None and has_types:
+                row = con.execute("SELECT ifc_class, name, NULL, NULL FROM types WHERE globalid=?", (gid,)).fetchone()
             if row is None:
                 continue
             psets: dict[str, dict[str, Any]] = {}

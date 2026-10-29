@@ -3,13 +3,14 @@ import { useTranslation } from "react-i18next";
 import type { BimHost, ElementProperties } from "../host/BimHost";
 import type { Selection } from "../model/selection";
 import { describe, formatValue } from "./format";
+import { relatedNames } from "./related";
 
 type State =
   | { status: "leeg" }
   | { status: "laden" }
   | { status: "geen" }
   | { status: "fout"; melding: string }
-  | { status: "klaar"; element: ElementProperties; storey: string | null };
+  | { status: "klaar"; element: ElementProperties; storey: string | null; type: string | null };
 
 /** The properties of the selected element, from the property index of its model version. */
 export function PropertiesPanel({ host, selection }: { host: BimHost; selection: Selection | null }) {
@@ -26,12 +27,8 @@ export function PropertiesPanel({ host, selection }: { host: BimHost; selection:
     (async () => {
       const found = await host.eigenschappen(selection.bron, [selection.globalid]);
       const element = found[selection.globalid];
-      let storey: string | null = null;
-      if (element?.verdieping && element.verdieping !== selection.globalid) {
-        const storeys = await host.eigenschappen(selection.bron, [element.verdieping]);
-        storey = storeys[element.verdieping]?.naam ?? element.verdieping;
-      }
-      if (!cancelled) setState(element ? { status: "klaar", element, storey } : { status: "geen" });
+      const names = element ? await relatedNames(host, selection.bron, element, selection.globalid) : null;
+      if (!cancelled) setState(element && names ? { status: "klaar", element, ...names } : { status: "geen" });
     })().catch((error: unknown) => {
       if (!cancelled) setState({ status: "fout", melding: describe(error) });
     });
@@ -50,13 +47,23 @@ export function PropertiesPanel({ host, selection }: { host: BimHost; selection:
       {state.status === "geen" && <p className="viewer__hint">{t("geen_eigenschappen")}</p>}
       {state.status === "fout" && <p className="viewer__error">{t("eigenschappen_fout", { melding: state.melding })}</p>}
       {state.status === "klaar" && selection && (
-        <Properties element={state.element} storey={state.storey} globalid={selection.globalid} />
+        <Properties element={state.element} storey={state.storey} type={state.type} globalid={selection.globalid} />
       )}
     </aside>
   );
 }
 
-function Properties({ element, storey, globalid }: { element: ElementProperties; storey: string | null; globalid: string }) {
+function Properties({
+  element,
+  storey,
+  type,
+  globalid,
+}: {
+  element: ElementProperties;
+  storey: string | null;
+  type: string | null;
+  globalid: string;
+}) {
   const { t } = useTranslation();
   return (
     <div className="inspector__body">
@@ -69,7 +76,7 @@ function Properties({ element, storey, globalid }: { element: ElementProperties;
         <Row label={t("klasse")} value={element.klasse} />
         {element.naam && <Row label={t("naam")} value={element.naam} />}
         {storey && <Row label={t("verdieping")} value={storey} />}
-        {element.type && <Row label={t("type")} value={element.type} />}
+        {type && <Row label={t("type")} value={type} />}
       </Section>
       {Object.entries(element.psets).map(([name, values]) => (
         <Section key={`pset:${name}`} title={name}>
