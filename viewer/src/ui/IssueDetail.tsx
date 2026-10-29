@@ -104,6 +104,34 @@ export function IssueDetail({ coordinatie, weergave, topic, extensions, modellen
   const getoondeVersie = (bestand: string | null) => modellen.find((m) => m.bron.sleutel === bestand)?.bron.versie ?? "?";
   const statussen = topic.authorization.topic_status.length ? topic.authorization.topic_status : (extensions?.topic_status ?? []);
 
+  /** Een veld met keuzes uit de projectinstellingen: te wijzigen voor wie het issue mag bijwerken, anders alleen te lezen. */
+  const keuze = (veld: "topic_type" | "priority" | "assigned_to", label: string, waarden: string[], leeg?: string) => {
+    const waarde = topic[veld];
+    if (!mag("update")) return waarde ? <Rij label={label} waarde={waarde} /> : null;
+    const opties = waarde && !waarden.includes(waarde) ? [waarde, ...waarden] : waarden;
+    return (
+      <div className="inspector__row">
+        <dt>{label}</dt>
+        <dd>
+          <select
+            className="oa-input issue__select"
+            aria-label={label}
+            value={waarde ?? ""}
+            disabled={bezig}
+            onChange={(e) => void bewaar({ [veld]: e.target.value || null })}
+          >
+            {(leeg !== undefined || !waarde) && <option value="">{leeg ?? "—"}</option>}
+            {opties.map((w) => (
+              <option key={w} value={w}>
+                {w}
+              </option>
+            ))}
+          </select>
+        </dd>
+      </div>
+    );
+  };
+
   return (
     <div className="issue">
       <div className="issue__kop">
@@ -144,9 +172,9 @@ export function IssueDetail({ coordinatie, weergave, topic, extensions, modellen
               )}
             </dd>
           </div>
-          {topic.topic_type && <Rij label={t("soort")} waarde={topic.topic_type} />}
-          {topic.priority && <Rij label={t("prioriteit")} waarde={topic.priority} />}
-          {topic.assigned_to && <Rij label={t("toegewezen_aan")} waarde={topic.assigned_to} />}
+          {keuze("topic_type", t("soort"), extensions?.topic_type ?? [])}
+          {keuze("priority", t("prioriteit"), extensions?.priority ?? [], "—")}
+          {keuze("assigned_to", t("toegewezen_aan"), extensions?.users ?? [], t("niemand"))}
           {topic.due_date && <Rij label={t("vervaldatum")} waarde={topic.due_date} />}
           {topic.labels.length > 0 && <Rij label={t("labels")} waarde={topic.labels.join(", ")} />}
         </dl>
