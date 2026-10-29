@@ -1,7 +1,7 @@
 """Het auditlog: elke wijziging aan een BIM-project, issue, standpunt of reactie wordt een regel in BIM Auditregel.
 
-De bron (de BCF-API, een import, de werkplek) zet de aanroeper in `frappe.flags.bim_bron`; zonder bron is het
-`achtergrond`.
+De bron (de BCF-API, de werkplek) zet de aanroeper in `frappe.flags.bim_bron`; zonder bron is het `achtergrond`.
+Een eigen handeling (bijvoorbeeld `geïmporteerd`) zet de aanroeper op het document in `doc.flags.bim_handeling`.
 """
 
 import csv
@@ -72,7 +72,7 @@ def schrijf(handeling: str, doc, voor: dict | None, na: dict | None) -> None:
 
 
 def aangemaakt(doc, method=None):
-	schrijf("aangemaakt", doc, None, _velden(doc))
+	schrijf(doc.flags.bim_handeling or "aangemaakt", doc, None, _velden(doc))
 
 
 def gewijzigd(doc, method=None):
@@ -82,7 +82,8 @@ def gewijzigd(doc, method=None):
 	oud, nieuw = _velden(vorige), _velden(doc)
 	anders = [k for k in nieuw if _json(oud.get(k)) != _json(nieuw[k])]
 	if anders:
-		schrijf("gewijzigd", doc, {k: oud.get(k) for k in anders}, {k: nieuw[k] for k in anders})
+		handeling = doc.flags.bim_handeling or "gewijzigd"
+		schrijf(handeling, doc, {k: oud.get(k) for k in anders}, {k: nieuw[k] for k in anders})
 
 
 def verwijderd(doc, method=None):
