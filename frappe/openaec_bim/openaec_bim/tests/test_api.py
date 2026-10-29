@@ -1,19 +1,15 @@
 import hashlib
-import json
 from unittest.mock import patch
 from urllib.parse import unquote
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from openaec_storage import api as opslag
-from openaec_storage import s3
 from openaec_storage.tests.hulp import NagebootsteS3, gebruiker, ruim_op, ruimte, upload
 
 from openaec_bim import afgeleid, api, leestoken
 from openaec_bim.kern import KernFout
-from openaec_bim.tests.hulp import NepKern
-
-INDEX = {"schema": "IFC4", "omzetter": "kern-0.1.0+fragments-3.6.0", "delen": [{"naam": "model.frag", "bytes": 5}]}
+from openaec_bim.tests.hulp import NepKern, maak_klaar
 
 
 class TestApi(IntegrationTestCase):
@@ -42,16 +38,7 @@ class TestApi(IntegrationTestCase):
 		ruim_op()
 
 	def maak_klaar(self, bestand, frag=b"FRAG!", sqlite=b"SQLITE"):
-		"""Zet de taak van dit bestand op klaar, met de uitvoer in de bucket zoals de kern hem aflevert."""
-		doc = afgeleid.laatste(bestand, 1)
-		for naam, inhoud in (("index.json", json.dumps(INDEX).encode()), ("model.frag", frag), ("eigenschappen.sqlite", sqlite)):
-			s3.zet(f"{doc.prefix}/{naam}", inhoud)
-		self.kern.taken[doc.kern_taak] = {
-			"status": "klaar",
-			"voortgang": 1.0,
-			"uitkomst": {"omzetter": INDEX["omzetter"], "delen": [{"naam": "model.frag", "bytes": len(frag), "verdiepingen": []}]},
-		}
-		return doc
+		return maak_klaar(self.kern, bestand, frag=frag, sqlite=sqlite)
 
 	def test_project_zet_de_omzettingen_klaar(self):
 		project = api.project(map=self.map)

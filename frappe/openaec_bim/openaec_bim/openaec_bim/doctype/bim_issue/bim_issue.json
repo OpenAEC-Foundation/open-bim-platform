@@ -19,6 +19,8 @@
   "labels",
   "verwante_issues",
   "documentverwijzingen",
+  "referentielinks",
+  "bim_snippet",
   "bcf_index",
   "elementen"
  ],
@@ -99,6 +101,16 @@
    "label": "Documentverwijzingen"
   },
   {
+   "fieldname": "referentielinks",
+   "fieldtype": "JSON",
+   "label": "Referentielinks"
+  },
+  {
+   "fieldname": "bim_snippet",
+   "fieldtype": "JSON",
+   "label": "BIM-snippet"
+  },
+  {
    "fieldname": "bcf_index",
    "fieldtype": "Int",
    "label": "Index (BCF)"
@@ -112,7 +124,7 @@
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 09:00:00.000000",
+ "modified": "2026-10-29 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "OpenAEC BIM",
  "name": "BIM Issue",

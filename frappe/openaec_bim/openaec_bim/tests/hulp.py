@@ -1,13 +1,18 @@
 """Gedeelde opzet voor de tests van openaec_bim: een nagebootste kern, een ruimte met een modelmap en gebruikers."""
 
+import json
 from unittest.mock import patch
 
 import frappe
 from frappe.tests import IntegrationTestCase
 from openaec_storage import api as opslag
+from openaec_storage import s3
 from openaec_storage.tests.hulp import NagebootsteS3, gebruiker, ruim_op, ruimte, upload
 
+from openaec_bim import afgeleid
 from openaec_bim.kern import KernFout
+
+INDEX = {"schema": "IFC4", "omzetter": "kern-0.1.0+fragments-3.6.0", "delen": [{"naam": "model.frag", "bytes": 5}]}
 
 BIM_DOCTYPES = (
 	"BIM Auditregel",
@@ -43,6 +48,19 @@ class NepKern:
 		raise AssertionError(pad)
 
 
+def maak_klaar(kern, bestand, versie=1, frag=b"FRAG!", sqlite=b"SQLITE"):
+	"""Zet de taak van deze versie op klaar, met de uitvoer in de bucket zoals de kern hem aflevert."""
+	doc = afgeleid.laatste(bestand, versie) or afgeleid.start(bestand, versie)
+	for naam, inhoud in (("index.json", json.dumps(INDEX).encode()), ("model.frag", frag), ("eigenschappen.sqlite", sqlite)):
+		s3.zet(f"{doc.prefix}/{naam}", inhoud)
+	kern.taken[doc.kern_taak] = {
+		"status": "klaar",
+		"voortgang": 1.0,
+		"uitkomst": {"omzetter": INDEX["omzetter"], "delen": [{"naam": "model.frag", "bytes": len(frag), "verdiepingen": []}]},
+	}
+	return doc
+
+
 def ruim_bim_op():
 	for doctype in BIM_DOCTYPES:
 		if frappe.db.table_exists(doctype):
@@ -73,6 +91,12 @@ class ProjectTest(IntegrationTestCase):
 			{"doctype": "BIM Project", "modelmap": self.map, "ruimte": self.ruimte, "titel": "05 BIM-modellen"}
 		).insert(ignore_permissions=True).name
 		frappe.set_user(self.lid)
+
+	def model_klaar(self, bestand, versie=1):
+		"""Zet de omzetting van deze versie klaar en laat de app dat zien, zoals na de taak van de kern."""
+		doc = maak_klaar(self.kern, bestand, versie)
+		afgeleid.bijwerken(doc)
+		return frappe.get_doc(afgeleid.DOCTYPE, doc.name)
 
 	def tearDown(self):
 		self.patch.stop()
