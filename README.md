@@ -17,9 +17,12 @@ Status: fase 0 (fundament) is af en geaccepteerd: tien IFC-bestanden van samen 5
 | [Plan fase 1a](docs/superpowers/plans/2026-10-28-fase-1a-werkplek.md) | platform-app `openaec_bim` en de viewer in de werkplek |
 | [Meting fase 0](docs/metingen/2026-fase-0.md) | tijden en geheugen per stap, de viewer op het budget, de proef in de werkplek |
 
-**Fase 2** brengt naast het vergelijken van versies, IDS en BCF de opslag per element: geometrie als meshes per hash
-met een manifest per versie (een nieuwe versie voegt alleen haar nieuwe meshes toe), een tabel met alle relaties in de
-index en de eigenschappen kolomgericht per versie.
+**Fase 1** maakt issues met BCF 3.0 als datamodel, direct gevolgd door de BCF-API 3.0, en een koppeling van elementen
+over versies heen (op GlobalId, met een terugval als een exporteur GlobalIds verandert), zodat issues en botsingen een
+nieuwe versie overleven; alles in een auditlog. **Fase 2** brengt de ISO 19650-werkwijze voor informatiecontainers
+(staten, codes, controle en goedkeuring, met IDS als poort naar gepubliceerd), het vergelijken van versies per element
+en de opslag per element: geometrie als meshes per hash met een manifest per versie (een nieuwe versie voegt alleen
+haar nieuwe meshes toe), een tabel met alle relaties in de index en de eigenschappen kolomgericht per versie.
 
 ## Ontwikkelen
 
