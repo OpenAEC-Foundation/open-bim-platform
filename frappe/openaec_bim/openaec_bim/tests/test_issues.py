@@ -91,8 +91,8 @@ class TestIssues(ProjectTest):
 		oud = t["modified_date"]
 		nieuw = issues.topic_wijzig(t["guid"], {"title": "nieuw", "modified_date": oud})
 		self.assertGreater(nieuw["modified_date"], oud)
-		with self.assertRaises(issues.VerouderdeVersie):
-			issues.topic_wijzig(t["guid"], {"title": "nog nieuwer", "modified_date": oud})
+		code = foutcode(self, issues.VerouderdeVersie, issues.topic_wijzig, t["guid"], {"title": "nog nieuwer", "modified_date": oud})
+		self.assertEqual(code, "issue_verouderd")
 		self.assertEqual(issues.VerouderdeVersie.http_status_code, 409)
 		self.assertEqual(issues.topic(t["guid"])["title"], "nieuw")
 

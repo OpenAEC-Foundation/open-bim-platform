@@ -60,10 +60,12 @@ describe("WerkplekHost", () => {
     const { kanaal: k, vraag } = kanaal(() => []);
     const c = new WerkplekHost(k).coordinatie;
     await c.reacties("g1");
+    await c.standpunten("g1");
     await c.standpuntBewaar("g1", { perspective_camera: undefined });
     await c.botsingsrondeStart([{ bestand: "b1" }], [{ bestand: "b2", klassen: ["IfcDuctSegment"] }], "hard", 0.01);
     await c.botsingStatus("x1", "genegeerd");
     expect(vraag).toHaveBeenCalledWith("bim.reacties", { guid: "g1" });
+    expect(vraag).toHaveBeenCalledWith("bim.standpunten", { guid: "g1" });
     expect(vraag).toHaveBeenCalledWith("bim.standpunt_bewaar", { guid: "g1", standpunt: { perspective_camera: undefined } });
     expect(vraag).toHaveBeenCalledWith("bim.botsingsronde_start", {
       set_a: [{ bestand: "b1" }],

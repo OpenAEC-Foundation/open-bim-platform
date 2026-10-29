@@ -36,6 +36,7 @@ export class WerkplekHost implements BimHost {
       issueVerwijder: async (guid) => void (await vraag("bim.issue_verwijder", { guid })),
       reacties: (guid) => vraag<Comment[]>("bim.reacties", { guid }),
       reactieBewaar: (guid, reactie) => vraag<Comment>("bim.reactie_bewaar", { guid, reactie }),
+      standpunten: (guid) => vraag<Viewpoint[]>("bim.standpunten", { guid }),
       standpuntBewaar: (guid, standpunt) => vraag<Viewpoint>("bim.standpunt_bewaar", { guid, standpunt }),
       snapshot: (guid, standpunt) => vraag("bim.snapshot", { guid, standpunt }),
       bcfExport: (versie) => vraag("bim.bcf_export", { versie }),

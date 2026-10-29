@@ -1,14 +1,17 @@
 import { Icon, uiRefresh, viewFitAll, viewLoadModel } from "@openaec/icons";
 import { StatusBar, StatusItem, TitleBar } from "@openaec/shell";
-import { useCallback, useEffect, useRef, useState, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { FragmentsEngine } from "../engine/FragmentsEngine";
 import { sourceKey, type BimHost, type ModelInfo, type ModelSource, type Project } from "../host/BimHost";
 import { DEFAULT_BUDGET, planLoad, switchOnNewlyReady } from "../model/budget";
+import type { Vec3, Viewpoint } from "../model/bcf";
 import type { Selection } from "../model/selection";
 import { describe, isNoFolder } from "./format";
+import { IssuesPanel } from "./IssuesPanel";
 import { ModelList } from "./ModelList";
 import { PropertiesPanel } from "./PropertiesPanel";
+import type { ElementRef, Weergave } from "./weergave";
 
 export const VERSION = "0.1.0";
 const POLL_MS = 5000;
@@ -22,6 +25,8 @@ export function partKey(bron: ModelSource, deel: string): string {
 function withKey(set: Set<string>, key: string): Set<string> {
   return new Set(set).add(key);
 }
+
+type Tab = "eigenschappen" | "issues" | "botsingen";
 
 function withoutKey(set: Set<string>, key: string): Set<string> {
   const next = new Set(set);
@@ -52,6 +57,8 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
   const [loaded, setLoaded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState<Set<string>>(new Set());
   const [selection, setSelection] = useState<Selection | null>(null);
+  const [tab, setTab] = useState<Tab>("eigenschappen");
+  const selectionRef = useRef<Selection | null>(null);
 
   useEffect(() => {
     const engine = new FragmentsEngine(canvasRef.current as HTMLDivElement);
@@ -163,6 +170,44 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
     queueRef.current = queueRef.current.then(() => engine.highlight(target)).catch((e) => setError(describe(e)));
   }, [selection, loaded]);
 
+  useEffect(() => {
+    selectionRef.current = selection;
+  }, [selection]);
+
+  /** What the issue and clash panels may do with the view: camera, selection, snapshot, marking. */
+  const weergave = useMemo<Weergave>(() => {
+    const targets = (elementen: ElementRef[]) =>
+      elementen.map(({ bestand, globalid }) => ({
+        globalid,
+        keys: [...partsRef.current]
+          .filter(([key]) => !bestand || key.startsWith(`bestand:${bestand}@`))
+          .flatMap(([, parts]) => parts),
+      }));
+    const later = (stap: (engine: FragmentsEngine) => Promise<void>) => {
+      const engine = engineRef.current;
+      if (!engine) return Promise.resolve();
+      const klaar = queueRef.current.then(() => stap(engine));
+      queueRef.current = klaar.catch((e) => setError(describe(e)));
+      return klaar;
+    };
+    return {
+      camera: () => (engineRef.current && partsRef.current.size ? engineRef.current.camera() : null),
+      selectie: () => (selectionRef.current ? [selectionRef.current.globalid] : []),
+      snapshot: async () => (engineRef.current ? engineRef.current.snapshot() : null),
+      toon: (standpunt: Viewpoint | null, elementen: ElementRef[]) =>
+        later(async (engine) => {
+          if (standpunt?.perspective_camera) await engine.setCamera({ perspective_camera: standpunt.perspective_camera });
+          const selectie = (standpunt?.components?.selection ?? []).map((c) => ({ bestand: null, globalid: c.ifc_guid }));
+          await engine.highlightMany(targets(elementen.length ? elementen : selectie));
+        }),
+      focus: (punt: Vec3, elementen: ElementRef[]) =>
+        later(async (engine) => {
+          await engine.focus(punt, 2);
+          await engine.highlightMany(targets(elementen));
+        }),
+    };
+  }, []);
+
   // Test entry for the browser test (e2e/smoke.spec.ts); it exists only in the development build.
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -235,7 +280,30 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
             </div>
           )}
         </main>
-        <PropertiesPanel host={host} selection={selection} />
+        <div className="rechts">
+          {host.coordinatie && (
+            <div className="tabs" role="tablist" aria-label={t("panelen")}>
+              {(["eigenschappen", "issues"] as Tab[]).map((naam) => (
+                <button
+                  key={naam}
+                  type="button"
+                  role="tab"
+                  className="tabs__tab"
+                  aria-selected={tab === naam}
+                  onClick={() => setTab(naam)}
+                >
+                  {t(`tab_${naam}`)}
+                </button>
+              ))}
+            </div>
+          )}
+          {(tab === "eigenschappen" || !host.coordinatie) && <PropertiesPanel host={host} selection={selection} />}
+          {tab === "issues" && host.coordinatie && (
+            <aside className="inspector" aria-label={t("tab_issues")}>
+              <IssuesPanel coordinatie={host.coordinatie} weergave={weergave} modellen={models} />
+            </aside>
+          )}
+        </div>
       </div>
       <StatusBar
         left={<StatusItem>{t("geladen", { aantal: loaded.size, totaal: models.length })}</StatusItem>}

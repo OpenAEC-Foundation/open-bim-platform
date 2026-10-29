@@ -359,7 +359,7 @@ def topic_wijzig(guid: str, data: dict) -> dict:
 	_vereis_wijzigen(issue, project)
 	if data.get("modified_date"):
 		if _tijdstip(data["modified_date"]) < _op_milliseconde(get_datetime(issue.modified).replace(tzinfo=_tijdzone())):
-			raise VerouderdeVersie(_("Dit issue is intussen door iemand anders gewijzigd."))
+			_weiger(_("Dit issue is intussen door iemand anders gewijzigd."), "issue_verouderd", VerouderdeVersie)
 	_van_bcf(data, issue, project)
 	issue.save(ignore_permissions=True)
 	return _naar_bcf(issue, project)

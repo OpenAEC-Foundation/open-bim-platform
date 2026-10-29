@@ -89,6 +89,8 @@ export interface Coordinatie {
   issueVerwijder(guid: string): Promise<void>;
   reacties(guid: string): Promise<Comment[]>;
   reactieBewaar(guid: string, reactie: { guid?: string; comment: string; viewpoint_guid?: string | null }): Promise<Comment>;
+  /** The viewpoints of a topic, without the snapshots themselves (see `snapshot`). */
+  standpunten(guid: string): Promise<Viewpoint[]>;
   standpuntBewaar(guid: string, standpunt: Viewpoint): Promise<Viewpoint>;
   snapshot(guid: string, standpunt: string): Promise<{ snapshot_type: "png" | "jpg"; snapshot_data: string }>;
   bcfExport(versie: "2.1" | "3.0"): Promise<{ bestand: string }>;

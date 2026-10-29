@@ -239,3 +239,184 @@ body {
   color: var(--color-text);
   overflow-wrap: anywhere;
 }
+
+/* The right-hand column: tabs for properties, issues and clashes (only in the SuperCloud). */
+.rechts {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--color-panel);
+  border-left: 1px solid var(--color-border);
+}
+
+.rechts > .inspector {
+  flex: 1;
+  border-left: none;
+}
+
+.tabs {
+  display: flex;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.tabs__tab {
+  flex: 1;
+  padding: var(--spacing-2) var(--spacing-3);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--color-text-muted);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.tabs__tab[aria-selected="true"] {
+  color: var(--color-text);
+  border-bottom-color: var(--theme-accent);
+}
+
+.model-list__warning {
+  grid-column: 1 / -1;
+  color: var(--color-semantic-warning);
+  font-size: var(--font-size-xs);
+}
+
+/* Issues (BCF) and clashes. */
+.issues,
+.issue {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding-bottom: var(--spacing-4);
+}
+
+.issues__balk,
+.issues__filter,
+.issue__kop {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4) 0;
+}
+
+.issue__kop {
+  justify-content: space-between;
+}
+
+.issues__filter > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.issues__lijst,
+.issue__lijst {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.issues__item {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  width: 100%;
+  padding: var(--spacing-2) var(--spacing-4);
+  border: none;
+  border-top: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  text-align: left;
+  cursor: pointer;
+}
+
+.issues__item:hover,
+.issues__item[aria-current="true"] {
+  background: var(--color-bg);
+}
+
+.issues__meta,
+.issue__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.issue__lijst li {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) 0;
+  font-size: var(--font-size-xs);
+}
+
+.issue__waarschuwing {
+  color: var(--color-semantic-warning);
+}
+
+.issue__tekst {
+  margin: var(--spacing-2) 0 0;
+  font-size: var(--font-size-sm);
+  white-space: pre-wrap;
+}
+
+.issue__select {
+  width: 100%;
+}
+
+.issue__standpunt {
+  display: block;
+  width: 100%;
+  padding: 0;
+  margin-bottom: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.issue__standpunt img {
+  display: block;
+  width: 100%;
+}
+
+.issue__nieuw,
+.issue__formulier {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: 0 var(--spacing-4);
+}
+
+.issue__nieuw {
+  padding: var(--spacing-2) 0 0;
+}
+
+.markup {
+  padding: 0 var(--spacing-4);
+}
+
+.markup__canvas {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--color-border);
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.markup__bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-2);
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}

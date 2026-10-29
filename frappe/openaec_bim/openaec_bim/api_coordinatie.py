@@ -80,6 +80,13 @@ def reactie_bewaar(guid: str, reactie) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
+def standpunten(guid: str) -> list[dict]:
+	"""De standpunten van een issue, zonder de schermafbeeldingen zelf (die geeft `snapshot`)."""
+	_gastpagina()
+	return issues_mod.standpunten(guid)
+
+
+@frappe.whitelist(methods=["POST"])
 def standpunt_bewaar(guid: str, standpunt) -> dict:
 	_gastpagina()
 	return issues_mod.standpunt_maak(guid, _object(standpunt))

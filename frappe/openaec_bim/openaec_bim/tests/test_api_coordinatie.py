@@ -65,6 +65,8 @@ class TestApiCoordinatie(ProjectTest):
 		self.assertEqual(api_coordinatie.reactie_bewaar(t["guid"], {"guid": r["guid"], "comment": "Zie het standpunt"})["comment"], "Zie het standpunt")
 		self.assertEqual([x["comment"] for x in api_coordinatie.reacties(t["guid"])], ["Zie het standpunt"])
 		self.assertEqual(api_coordinatie.snapshot(t["guid"], sp["guid"]), {"snapshot_type": "png", "snapshot_data": PNG})
+		[lijst] = api_coordinatie.standpunten(t["guid"])
+		self.assertEqual((lijst["guid"], lijst["perspective_camera"], lijst["snapshot"]), (sp["guid"], CAMERA, {"snapshot_type": "png"}))
 
 	def test_bcf_export_en_import(self):
 		api_coordinatie.issue_bewaar(self.map, {"title": "Heen en terug"})
