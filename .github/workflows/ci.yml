@@ -98,13 +98,37 @@ jobs:
           name: playwright-report
           path: viewer/playwright-report/
 
-  image:
-    name: Image bouwen en starten
+  releasescripts:
+    name: Releasescripts (ruff, pytest)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Installeren
+        run: python -m pip install pytest ruff
+      - name: Ruff
+        run: |
+          ruff check scripts
+          ruff format --check scripts
+      - name: Tests
+        run: python -m pytest scripts/tests -q
+
+  image:
+    name: Image bouwen en starten (${{ matrix.arch }})
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
       - name: Bouwen
-        run: docker build -t openbim-kern kern
+        run: docker build -f kern/Dockerfile -t openbim-kern .
       - name: Starten, health
         run: |
           docker run -d --name kern -e OPENBIM_KERN_SLEUTELS=ci -p 8730:8730 openbim-kern
@@ -119,3 +143,8 @@ jobs:
           if docker run --rm openbim-kern; then echo "De kern startte zonder sleutels."; exit 1; fi
       - name: Draait niet als root
         run: test "$(docker run --rm openbim-kern id -u)" = "10001"
+      - name: Licenties, notices en bron.json in het image
+        run: |
+          docker run --rm openbim-kern sh -c 'test -s COPYING && test -s COPYING.LESSER && test -s bron.json'
+          docker run --rm openbim-kern grep -q "^  ifcopenshell .* (LGPL-3.0-or-later)$" THIRD-PARTY-NOTICES.txt
+          docker run --rm openbim-kern grep -q "snapshot.debian.org" THIRD-PARTY-NOTICES.txt

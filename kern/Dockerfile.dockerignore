@@ -1,0 +1,15 @@
+# The build context of kern/Dockerfile is the root of the repository: only what the image needs goes in.
+*
+!COPYING
+!COPYING.LESSER
+!kern/pyproject.toml
+!kern/src/
+!kern/converter/package.json
+!kern/converter/package-lock.json
+!kern/converter/*.mjs
+!kern/converter/*.json
+!scripts/release/notices.py
+!scripts/release/bron.py
+**/__pycache__
+**/node_modules
+**/*.egg-info

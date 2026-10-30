@@ -1,0 +1,241 @@
+name: Release
+
+# A tag v<jaar>.<week>.<n> on a commit publishes a release as the SuperCloud contract asks
+# (openaec-supercloud/docs/apps-harmoniseren.md):
+#   - the BIM-kern as ghcr.io/openaec-foundation/open-bim-platform-api:<versie>, for linux/amd64 and linux/arm64;
+#   - the viewer as open-bim-platform-web-<versie>.tar.gz and the Frappe-app as openaec_bim-<versie>.tar.gz, each
+#     with a .sha256, on the GitHub release of that tag.
+# A pull request that touches the release builds everything without publishing (the assets as workflow artefacts).
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - kern/Dockerfile
+      - kern/Dockerfile.dockerignore
+      - scripts/release/**
+      - COPYING
+      - COPYING.LESSER
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/openaec-foundation/open-bim-platform-api
+
+jobs:
+  versie:
+    name: Versie bepalen
+    runs-on: ubuntu-24.04
+    outputs:
+      versie: ${{ steps.v.outputs.versie }}
+      tag: ${{ steps.v.outputs.tag }}
+      publiceren: ${{ steps.v.outputs.publiceren }}
+    steps:
+      - id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN: ${{ github.run_number }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            if ! [[ "$REF_NAME" =~ ^v20[0-9]{2}\.([1-9]|[1-4][0-9]|5[0-3])\.[1-9][0-9]*$ ]]; then
+              echo "::error::Tag $REF_NAME volgt niet v<jaar>.<week>.<n> (zoals v2026.44.1)."
+              exit 1
+            fi
+            echo "versie=${REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=$REF_NAME" >> "$GITHUB_OUTPUT"
+            echo "publiceren=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "versie=0.0.0-proef.$RUN" >> "$GITHUB_OUTPUT"
+            echo "tag=" >> "$GITHUB_OUTPUT"
+            echo "publiceren=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  image:
+    name: Image (${{ matrix.arch }})
+    needs: versie
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSIE: ${{ needs.versie.outputs.versie }}
+      TAG: ${{ needs.versie.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Bouwen
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: kern/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSIE=${{ env.VERSIE }}
+            TAG=${{ env.TAG }}
+            COMMIT=${{ github.sha }}
+          load: true
+          tags: openbim-kern:proef
+          cache-from: type=gha,scope=kern-${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=kern-${{ matrix.arch }}
+      - name: Proef op het image
+        run: |
+          docker run -d --name kern -e OPENBIM_KERN_SLEUTELS=ci -p 8730:8730 openbim-kern:proef
+          for i in $(seq 1 30); do curl -sf localhost:8730/v1/health && break; sleep 1; done
+          curl -sf localhost:8730/v1/health | grep -q "\"release\":\"$TAG\"" || [ -z "$TAG" ]
+          docker rm -f kern
+          if docker run --rm openbim-kern:proef; then echo "De kern startte zonder sleutels."; exit 1; fi
+          test "$(docker run --rm openbim-kern:proef id -u)" = "10001"
+          docker run --rm openbim-kern:proef cat bron.json | python3 -c "
+          import json, sys
+          b = json.load(sys.stdin)
+          assert b['versie'] == '$VERSIE' and b['tag'] == '$TAG' and b['commit'] == '${{ github.sha }}', b
+          assert b['licentie'] == 'LGPL-3.0-or-later', b"
+          docker run --rm openbim-kern:proef grep -q "^  ifcopenshell .* (LGPL-3.0-or-later)$" THIRD-PARTY-NOTICES.txt
+      - name: Inloggen bij ghcr.io
+        if: needs.versie.outputs.publiceren == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publiceren (op digest)
+        id: push
+        if: needs.versie.outputs.publiceren == 'true'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: kern/Dockerfile
+          platforms: linux/${{ matrix.arch }}
+          build-args: |
+            VERSIE=${{ env.VERSIE }}
+            TAG=${{ env.TAG }}
+            COMMIT=${{ github.sha }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=kern-${{ matrix.arch }}
+      - name: Digest bewaren
+        if: needs.versie.outputs.publiceren == 'true'
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          mkdir -p digests
+          touch "digests/${DIGEST#sha256:}"
+      - uses: actions/upload-artifact@v4
+        if: needs.versie.outputs.publiceren == 'true'
+        with:
+          name: digest-${{ matrix.arch }}
+          path: digests/*
+          retention-days: 1
+
+  manifest:
+    name: Image voor beide architecturen
+    needs: [versie, image]
+    if: needs.versie.outputs.publiceren == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.inspect.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-*
+          path: digests
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Manifest maken
+        working-directory: digests
+        env:
+          VERSIE: ${{ needs.versie.outputs.versie }}
+        run: docker buildx imagetools create -t "$IMAGE:$VERSIE" $(printf "$IMAGE@sha256:%s " *)
+      - id: inspect
+        env:
+          VERSIE: ${{ needs.versie.outputs.versie }}
+        run: |
+          docker buildx imagetools inspect "$IMAGE:$VERSIE"
+          echo "digest=$(docker buildx imagetools inspect "$IMAGE:$VERSIE" --format '{{json .Manifest}}' | jq -r .digest)" >> "$GITHUB_OUTPUT"
+
+  assets:
+    name: Viewer en Frappe-app
+    needs: versie
+    runs-on: ubuntu-24.04
+    env:
+      VERSIE: ${{ needs.versie.outputs.versie }}
+      TAG: ${{ needs.versie.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - name: Viewer bouwen
+        working-directory: viewer
+        run: |
+          npm ci
+          npx tsc --noEmit
+          npx vite build --sourcemap hidden
+          npm run check:geen-cdn
+      - name: Assets maken
+        run: |
+          python scripts/release/assets.py web --out release --version "$VERSIE" --tag "$TAG" --commit "$GITHUB_SHA"
+          python scripts/release/assets.py frappe --out release --version "$VERSIE" --tag "$TAG" --commit "$GITHUB_SHA"
+          (cd release && sha256sum -c *.sha256)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: assets
+          path: release/*
+
+  publiceren:
+    name: GitHub-release
+    needs: [versie, manifest, assets]
+    if: needs.versie.outputs.publiceren == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: assets
+          path: release
+      - name: Release maken
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.versie.outputs.tag }}
+          VERSIE: ${{ needs.versie.outputs.versie }}
+          DIGEST: ${{ needs.manifest.outputs.digest }}
+        run: |
+          cat > notes.md <<EOF
+          Open BIM Platform $TAG, gebouwd uit commit $GITHUB_SHA.
+
+          | Asset | Soort |
+          |---|---|
+          | \`$IMAGE:$VERSIE\` (\`$DIGEST\`) | BIM-kern als rekenkern, linux/amd64 en linux/arm64 |
+          | \`open-bim-platform-web-$VERSIE.tar.gz\` | viewer als browsertool voor de werkplek |
+          | \`openaec_bim-$VERSIE.tar.gz\` | Frappe-app voor de klantsite |
+
+          Elk asset heeft \`bron.json\`, \`THIRD-PARTY-NOTICES.txt\`, \`COPYING\` en \`COPYING.LESSER\`; de tarballs ook
+          \`MANIFEST.sha256\`. Licentie: LGPL-3.0-or-later.
+          EOF
+          gh release create "$TAG" release/* --verify-tag --title "$TAG" --notes-file notes.md
