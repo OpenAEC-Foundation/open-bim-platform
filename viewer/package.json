@@ -2,6 +2,7 @@
   "name": "openbim-viewer",
   "version": "0.1.0",
   "private": true,
+  "license": "LGPL-3.0-or-later",
   "type": "module",
   "description": "Viewer of the Open BIM Platform: loads fragments within a memory budget, through a host layer.",
   "scripts": {

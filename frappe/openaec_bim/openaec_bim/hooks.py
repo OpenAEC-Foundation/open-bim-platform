@@ -3,8 +3,7 @@ app_title = "OpenAEC BIM"
 app_publisher = "OpenAEC Foundation"
 app_description = "Open BIM Platform: modelmappen in OpenAEC Storage omzetten en tonen in de werkplek"
 app_email = "openaecstudio@gmail.com"
-# De projectlicentie van open-bim-platform is nog niet gekozen (besluit van de eigenaar).
-app_license = "NOASSERTION"
+app_license = "LGPL-3.0-or-later"
 
 required_apps = ["frappe", "openaec_storage"]
 
