@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,7 @@ name = "openbim-kern"
 version = "0.1.0"
 description = "Compute core of the Open BIM Platform: tool contract served over HTTP."
 requires-python = ">=3.12"
+license = "LGPL-3.0-or-later"
 dependencies = [
     "fastapi>=0.115",
     "pydantic>=2.7",
