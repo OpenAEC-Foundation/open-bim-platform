@@ -195,12 +195,18 @@ jobs:
           npm ci
           npx tsc --noEmit
           npx vite build --sourcemap hidden
-          npm run check:geen-cdn
       - name: Assets maken
         run: |
           python scripts/release/assets.py web --out release --version "$VERSIE" --tag "$TAG" --commit "$GITHUB_SHA"
           python scripts/release/assets.py frappe --out release --version "$VERSIE" --tag "$TAG" --commit "$GITHUB_SHA"
           (cd release && sha256sum -c *.sha256)
+      # On the asset itself: the hidden sourcemaps (with the sources of the libraries) are no longer in it.
+      - name: Geen CDN in het viewer-asset
+        run: |
+          mkdir -p "$RUNNER_TEMP/web"
+          tar -xzf "release/open-bim-platform-web-$VERSIE.tar.gz" -C "$RUNNER_TEMP/web"
+          node viewer/scripts/check-geen-cdn.mjs "$RUNNER_TEMP/web"
+          (cd "$RUNNER_TEMP/web" && sha256sum -c --quiet MANIFEST.sha256)
       - uses: actions/upload-artifact@v4
         with:
           name: assets
