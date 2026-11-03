@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { toBcfCamera, type Topic } from "./bcf";
-import { filterTopics, koppelWaarschuwing, nieuwTopic, verlorenElementen } from "./issues";
+import { elementVragen, filterTopics, koppelWaarschuwing, nieuwTopic, verlorenElementen } from "./issues";
 
 function topic(guid: string, velden: Partial<Topic>): Topic {
   return {
@@ -72,5 +72,29 @@ describe("issues", () => {
       { ifc_guid: "b", bestand: "b1", versie: "1", teruggevonden: false },
     ];
     expect(verlorenElementen(topic("t", { elementen }))).toEqual([elementen[1]]);
+  });
+
+  test("de namen worden per modelversie opgevraagd, alleen van teruggevonden elementen", () => {
+    const element = (ifc_guid: string, bestand: string | null, versie: string | null, teruggevonden = true) => ({
+      ifc_guid,
+      bestand,
+      versie,
+      teruggevonden,
+    });
+    const elementen = [
+      element("a", "f1", "2"),
+      element("b", "f2", "1"),
+      element("c", "f1", "2"),
+      element("weg", "f1", "2", false),
+      element("los", null, null, false),
+    ];
+    expect(elementVragen(elementen)).toEqual([
+      { bron: { soort: "bestand", sleutel: "f1", versie: "2" }, globalids: ["a", "c"] },
+      { bron: { soort: "bestand", sleutel: "f2", versie: "1" }, globalids: ["b"] },
+    ]);
+    expect(elementVragen(elementen, 2)).toEqual([
+      { bron: { soort: "bestand", sleutel: "f1", versie: "2" }, globalids: ["a"] },
+      { bron: { soort: "bestand", sleutel: "f2", versie: "1" }, globalids: ["b"] },
+    ]);
   });
 });

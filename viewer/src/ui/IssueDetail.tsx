@@ -1,12 +1,14 @@
 import { Icon, uiChevronLeft, uiDelete } from "@openaec/icons";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Coordinatie, ModelInfo } from "../host/BimHost";
+import type { BimHost, Coordinatie, ElementProperties, ModelInfo } from "../host/BimHost";
 import type { Comment, Extensions, Topic, Viewpoint } from "../model/bcf";
+import { elementVragen } from "../model/issues";
 import { describe } from "./format";
 import type { Weergave } from "./weergave";
 
 type Props = {
+  host: BimHost;
   coordinatie: Coordinatie;
   weergave: Weergave;
   topic: Topic;
@@ -20,7 +22,7 @@ type Props = {
 };
 
 /** One issue: its fields and status, the elements (followed to the version in view), viewpoints and comments. */
-export function IssueDetail({ coordinatie, weergave, topic, extensions, modellen, onTerug, onGewijzigd, onVerwijderd, onVerouderd }: Props) {
+export function IssueDetail({ host, coordinatie, weergave, topic, extensions, modellen, onTerug, onGewijzigd, onVerwijderd, onVerouderd }: Props) {
   const { t } = useTranslation();
   const [comments, setComments] = useState<Comment[]>([]);
   const [viewpoints, setViewpoints] = useState<Viewpoint[]>([]);
@@ -28,9 +30,36 @@ export function IssueDetail({ coordinatie, weergave, topic, extensions, modellen
   const [reactie, setReactie] = useState("");
   const [melding, setMelding] = useState<string | null>(null);
   const [bezig, setBezig] = useState(false);
+  const [gegevens, setGegevens] = useState<Record<string, ElementProperties>>({});
 
   const mag = (actie: string) => topic.authorization.topic_actions.includes(actie);
   const elementen = (topic.elementen ?? []).map((e) => ({ bestand: e.bestand, globalid: e.ifc_guid }));
+  const elementenSleutel = (topic.elementen ?? []).map((e) => `${e.bestand}@${e.versie}:${e.ifc_guid}`).join(",");
+
+  // The names of the elements, from the property index of the version in view. Without them the GlobalId remains.
+  useEffect(() => {
+    let cancelled = false;
+    setGegevens({});
+    for (const { bron, globalids } of elementVragen(topic.elementen ?? [])) {
+      host
+        .eigenschappen(bron, globalids)
+        .then((gevonden) => {
+          if (cancelled) return;
+          setGegevens((huidig) => {
+            const nieuw = { ...huidig };
+            for (const [globalid, eigenschappen] of Object.entries(gevonden)) {
+              nieuw[`${bron.sleutel}:${globalid}`] = eigenschappen;
+            }
+            return nieuw;
+          });
+        })
+        .catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the elements themselves, not the object around them
+  }, [host, elementenSleutel]);
 
   const laad = useCallback(async () => {
     const [c, v] = await Promise.all([coordinatie.reacties(topic.guid), coordinatie.standpunten(topic.guid)]);
@@ -184,16 +213,26 @@ export function IssueDetail({ coordinatie, weergave, topic, extensions, modellen
         <section className="inspector__section">
           <h3 className="inspector__section-title">{t("elementen")}</h3>
           <ul className="issue__lijst">
-            {(topic.elementen ?? []).map((e) => (
-              <li key={`${e.bestand}:${e.ifc_guid}`}>
-                <code className="oa-code">{e.ifc_guid}</code>
-                {!e.teruggevonden && (
-                  <span className="issue__waarschuwing">
-                    {e.bestand ? t("niet_teruggevonden", { versie: getoondeVersie(e.bestand) }) : t("niet_teruggevonden_onbekend")}
-                  </span>
-                )}
-              </li>
-            ))}
+            {(topic.elementen ?? []).map((e) => {
+              const gegeven = gegevens[`${e.bestand}:${e.ifc_guid}`];
+              const model = modellen.find((m) => m.bron.sleutel === e.bestand)?.naam;
+              return (
+                <li key={`${e.bestand}:${e.ifc_guid}`}>
+                  {gegeven && (
+                    <>
+                      <span className="issue__element">{gegeven.naam ?? gegeven.klasse}</span>
+                      <span className="issue__meta">{[gegeven.klasse, model].filter(Boolean).join(" · ")}</span>
+                    </>
+                  )}
+                  <code className="oa-code">{e.ifc_guid}</code>
+                  {!e.teruggevonden && (
+                    <span className="issue__waarschuwing">
+                      {e.bestand ? t("niet_teruggevonden", { versie: getoondeVersie(e.bestand) }) : t("niet_teruggevonden_onbekend")}
+                    </span>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </section>
       )}

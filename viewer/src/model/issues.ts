@@ -1,3 +1,4 @@
+import type { ModelSource } from "../host/BimHost";
 import { KOPPEL_DREMPEL, type BcfCamera, type Topic, type TopicElement, type TopicInput, type Viewpoint } from "./bcf";
 
 export type TopicFilter = { status?: string; soort?: string; toegewezen?: string; tekst?: string };
@@ -52,4 +53,19 @@ export function koppelWaarschuwing(matchrate: number | null | undefined): boolea
 /** Elements of the topic that were not found again in the version the project shows. */
 export function verlorenElementen(topic: Topic): TopicElement[] {
   return (topic.elementen ?? []).filter((e) => !e.teruggevonden);
+}
+
+/** Which elements of an issue to ask names for: per model version the ones found there, at most `max` in all. */
+export function elementVragen(elementen: TopicElement[], max = 100): { bron: ModelSource; globalids: string[] }[] {
+  const perVersie = new Map<string, { bron: ModelSource; globalids: string[] }>();
+  for (const e of elementen.filter((x) => x.teruggevonden && x.bestand && x.versie).slice(0, max)) {
+    const sleutel = `${e.bestand}@${e.versie}`;
+    const vraag = perVersie.get(sleutel) ?? {
+      bron: { soort: "bestand", sleutel: e.bestand as string, versie: e.versie as string },
+      globalids: [],
+    };
+    vraag.globalids.push(e.ifc_guid);
+    perVersie.set(sleutel, vraag);
+  }
+  return [...perVersie.values()];
 }

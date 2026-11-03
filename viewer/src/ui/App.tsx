@@ -301,7 +301,7 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           {(tab === "eigenschappen" || !host.coordinatie) && <PropertiesPanel host={host} selection={selection} />}
           {tab === "issues" && host.coordinatie && (
             <aside className="inspector" aria-label={t("tab_issues")}>
-              <IssuesPanel coordinatie={host.coordinatie} weergave={weergave} modellen={models} />
+              <IssuesPanel host={host} coordinatie={host.coordinatie} weergave={weergave} modellen={models} />
             </aside>
           )}
           {tab === "botsingen" && host.coordinatie && (

@@ -249,6 +249,13 @@ body {
   border-left: 1px solid var(--color-border);
 }
 
+/* Fields of the style book take the full width of this narrow column, their padding and border included. */
+.rechts *,
+.rechts *::before,
+.rechts *::after {
+  box-sizing: border-box;
+}
+
 .rechts > .inspector {
   flex: 1;
   border-left: none;
@@ -354,6 +361,12 @@ body {
   gap: var(--spacing-1);
   padding: var(--spacing-1) 0;
   font-size: var(--font-size-xs);
+}
+
+.issue__element {
+  color: var(--color-text);
+  font-size: var(--font-size-sm);
+  overflow-wrap: anywhere;
 }
 
 .issue__waarschuwing {
