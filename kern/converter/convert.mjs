@@ -46,6 +46,17 @@ function assertComplete(input) {
   }
 }
 
+// The watchdog (converter.py) reads the progress of a conversion from this file, as a fraction.
+function progressWriter(file) {
+  let last = -1;
+  return (fraction) => {
+    const percent = Math.floor(fraction * 100);
+    if (!file || percent === last) return;
+    last = percent;
+    writeFileSync(file, String(fraction));
+  };
+}
+
 async function frag(input, output) {
   const t0 = performance.now();
   assertComplete(input);
@@ -60,7 +71,12 @@ async function frag(input, output) {
   };
   let bytes;
   try {
-    bytes = await importer.process({ readFromCallback: true, readCallback, raw: false });
+    bytes = await importer.process({
+      readFromCallback: true,
+      readCallback,
+      raw: false,
+      progressCallback: progressWriter(process.env.OPENBIM_VOORTGANG_BESTAND),
+    });
   } finally {
     closeSync(fd);
   }

@@ -11,6 +11,7 @@ import subprocess
 import tempfile
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -31,6 +32,7 @@ RETRY_MARKER = "WebAssembly.Exception"
 HEAP_FULL_MARKER = "JavaScript heap out of memory"
 _POLL_S = 0.5
 _MAX_DETAIL = 500
+PROGRESS_FILE_ENV = "OPENBIM_VOORTGANG_BESTAND"
 
 
 @dataclass
@@ -49,8 +51,27 @@ class _Run:
     attempts: int
 
 
-def convert_to_frag(ifc: Path, out: Path) -> ConvertStats:
-    """Convert an IFC file to fragments at `out`.
+@dataclass
+class _Progress:
+    """The converter writes a fraction to `file`; the watchdog reads it while it waits and passes it on."""
+
+    file: Path
+    report: Callable[[float], None]
+    last: float = -1.0
+
+    def read(self) -> None:
+        try:
+            value = float(self.file.read_text(encoding="ascii"))
+        except (OSError, ValueError):  # not written yet, or read halfway a write: the next poll has it
+            return
+        value = min(max(value, 0.0), 1.0)
+        if value > self.last:
+            self.last = value
+            self.report(value)
+
+
+def convert_to_frag(ifc: Path, out: Path, progress: Callable[[float], None] | None = None) -> ConvertStats:
+    """Convert an IFC file to fragments at `out`, reporting the converter's own progress (0 to 1).
 
     The output appears only on success; `seconds` covers all attempts.
     """
@@ -59,16 +80,19 @@ def convert_to_frag(ifc: Path, out: Path) -> ConvertStats:
     out.parent.mkdir(parents=True, exist_ok=True)
     # A fresh name the converter creates itself, so the output gets the usual file mode (mkstemp gives 0600).
     tmp = out.with_name(f".{out.stem}-{uuid.uuid4().hex}.part")
+    progress_file = tmp.with_suffix(".voortgang")
     try:
-        run = _run_converter(["frag", str(ifc), str(tmp)], ifc)
+        watcher = _Progress(progress_file, progress) if progress else None
+        run = _run_converter(["frag", str(ifc), str(tmp)], ifc, progress=watcher)
         report = _last_json(run.stdout, ifc)
         out_bytes = tmp.stat().st_size
         if "out_bytes" not in report or out_bytes == 0:
             raise _failed(ifc, "de omzetter leverde geen fragments-bestand op")
         os.replace(tmp, out)
     finally:
-        with contextlib.suppress(OSError):
-            tmp.unlink()
+        for leftover in (tmp, progress_file):
+            with contextlib.suppress(OSError):
+                leftover.unlink()
     return ConvertStats(
         in_bytes=in_bytes,
         out_bytes=out_bytes,
@@ -104,7 +128,9 @@ def split_ifc(ifc: Path, parts: int, outdir: Path) -> list[Path]:
         shutil.rmtree(work, ignore_errors=True)
 
 
-def _run_converter(args: list[str], ifc: Path, memory_factor: int = CONVERT_MEMORY_FACTOR) -> _Run:
+def _run_converter(
+    args: list[str], ifc: Path, memory_factor: int = CONVERT_MEMORY_FACTOR, progress: _Progress | None = None
+) -> _Run:
     """Run the converter, retrying at most MAX_RETRIES times when it died on a WebAssembly exception."""
     size = ifc.stat().st_size
     memory_limit = _memory_limit(size, memory_factor)
@@ -113,7 +139,7 @@ def _run_converter(args: list[str], ifc: Path, memory_factor: int = CONVERT_MEMO
     attempts = 0
     while True:
         attempts += 1
-        returncode, stdout, stderr, rss = _run_once([*_command(), *args], ifc, memory_limit, time_limit)
+        returncode, stdout, stderr, rss = _run_once([*_command(), *args], ifc, memory_limit, time_limit, progress)
         peak = max(peak, rss)
         if returncode == 0:
             return _Run(stdout=stdout, peak_rss=peak, attempts=attempts)
@@ -124,13 +150,15 @@ def _run_converter(args: list[str], ifc: Path, memory_factor: int = CONVERT_MEMO
         raise _failed(ifc, _last_line(stderr) or f"de omzetter stopte met exitcode {returncode}")
 
 
-def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -> tuple[int, str, str, int]:
+def _run_once(
+    cmd: list[str], ifc: Path, memory_limit: int, time_limit: float, progress: _Progress | None = None
+) -> tuple[int, str, str, int]:
     """Run one converter process; returns (returncode, stdout, stderr, peak RSS of the process tree)."""
     # Output goes to files rather than pipes, so a process with a lot of output can never block on a full pipe.
     with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
         try:
             proc = subprocess.Popen(
-                cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=_environment(memory_limit)
+                cmd, stdin=subprocess.DEVNULL, stdout=out, stderr=err, env=_environment(memory_limit, progress)
             )
         except OSError as exc:
             raise KernError(
@@ -159,7 +187,10 @@ def _run_once(cmd: list[str], ifc: Path, memory_limit: int, time_limit: float) -
                     returncode = proc.wait(timeout=_POLL_S)
                     break
                 except subprocess.TimeoutExpired:
-                    pass
+                    if progress:
+                        progress.read()
+            if progress:
+                progress.read()
         finally:
             if proc.poll() is None:
                 kill_tree(root)
@@ -183,7 +214,7 @@ def _too_much_memory(ifc: Path, memory_limit: int) -> KernError:
     )
 
 
-def _environment(memory_limit: int) -> dict[str, str]:
+def _environment(memory_limit: int, progress: _Progress | None = None) -> dict[str, str]:
     """The converter's environment: the V8 heap may grow to the memory limit of the watchdog, which stays the guard.
 
     By itself Node stops at about 4 GB of heap, too little to split an IFC of a few GB.
@@ -191,6 +222,8 @@ def _environment(memory_limit: int) -> dict[str, str]:
     env = dict(os.environ)
     heap = f"--max-old-space-size={memory_limit // 2**20}"
     env["NODE_OPTIONS"] = f"{env.get('NODE_OPTIONS', '')} {heap}".strip()
+    if progress:
+        env[PROGRESS_FILE_ENV] = str(progress.file)
     return env
 
 
