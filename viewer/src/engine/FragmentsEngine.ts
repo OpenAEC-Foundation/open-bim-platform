@@ -156,7 +156,8 @@ export class FragmentsEngine {
       for (const key of target.keys) {
         const model = this.fragments.list.get(key);
         const [id] = (await model?.getLocalIdsByGuids([target.globalid])) ?? [];
-        if (model && id != null) boxes.push(await model.getMergedBox([id]));
+        const box = model && id != null ? await model.getMergedBox([id]) : null;
+        if (box && !box.isEmpty()) boxes.push(box);
       }
     }
     if (!boxes.length) return;
