@@ -21,7 +21,7 @@ BOTSING = "BIM Botsing"
 SOORTEN = ("hard", "afstand", "dubbel")
 ERNSTEN = ("klein", "groot", "kritiek")
 MAX_CONTROLES = 30
-STATUSSEN = ("nieuw", "actief", "opgelost", "genegeerd")
+STATUSSEN = ("nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost")
 # De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
 GELDIG = 24 * 3600
 VELDEN = ("ronde", "sleutel", "element_a", "element_b", "punt", "afstand", "status", "issue", "groep")

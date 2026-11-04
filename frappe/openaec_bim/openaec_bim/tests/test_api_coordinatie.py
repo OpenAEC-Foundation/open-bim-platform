@@ -91,6 +91,23 @@ class TestApiCoordinatie(ProjectTest):
 		self.assertEqual(len(api_coordinatie.botsingen(ronde)), 1)
 		self.assertRaises(frappe.PermissionError, api_coordinatie.botsing_status, b["naam"], "genegeerd")
 
+	def test_botsingsronde_start_met_controles_als_lijst_of_json(self):
+		self.model_klaar(self.constructie)
+		self.model_klaar(self.installaties)
+		controles = [
+			{
+				"set_a": [{"bestand": self.constructie}],
+				"set_b": [{"bestand": self.installaties}],
+				"soort": "hard",
+				"tolerantie": 0.0,
+			}
+		]
+		for waarde in (controles, json.dumps(controles)):
+			ronde = api_coordinatie.botsingsronde_start(self.map, controles=waarde, voorinstelling="harde")["ronde"]
+			doc = frappe.get_doc("BIM Botsingsronde", ronde)
+			self.assertEqual((doc.reeks, len(json.loads(doc.regels))), ("harde", 1))
+			self.assertEqual(len(self.kern.laatste_botsingen["controles"]), 1)
+
 	def test_audit_export_alleen_met_schrijfrecht(self):
 		api_coordinatie.issue_bewaar(self.map, {"title": "In het log"})
 		self.assertTrue(api_coordinatie.audit_export(self.map)["csv"].startswith("tijd,gebruiker,handeling"))

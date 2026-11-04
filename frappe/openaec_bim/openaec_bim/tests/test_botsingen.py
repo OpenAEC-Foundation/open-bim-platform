@@ -246,6 +246,12 @@ class TestBotsingen(ProjectTest):
 		self.assertIsNone(self.botsing(eerste, "w1", "k1").issue)
 		self.assertIsNone(self.botsing(tweede, "w1", "k1").issue)
 
+	def test_status_geaccepteerd_wordt_aanvaard_en_onbekend_geweigerd(self):
+		b = self.botsing(self.ronde_met([("w1", "k1")]), "w1", "k1")
+		self.assertEqual(botsingen.zet_status(b.name, "geaccepteerd")["status"], "geaccepteerd")
+		self.assertRaises(frappe.ValidationError, botsingen.zet_status, b.name, "onzin")
+		self.assertEqual(frappe.db.get_value("BIM Botsing", b.name, "status"), "geaccepteerd")
+
 	def test_status_zetten_staat_in_het_log_en_vraagt_schrijfrecht(self):
 		ronde = self.ronde_met([("w1", "k1")])
 		b = self.botsing(ronde, "w1", "k1")
