@@ -180,6 +180,20 @@ def test_variant_keeps_only_the_given_classes(variant, ifc_small, tmp_path):
     assert model.by_type("IfcBuildingStorey")
 
 
+def test_variant_drops_elements_by_name_and_copies_a_class_moved(variant, ifc_small, tmp_path):
+    import ifcopenshell.util.placement
+
+    out = variant(ifc_small, tmp_path / "zonder.ifc", zonder_naam=["Wand B 0"])
+    namen = [e.Name for e in ifcopenshell.open(str(out)).by_type("IfcWall")]
+    assert "Wand B 0" not in namen and "Wand B 1" in namen
+
+    out = variant(ifc_small, tmp_path / "kopie.ifc", kopie=("IfcDuctSegment", (0.0, 0.0, 3.0)))
+    kanalen = ifcopenshell.open(str(out)).by_type("IfcDuctSegment")
+    assert len(kanalen) == 2 and len({k.GlobalId for k in kanalen}) == 2
+    hoogtes = sorted(float(ifcopenshell.util.placement.get_local_placement(k.ObjectPlacement)[2][3]) for k in kanalen)
+    assert hoogtes[1] - hoogtes[0] == pytest.approx(3.0)
+
+
 def test_variant_replaces_part_of_the_globalids_and_the_link_finds_them_back(variant, ifc_small, tmp_path):
     from openbim_kern.linking import link_versions
 
