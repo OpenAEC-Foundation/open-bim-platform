@@ -57,6 +57,12 @@ OPEN_STATUSSEN = ("nieuw", "actief", "bevestigd")
 # Wat een rij van de vorige ronde aan haar opvolger meegeeft.
 BESLISSING = ("reden", "beoordeeld_door", "beoordeeld_op", "issue", "issue_status_voor", "nummer")
 DICHTE_STATUSSEN = ("Opgelost", "Gesloten")
+MAX_REDEN = 200
+MAX_GROEPSACTIE = 500
+MAX_WEERGAVEN = 50
+MAX_VERLOOP = 20
+REGELSOORTEN = ("uit", "hard", "afstand")
+MAX_MM = 1000
 
 
 def _weiger(melding: str, foutcode: str, uitzondering=frappe.ValidationError):
@@ -514,14 +520,49 @@ def naar_json(botsing) -> dict:
 	}
 
 
-def zet_status(botsing: str, status: str) -> dict:
-	doc = frappe.get_doc(BOTSING, botsing)
-	_vereis_schrijver(_project_van(doc))
+def _controleer_status(status: str, reden: str | None) -> str | None:
+	"""De status en de reden voor een beoordeling; de reden telt alleen bij `genegeerd`."""
 	if status not in STATUSSEN:
 		_weiger(_("Onbekende status {0}.").format(status), "status_onbekend")
+	reden = (reden or "").strip() or None
+	if reden and len(reden) > MAX_REDEN:
+		_weiger(_("Een reden is hoogstens {0} tekens.").format(MAX_REDEN), "reden_te_lang")
+	return reden if status == "genegeerd" else None
+
+
+def _beoordeel(doc, status: str, reden: str | None) -> dict:
+	"""Zet status, reden en wie en wanneer; een bevestiging maakt het issue. De aanroeper heeft de rechten gecontroleerd."""
 	doc.status = status
+	doc.reden = reden
+	doc.beoordeeld_door = frappe.session.user
+	doc.beoordeeld_op = now_datetime()
 	doc.save(ignore_permissions=True)
+	if status == "bevestigd":
+		naar_issue(doc.name)
+		doc.reload()
 	return naar_json(doc)
+
+
+def zet_status(botsing: str, status: str, reden: str | None = None) -> dict:
+	"""Beoordeelt een botsing; `bevestigd` maakt een issue als er nog geen is en houdt het daarna."""
+	doc = frappe.get_doc(BOTSING, botsing)
+	_vereis_schrijver(_project_van(doc))
+	return _beoordeel(doc, status, _controleer_status(status, reden))
+
+
+def zet_status_veel(botsingen: list[str], status: str, reden: str | None = None) -> list[dict]:
+	"""Dezelfde beoordeling voor tot 500 botsingen, met één rechtencontrole per ronde."""
+	botsingen = list(botsingen or [])
+	if len(botsingen) > MAX_GROEPSACTIE:
+		_weiger(_("Een groepsactie omvat hoogstens {0} botsingen.").format(MAX_GROEPSACTIE), "te_veel_botsingen")
+	reden = _controleer_status(status, reden)
+	docs = [frappe.get_doc(BOTSING, naam) for naam in botsingen]
+	gecontroleerd = set()
+	for doc in docs:
+		if doc.ronde not in gecontroleerd:
+			_vereis_schrijver(_project_van(doc))
+			gecontroleerd.add(doc.ronde)
+	return [_beoordeel(doc, status, reden) for doc in docs]
 
 
 def _camera(punt: list[float]) -> dict:
@@ -547,12 +588,17 @@ def naar_issue(botsing: str) -> dict:
 		return issues.topic(doc.issue)
 	a, b = json.loads(doc.element_a), json.loads(doc.element_b)
 	soorten = issues._regels(project.soorten)
+	klassen = [k.strip() for k in (doc.groep or "").split("×")] + ["", ""]
+	naam_a, naam_b = a.get("naam") or klassen[0] or a["globalid"], b.get("naam") or klassen[1] or b["globalid"]
+	omschrijving = _("{0} en {1}, afstand {2} m.").format(a["globalid"], b["globalid"], flt(doc.afstand))
+	if doc.verdieping:
+		omschrijving = _("Verdieping {0}. {1}").format(doc.verdieping, omschrijving)
 	t = issues.topic_maak(
 		project,
 		{
-			"title": _("Botsing {0}").format(doc.groep or "").strip(),
+			"title": _("Botsing {0} / {1}").format(naam_a, naam_b),
 			"topic_type": "Botsing" if not soorten or "Botsing" in soorten else None,
-			"description": _("{0} en {1}, afstand {2} m.").format(a["globalid"], b["globalid"], flt(doc.afstand)),
+			"description": omschrijving,
 		},
 	)
 	issue = frappe.get_doc(issues.ISSUE, t["guid"])
@@ -612,3 +658,94 @@ def lijst(ronde: str) -> list[dict]:
 	issues._vereis_lezen(project)
 	rijen = frappe.get_all(BOTSING, {"ronde": ronde}, ["name", *VELDEN], order_by="groep asc, sleutel asc")
 	return [naar_json(rij) for rij in rijen]
+
+
+def _lijst_uit(tekst) -> list:
+	waarde = json.loads(tekst) if isinstance(tekst, str) and tekst else tekst
+	return waarde if isinstance(waarde, list) else []
+
+
+def instellingen(project) -> dict:
+	"""De botsingsregels en opgeslagen weergaven van het project; `mag_wijzigen` is waar voor wie in de modelmap mag schrijven."""
+	project = issues._project(project)
+	issues._vereis_lezen(project)
+	return {
+		"regels": _lijst_uit(project.botsingsregels),
+		"weergaven": _lijst_uit(project.botsingsweergaven),
+		"mag_wijzigen": bool(issues._schrijver(project)),
+	}
+
+
+def _regel(regel) -> dict:
+	if not isinstance(regel, dict):
+		_weiger(_("Een regel is een object."), "regels_ongeldig")
+	a, b = str(regel.get("a") or "").strip(), str(regel.get("b") or "").strip()
+	if not a or not b:
+		_weiger(_("Een regel heeft twee disciplines nodig."), "regels_ongeldig")
+	if regel.get("soort") not in REGELSOORTEN:
+		_weiger(_("Kies uit, hard of afstand."), "regels_ongeldig")
+	try:
+		mm = flt(regel.get("mm"))
+	except (TypeError, ValueError):
+		mm = -1
+	if not 0 <= mm <= MAX_MM:
+		_weiger(_("De afstand ligt tussen 0 en {0} mm.").format(MAX_MM), "regels_ongeldig")
+	ernst = regel.get("ernst") or None
+	if ernst is not None and ernst not in ERNSTEN:
+		_weiger(_("Onbekende ernst {0}.").format(ernst), "regels_ongeldig")
+	a, b = sorted((a, b))
+	return {"a": a, "b": b, "soort": regel["soort"], "mm": mm, "ernst": ernst}
+
+
+def _weergave(weergave) -> dict:
+	if not isinstance(weergave, dict):
+		_weiger(_("Een weergave is een object."), "weergave_ongeldig")
+	naam = str(weergave.get("naam") or "").strip()
+	if not naam:
+		_weiger(_("Een weergave heeft een naam nodig."), "weergave_ongeldig")
+	filter_ = weergave.get("filter") or {}
+	if not isinstance(filter_, dict):
+		_weiger(_("Het filter van een weergave is een object."), "weergave_ongeldig")
+	groep = weergave.get("groep") or None
+	if groep is not None and not isinstance(groep, str):
+		_weiger(_("De groepering van een weergave is een tekst."), "weergave_ongeldig")
+	return {"naam": naam, "filter": filter_, "groep": groep}
+
+
+def instellingen_bewaar(project, regels=None, weergaven=None) -> dict:
+	"""Bewaart de regels en/of weergaven die zijn meegegeven; wat `None` is blijft zoals het was."""
+	project = issues._project(project)
+	_vereis_schrijver(project)
+	if regels is not None:
+		project.botsingsregels = _json([_regel(r) for r in regels])
+	if weergaven is not None:
+		if len(weergaven) > MAX_WEERGAVEN:
+			_weiger(_("Hoogstens {0} weergaven.").format(MAX_WEERGAVEN), "weergave_ongeldig")
+		nieuw = [_weergave(w) for w in weergaven]
+		if len({w["naam"] for w in nieuw}) != len(nieuw):
+			_weiger(_("Elke weergave heeft een eigen naam."), "weergave_ongeldig")
+		project.botsingsweergaven = _json(nieuw)
+	project.save(ignore_permissions=True)
+	return instellingen(project)
+
+
+def trends(ronde: str) -> list[dict]:
+	"""De samenvattingen langs `vorige_ronde`, hoogstens de laatste 20, oudste eerst."""
+	project = issues._project(frappe.db.get_value(RONDE, ronde, "project") or "")
+	issues._vereis_lezen(project)
+	uit = []
+	naam = ronde
+	while naam and len(uit) < MAX_VERLOOP:
+		rij = frappe.db.get_value(RONDE, naam, ["name", "titel", "creation", "samenvatting", "vorige_ronde"], as_dict=True)
+		if not rij:
+			break
+		uit.append(
+			{
+				"naam": rij.name,
+				"titel": rij.titel,
+				"gestart": str(rij.creation),
+				"samenvatting": json.loads(rij.samenvatting) if rij.samenvatting else None,
+			}
+		)
+		naam = rij.vorige_ronde
+	return uit[::-1]

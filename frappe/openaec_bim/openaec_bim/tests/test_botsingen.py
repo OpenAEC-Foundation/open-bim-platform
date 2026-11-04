@@ -1,4 +1,5 @@
 import json
+from unittest.mock import patch
 
 import frappe
 from openaec_storage import api as opslag
@@ -20,7 +21,7 @@ class TestBotsingen(ProjectTest):
 	def start(self):
 		return botsingen.start(self.project, [{"bestand": self.constructie}], [{"bestand": self.installaties}], "hard", 0.01)
 
-	def lever(self, ronde, paren, velden=None, a_bestand=None, b_bestand=None):
+	def lever(self, ronde, paren, velden=None, a_bestand=None, b_bestand=None, namen=None):
 		"""De kern is klaar: het resultaat voor de versies van de ronde staat in de bucket. Een paar is (a, b) of
 		(a, b, velden); `velden` zijn de velden van de kern per botsing, `verdieping` hoort bij element a."""
 		doc = frappe.get_doc("BIM Botsingsronde", ronde)
@@ -34,10 +35,14 @@ class TestBotsingen(ProjectTest):
 			element_a = {"sleutel": a_bestand, "versie": versies[a_bestand], "globalid": a, "klasse": "IfcWall"}
 			if verdieping:
 				element_a["verdieping"] = verdieping
+			element_b = {"sleutel": b_bestand, "versie": versies[b_bestand], "globalid": b, "klasse": "IfcDuctSegment"}
+			for element, globalid in ((element_a, a), (element_b, b)):
+				if (namen or {}).get(globalid):
+					element["naam"] = namen[globalid]
 			resultaat.append(
 				{
 					"a": element_a,
-					"b": {"sleutel": b_bestand, "versie": versies[b_bestand], "globalid": b, "klasse": "IfcDuctSegment"},
+					"b": element_b,
 					"punt": [1.0, 2.0, 3.0],
 					"afstand": 0.05,
 					**extra,
@@ -48,8 +53,8 @@ class TestBotsingen(ProjectTest):
 		botsingen.bijwerken(doc)
 		return ronde
 
-	def ronde_met(self, paren, velden=None):
-		return self.lever(self.start(), paren, velden)
+	def ronde_met(self, paren, velden=None, namen=None):
+		return self.lever(self.start(), paren, velden, namen=namen)
 
 	def rij(self, ronde, globalid):
 		"""De rij van de ronde met dit element als element a."""
@@ -279,7 +284,8 @@ class TestBotsingen(ProjectTest):
 		b = self.botsing(ronde, "w1", "k1")
 		self.assertEqual(botsingen.zet_status(b.name, "genegeerd")["status"], "genegeerd")
 		regel = frappe.get_last_doc("BIM Auditregel", {"object": b.name})
-		self.assertEqual((regel.handeling, json.loads(regel.na)), ("gewijzigd", {"status": "genegeerd"}))
+		na = json.loads(regel.na)
+		self.assertEqual((regel.handeling, na["status"], na["beoordeeld_door"]), ("gewijzigd", "genegeerd", self.lid))
 		self.assertIn(",gewijzigd,BIM Botsing,", audit.exporteer(self.project))
 		self.assertRaises(frappe.ValidationError, botsingen.zet_status, b.name, "weg")
 		frappe.set_user(self.lezer)
@@ -497,3 +503,125 @@ class TestBotsingen(ProjectTest):
 		weg = self.ronde_met([])
 		self.assertEqual(self.rij(weg, "w1").ontwikkeling, "weg")
 		self.assertFalse(self.rij(weg, "w1").issue)
+
+	def test_afwijzen_met_reden_en_wie(self):
+		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		uit = botsingen.zet_status(rij.name, "genegeerd", "Bedoeld zo")
+		assert uit["reden"] == "Bedoeld zo" and uit["beoordeeld_door"] == frappe.session.user and uit["beoordeeld_op"]
+
+	def test_een_te_lange_reden_of_reden_bij_een_andere_status(self):
+		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.zet_status(rij.name, "genegeerd", "x" * 201)
+		self.assertEqual(frappe.local.response.pop("foutcode", None), "reden_te_lang")
+		botsingen.zet_status(rij.name, "genegeerd", "ok")
+		assert botsingen.zet_status(rij.name, "actief")["reden"] is None
+
+	def test_bevestigen_maakt_een_issue_met_namen(self):
+		ronde = self.ronde_met([("w1", "k1")], namen={"w1": "Wand B 0", "k1": "Kanaal"})
+		uit = botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")
+		assert uit["status"] == "bevestigd"
+		titel = frappe.db.get_value("BIM Issue", uit["issue"], "titel")
+		assert uit["issue"] and "Wand B 0" in titel and "Kanaal" in titel
+		assert botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")["issue"] == uit["issue"]
+		# van bevestigd naar iets anders houdt het issue
+		assert botsingen.zet_status(self.rij(ronde, "w1").name, "actief")["issue"] == uit["issue"]
+
+	def test_naar_issue_zonder_namen_gebruikt_de_klasse_en_verandert_de_status_niet(self):
+		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		t = botsingen.naar_issue(rij.name)
+		self.assertEqual(t["title"], "Botsing IfcWall / IfcDuctSegment")
+		self.assertEqual(frappe.db.get_value("BIM Botsing", rij.name, "status"), "nieuw")
+		self.assertIn("w1", t["description"])
+
+	def test_groepsactie_met_grens_en_rechten(self):
+		eerste = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		tweede = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		namen = [self.rij(r, g).name for r in (eerste, tweede) for g in ("w1", "w2")]
+		with patch.object(botsingen.issues, "_schrijver", wraps=botsingen.issues._schrijver) as controle:
+			uit = botsingen.zet_status_veel(namen, "genegeerd", "Bedoeld zo")
+		self.assertEqual(controle.call_count, 2)
+		self.assertEqual({r["status"] for r in uit}, {"genegeerd"})
+		self.assertEqual({r["reden"] for r in uit}, {"Bedoeld zo"})
+		self.assertEqual(len(uit), 4)
+		bevestigd = botsingen.zet_status_veel(namen[:2], "bevestigd")
+		self.assertEqual(len({r["issue"] for r in bevestigd}), 2)
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.zet_status_veel(["x"] * 501, "genegeerd")
+		self.assertEqual(frappe.local.response.pop("foutcode", None), "te_veel_botsingen")
+		frappe.set_user(self.lezer)
+		with self.assertRaises(frappe.PermissionError):
+			botsingen.zet_status_veel(namen[2:], "actief")
+		self.assertEqual(frappe.db.get_value("BIM Botsing", namen[2], "status"), "genegeerd")
+
+	def test_regels_en_weergaven_bewaren(self):
+		regels = [{"a": "Constructie", "b": "Installaties", "soort": "hard", "mm": 0, "ernst": None}]
+		weergaven = [{"naam": "Kritiek", "filter": {"ernst": ["kritiek"]}, "groep": "verdieping"}]
+		botsingen.instellingen_bewaar(self.project, regels, weergaven)
+		uit = botsingen.instellingen(self.project)
+		assert uit["regels"] == regels and uit["weergaven"] == weergaven and uit["mag_wijzigen"]
+
+	def test_bewaren_laat_weg_gelaten_delen_staan_en_sorteert_de_regel(self):
+		weergaven = [{"naam": "Alles", "filter": {}, "groep": None}]
+		botsingen.instellingen_bewaar(self.project, [{"a": "Z", "b": "A", "soort": "afstand", "mm": 50, "ernst": "groot"}], weergaven)
+		uit = botsingen.instellingen_bewaar(self.project, weergaven=[])
+		self.assertEqual(uit["regels"], [{"a": "A", "b": "Z", "soort": "afstand", "mm": 50, "ernst": "groot"}])
+		self.assertEqual(uit["weergaven"], [])
+		self.assertEqual(botsingen.instellingen_bewaar(self.project)["regels"], uit["regels"])
+		self.assertTrue(frappe.get_all("BIM Auditregel", {"doctype_naam": "BIM Project", "object": self.project}))
+
+	def test_ongeldige_regels_of_weergaven_worden_geweigerd(self):
+		regel = {"a": "A", "b": "B", "soort": "hard", "mm": 0, "ernst": None}
+		for slecht in (
+			{**regel, "soort": "onzin"},
+			{**regel, "mm": -1},
+			{**regel, "mm": 1001},
+			{**regel, "ernst": "enorm"},
+			{**regel, "a": ""},
+		):
+			with self.assertRaises(frappe.ValidationError):
+				botsingen.instellingen_bewaar(self.project, [slecht])
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "regels_ongeldig")
+		weergave = {"naam": "N", "filter": {}, "groep": None}
+		for slecht in (
+			[weergave, weergave],
+			[{**weergave, "naam": " "}],
+			[weergave | {"naam": f"n{i}"} for i in range(51)],
+		):
+			with self.assertRaises(frappe.ValidationError):
+				botsingen.instellingen_bewaar(self.project, weergaven=slecht)
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "weergave_ongeldig")
+		self.assertEqual(botsingen.instellingen(self.project)["weergaven"], [])
+		botsingen.instellingen_bewaar(self.project, weergaven=[weergave | {"naam": f"n{i}"} for i in range(50)])
+
+	def test_een_lezer_mag_lezen_maar_niet_bewaren(self):
+		botsingen.instellingen_bewaar(self.project, [], [{"naam": "N", "filter": {}, "groep": None}])
+		frappe.set_user(self.lezer)
+		uit = botsingen.instellingen(self.project)
+		self.assertEqual((len(uit["weergaven"]), uit["mag_wijzigen"]), (1, False))
+		with self.assertRaises(frappe.PermissionError):
+			botsingen.instellingen_bewaar(self.project, [], [])
+		frappe.set_user(self.buiten)
+		with self.assertRaises(frappe.PermissionError):
+			botsingen.instellingen(self.project)
+
+	def test_verloop_volgt_de_keten_met_de_oudste_eerst(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		tweede = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		derde = self.ronde_met([("w2", "k2")])
+		uit = botsingen.trends(derde)
+		self.assertEqual([r["naam"] for r in uit], [eerste, tweede, derde])
+		self.assertEqual(set(uit[0]), {"naam", "titel", "gestart", "samenvatting"})
+		self.assertEqual(uit[1]["samenvatting"]["totaal"], 2)
+		self.assertEqual([r["naam"] for r in botsingen.trends(tweede)], [eerste, tweede])
+		vorige = None
+		for i in range(22):
+			doc = frappe.get_doc(
+				{"doctype": "BIM Botsingsronde", "project": self.project, "titel": f"R{i}", "status": "klaar", "vorige_ronde": vorige}
+			).insert(ignore_permissions=True)
+			vorige = doc.name
+		keten = botsingen.trends(vorige)
+		self.assertEqual((len(keten), keten[-1]["titel"], keten[0]["titel"]), (20, "R21", "R2"))
+		frappe.set_user(self.buiten)
+		with self.assertRaises(frappe.PermissionError):
+			botsingen.trends(vorige)
