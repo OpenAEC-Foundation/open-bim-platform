@@ -9,6 +9,9 @@ import {
 
 /** Host for the local development server (`openbim-kern lokaal <map>`). */
 export class LocalHost implements BimHost {
+  /** Issues and clashes live in the SuperCloud; locally there is none. */
+  readonly coordinatie = undefined;
+
   constructor(private readonly baseUrl = "http://127.0.0.1:8740") {}
 
   async project(): Promise<Project> {

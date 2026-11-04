@@ -1,0 +1,100 @@
+{
+ "actions": [],
+ "creation": "2026-10-29 13:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "owner": "Administrator",
+ "states": [],
+ "autoname": "hash",
+ "permissions": [
+  {
+   "role": "System Manager",
+   "read": 1,
+   "write": 1,
+   "create": 1,
+   "delete": 1,
+   "report": 1,
+   "export": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "track_changes": 0,
+ "name": "BIM Botsing",
+ "description": "Eén botsing tussen twee elementen in een botsingsronde, met haar status over de rondes heen.",
+ "fields": [
+  {
+   "fieldname": "ronde",
+   "fieldtype": "Link",
+   "label": "Ronde",
+   "options": "BIM Botsingsronde",
+   "reqd": 1,
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "sleutel",
+   "fieldtype": "Data",
+   "label": "Sleutel",
+   "length": 300,
+   "search_index": 1
+  },
+  {
+   "fieldname": "element_a",
+   "fieldtype": "JSON",
+   "label": "Element A"
+  },
+  {
+   "fieldname": "element_b",
+   "fieldtype": "JSON",
+   "label": "Element B"
+  },
+  {
+   "fieldname": "punt",
+   "fieldtype": "JSON",
+   "label": "Punt"
+  },
+  {
+   "fieldname": "afstand",
+   "fieldtype": "Float",
+   "label": "Afstand (m)",
+   "precision": "4"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "label": "Status",
+   "options": "nieuw\nactief\nopgelost\ngenegeerd",
+   "default": "nieuw",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "issue",
+   "fieldtype": "Link",
+   "label": "Issue",
+   "options": "BIM Issue"
+  },
+  {
+   "fieldname": "groep",
+   "fieldtype": "Data",
+   "label": "Groep",
+   "in_list_view": 1
+  }
+ ],
+ "field_order": [
+  "ronde",
+  "sleutel",
+  "element_a",
+  "element_b",
+  "punt",
+  "afstand",
+  "status",
+  "issue",
+  "groep"
+ ]
+}

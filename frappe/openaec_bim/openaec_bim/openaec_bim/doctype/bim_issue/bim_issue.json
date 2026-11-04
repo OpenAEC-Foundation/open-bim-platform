@@ -1,0 +1,145 @@
+{
+ "actions": [],
+ "autoname": "field:guid",
+ "creation": "2026-10-29 09:00:00.000000",
+ "description": "Een issue als BCF 3.0-topic.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "guid",
+  "project",
+  "titel",
+  "beschrijving",
+  "soort",
+  "status",
+  "prioriteit",
+  "fase",
+  "toegewezen_aan",
+  "vervaldatum",
+  "labels",
+  "verwante_issues",
+  "documentverwijzingen",
+  "referentielinks",
+  "bim_snippet",
+  "bcf_index",
+  "elementen"
+ ],
+ "fields": [
+  {
+   "fieldname": "guid",
+   "fieldtype": "Data",
+   "label": "GUID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "project",
+   "fieldtype": "Link",
+   "label": "Project",
+   "options": "BIM Project",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "titel",
+   "fieldtype": "Data",
+   "label": "Titel",
+   "reqd": 1,
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "beschrijving",
+   "fieldtype": "Text",
+   "label": "Beschrijving"
+  },
+  {
+   "fieldname": "soort",
+   "fieldtype": "Data",
+   "label": "Soort"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "label": "Status",
+   "in_list_view": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "prioriteit",
+   "fieldtype": "Data",
+   "label": "Prioriteit"
+  },
+  {
+   "fieldname": "fase",
+   "fieldtype": "Data",
+   "label": "Fase"
+  },
+  {
+   "fieldname": "toegewezen_aan",
+   "fieldtype": "Link",
+   "label": "Toegewezen aan",
+   "options": "User"
+  },
+  {
+   "fieldname": "vervaldatum",
+   "fieldtype": "Date",
+   "label": "Vervaldatum"
+  },
+  {
+   "fieldname": "labels",
+   "fieldtype": "JSON",
+   "label": "Labels"
+  },
+  {
+   "fieldname": "verwante_issues",
+   "fieldtype": "JSON",
+   "label": "Verwante issues"
+  },
+  {
+   "fieldname": "documentverwijzingen",
+   "fieldtype": "JSON",
+   "label": "Documentverwijzingen"
+  },
+  {
+   "fieldname": "referentielinks",
+   "fieldtype": "JSON",
+   "label": "Referentielinks"
+  },
+  {
+   "fieldname": "bim_snippet",
+   "fieldtype": "JSON",
+   "label": "BIM-snippet"
+  },
+  {
+   "fieldname": "bcf_index",
+   "fieldtype": "Int",
+   "label": "Index (BCF)"
+  },
+  {
+   "fieldname": "elementen",
+   "fieldtype": "Table",
+   "label": "Elementen",
+   "options": "BIM Issue Element"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "name": "BIM Issue",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

@@ -58,23 +58,35 @@ def laatste(bestand: str, versie: int):
 	return frappe.get_doc(DOCTYPE, naam) if naam else None
 
 
-def start(bestand: str, versie: int):
-	"""Een nieuwe omzetting van deze versie: plek in de bucket, ondertekende adressen, taak bij de kern."""
+def getoonde_versie(bestand: str) -> int | None:
+	"""De versie die het project van dit bestand toont: de laatste die omgezet is."""
+	versie = frappe.db.get_value(DOCTYPE, {"bestand": bestand, "status": "klaar"}, "versie", order_by="versie desc")
+	return cint(versie) or None
+
+
+def bron(bestand: str, versie: int, geldig: int = GELDIG_BRON) -> dict:
+	"""Een ondertekend leesadres van de IFC van deze versie voor de kern, met grootte en (als bekend) sha256."""
 	gegevens = frappe.db.get_value(
 		"Bestandsversie", {"bestand": bestand, "volgnummer": cint(versie)}, ["s3_sleutel", "sha256", "grootte"], as_dict=True
 	)
 	if not gegevens or not gegevens.s3_sleutel:
 		frappe.throw(_("Versie bestaat niet"), frappe.DoesNotExistError)
+	uit = {"url": leesadres(gegevens.s3_sleutel, geldig), "grootte": cint(gegevens.grootte)}
+	sha256 = (gegevens.sha256 or "").lower()
+	if _SHA256.fullmatch(sha256):
+		uit["sha256"] = sha256
+	return uit
+
+
+def start(bestand: str, versie: int):
+	"""Een nieuwe omzetting van deze versie: plek in de bucket, ondertekende adressen, taak bij de kern."""
+	bron_ = bron(bestand, versie)
 	doc = frappe.get_doc({"doctype": DOCTYPE, "bestand": bestand, "versie": cint(versie), "status": "wacht"})
 	doc.insert(ignore_permissions=True)
 	doc.prefix = _s3()._met_prefix(f"bim/afgeleid/{bestand}/{cint(versie)}/{doc.name}")
-	bron = {"url": leesadres(gegevens.s3_sleutel, GELDIG_BRON), "grootte": cint(gegevens.grootte)}
-	sha256 = (gegevens.sha256 or "").lower()
-	if _SHA256.fullmatch(sha256):
-		bron["sha256"] = sha256
-	doelen = {naam: schrijfadres(f"{doc.prefix}/{naam}", GELDIG_DOEL) for naam in onderdelen(cint(gegevens.grootte))}
+	doelen = {naam: schrijfadres(f"{doc.prefix}/{naam}", GELDIG_DOEL) for naam in onderdelen(bron_["grootte"])}
 	try:
-		doc.kern_taak = kern.start_omzetten(bron, doelen)
+		doc.kern_taak = kern.start_omzetten(bron_, doelen)
 	except kern.KernFout as fout:
 		doc.status = "fout"
 		doc.fout = {"error_code": fout.code, "melding": str(fout)}
@@ -109,13 +121,43 @@ def bijwerken(doc) -> None:
 		doc.status = "fout"
 		doc.fout = taak.get("fout") or {"error_code": status or "onbekend", "melding": _("De omzetting is gestopt.")}
 	doc.save(ignore_permissions=True)
+	if doc.status == "klaar":
+		from openaec_bim import koppeling
+
+		koppeling.na_omzetting(doc)
+
+
+def zonder_botsing(stap, *args) -> None:
+	"""Een bijwerking die een ander verzoek tegelijk doet (de viewer vraagt het project elke paar seconden, ook terwijl
+	de planner bijwerkt), botst bij het opslaan: MariaDB 1020 of een verouderde tijdstempel. Die keer wordt de stap
+	teruggedraaid tot het savepoint en overgeslagen; de volgende vraag ziet de nieuwe stand."""
+	frappe.db.savepoint("openaec_bim_bijwerken")
+	try:
+		stap(*args)
+	except (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
+		try:
+			frappe.db.rollback(save_point="openaec_bim_bijwerken")
+		except frappe.db.OperationalError:
+			# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid, en het savepoint met haar.
+			frappe.db.rollback()
+		# Het document in het geheugen kan al een stand hebben die niet is opgeslagen.
+		for doc in args:
+			if hasattr(doc, "reload") and getattr(doc, "name", None):
+				try:
+					doc.reload()
+				except frappe.DoesNotExistError:
+					pass
 
 
 def volg_lopende() -> None:
-	"""Geplande taak: elke lopende omzetting bijwerken."""
+	"""Geplande taak: elke lopende omzetting, versiekoppeling en botsingsronde bijwerken."""
+	from openaec_bim import botsingen, koppeling
+
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		bijwerken(frappe.get_doc(DOCTYPE, naam))
+		zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
+	koppeling.volg_lopende()
+	botsingen.volg_lopende()
 
 
 def lees_object(sleutel: str) -> bytes:

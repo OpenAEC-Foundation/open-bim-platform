@@ -14,7 +14,9 @@ from .calls import SITE_HEADER, call_tool, get_spec, is_authorized, unauthorized
 from .errors import KernError
 from .jobs.store import JobStore, default_store
 from .mcp_server import McpEndpoint
+from .tools import botsingen as _botsingen  # noqa: F401  (registers the tool)
 from .tools import eigenschappen as _eigenschappen  # noqa: F401  (registers the tool)
+from .tools import koppelen as _koppelen  # noqa: F401  (registers the tool)
 from .tools import omzetten as _omzetten  # noqa: F401  (registers the tool)
 from .tools.registry import REGISTRY
 
@@ -70,7 +72,11 @@ def create_app(keys: list[str] | None = None, store: JobStore | None = None) -> 
 
     @app.get("/v1/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "versie": __version__}
+        status = {"status": "ok", "versie": __version__}
+        # The release tag the image was built from (set in kern/Dockerfile); absent outside a release image.
+        if release := os.environ.get("OPENBIM_KERN_RELEASE"):
+            status["release"] = release
+        return status
 
     @app.get("/v1/tools", dependencies=[Depends(require_key)])
     def list_tools() -> list[dict]:

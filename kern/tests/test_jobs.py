@@ -172,7 +172,7 @@ def test_finished_job_cannot_be_cancelled(store, slow_tool):
 
 
 def test_queues_from_env(monkeypatch):
-    assert queues_from_env() == {"omzetten": 1, "licht": 4}
+    assert queues_from_env() == {"omzetten": 1, "licht": 4, "botsing": 1}
     monkeypatch.setenv("OPENBIM_RIJ_OMZETTEN", "2")
     monkeypatch.setenv("OPENBIM_RIJ_LICHT", "8")
-    assert queues_from_env() == {"omzetten": 2, "licht": 8}
+    assert queues_from_env() == {"omzetten": 2, "licht": 8, "botsing": 1}

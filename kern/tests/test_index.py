@@ -2,7 +2,7 @@ import sqlite3
 
 import ifcopenshell
 
-from openbim_kern.index.properties import build_property_index, count_elements, read_properties
+from openbim_kern.index.properties import build_property_index, count_elements, index_model, read_properties
 from openbim_kern.index.spatial import build_spatial_tree, build_summary
 
 
@@ -139,3 +139,10 @@ def test_read_an_index_without_types(ifc_small, tmp_path):
         con.execute("DROP TABLE IF EXISTS types")
     assert read_properties(db, ["0000000000000000000000"]) == {}
     assert read_properties(db, [first_wall_globalid(ifc_small)])
+
+
+def test_index_reports_its_progress(ifc_small, tmp_path):
+    seen = []
+    index_model(ifcopenshell.open(str(ifc_small)), tmp_path / "e.sqlite", progress=seen.append)
+    assert len(seen) > 1 and seen == sorted(seen) and all(0 < v <= 1 for v in seen)
+    assert seen[-1] == 1

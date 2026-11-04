@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,7 @@ import ifcopenshell.util.element as element_util
 from typing_extensions import TypedDict
 
 from ..errors import KernError
+from .identity import index_identity
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS elements (
@@ -90,8 +92,12 @@ def build_property_index(ifc: Path, db: Path) -> None:
     index_model(ifcopenshell.open(str(ifc)), db)
 
 
-def index_model(model: ifcopenshell.file, db: Path) -> None:
-    """Create or extend the index database.
+def _no_progress(_: float) -> None:
+    pass
+
+
+def index_model(model: ifcopenshell.file, db: Path, progress: Callable[[float], None] = _no_progress) -> None:
+    """Create or extend the index database, reporting the share of the elements done (at most a hundred times).
 
     Rows are inserted with INSERT OR IGNORE so the parts of a split file can fill one database.
     """
@@ -104,7 +110,8 @@ def index_model(model: ifcopenshell.file, db: Path) -> None:
         for type_ in model.by_type("IfcTypeObject"):
             con.execute("INSERT OR IGNORE INTO types VALUES (?,?,?)", (type_.GlobalId, type_.is_a(), type_.Name))
             _index_sets(con, type_)
-        for el in indexed:
+        step = max(1, len(indexed) // 100)
+        for done, el in enumerate(indexed, start=1):
             gid = el.GlobalId
             type_ = element_util.get_type(el) if el.is_a("IfcObject") else None
             storey = _storey(el)
@@ -117,7 +124,11 @@ def index_model(model: ifcopenshell.file, db: Path) -> None:
                 con.execute("INSERT OR IGNORE INTO materials VALUES (?,?)", (gid, material))
             for system, code, name in _classifications(el):
                 con.execute("INSERT OR IGNORE INTO classifications VALUES (?,?,?,?)", (gid, system, code, name))
+            if done % step == 0:
+                progress(done / len(indexed))
+        index_identity(model, con)
         con.commit()
+    progress(1.0)
 
 
 def _index_sets(con: sqlite3.Connection, entity: ifcopenshell.entity_instance) -> None:

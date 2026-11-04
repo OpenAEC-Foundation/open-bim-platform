@@ -5,8 +5,14 @@ from openbim_kern.app import create_app
 from openbim_kern.tools.registry import REGISTRY
 
 
-def test_health_is_public(client):
+def test_health_is_public(client, monkeypatch):
+    monkeypatch.delenv("OPENBIM_KERN_RELEASE", raising=False)
     assert client.get("/v1/health").json() == {"status": "ok", "versie": __version__}
+
+
+def test_health_names_the_release_of_the_image(client, monkeypatch):
+    monkeypatch.setenv("OPENBIM_KERN_RELEASE", "v2026.44.1")
+    assert client.get("/v1/health").json() == {"status": "ok", "versie": __version__, "release": "v2026.44.1"}
 
 
 def test_openapi_is_public(client):

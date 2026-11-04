@@ -17,6 +17,15 @@ def test_convert_small(ifc_small, tmp_path):
     assert s.in_bytes == ifc_small.stat().st_size and s.attempts == 1 and s.peak_rss > 0
 
 
+def test_convert_reports_its_progress(ifc_small, tmp_path):
+    seen = []
+    convert_to_frag(ifc_small, tmp_path / "m.frag", progress=seen.append)
+    assert seen, "the converter reported nothing"
+    assert seen == sorted(seen) and all(0 <= v <= 1 for v in seen)
+    assert seen[-1] == 1
+    assert not list(tmp_path.glob("*.voortgang"))  # the file for the progress is cleaned up
+
+
 def test_truncated_ifc_fails_cleanly(ifc_truncated, tmp_path):
     out = tmp_path / "m.frag"
     e = pytest.raises(KernError, convert_to_frag, ifc_truncated, out).value

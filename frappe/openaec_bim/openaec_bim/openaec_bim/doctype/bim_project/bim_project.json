@@ -1,0 +1,98 @@
+{
+ "actions": [],
+ "autoname": "field:modelmap",
+ "creation": "2026-10-29 09:00:00.000000",
+ "description": "Een modelmap in Storage als BIM-project, met de BCF-uitbreidingen (toegestane soorten, statussen, prioriteiten, fasen en labels).",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "modelmap",
+  "ruimte",
+  "titel",
+  "soorten",
+  "statussen",
+  "prioriteiten",
+  "fasen",
+  "labels",
+  "standaard_status"
+ ],
+ "fields": [
+  {
+   "fieldname": "modelmap",
+   "fieldtype": "Link",
+   "label": "Modelmap",
+   "options": "Opslagmap",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "ruimte",
+   "fieldtype": "Link",
+   "label": "Ruimte",
+   "options": "Ruimte",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "titel",
+   "fieldtype": "Data",
+   "label": "Titel",
+   "in_list_view": 1
+  },
+  {
+   "fieldname": "soorten",
+   "fieldtype": "Small Text",
+   "label": "Soorten",
+   "default": "Fout\nVraag\nOpmerking\nBotsing",
+   "description": "Eén waarde per regel."
+  },
+  {
+   "fieldname": "statussen",
+   "fieldtype": "Small Text",
+   "label": "Statussen",
+   "default": "Open\nIn behandeling\nOpgelost\nGesloten"
+  },
+  {
+   "fieldname": "prioriteiten",
+   "fieldtype": "Small Text",
+   "label": "Prioriteiten",
+   "default": "Laag\nNormaal\nHoog\nKritiek"
+  },
+  {
+   "fieldname": "fasen",
+   "fieldtype": "Small Text",
+   "label": "Fasen"
+  },
+  {
+   "fieldname": "labels",
+   "fieldtype": "Small Text",
+   "label": "Labels"
+  },
+  {
+   "fieldname": "standaard_status",
+   "fieldtype": "Data",
+   "label": "Standaardstatus",
+   "default": "Open"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "name": "BIM Project",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
