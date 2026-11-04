@@ -25,6 +25,8 @@ Vec3 = tuple[float, float, float]
 
 # Two elements are duplicates when each side of their bounding boxes differs at most this much (metres).
 DUPLICATE_BOX_M = 0.010
+# Boxes this far apart (metres) still touch: rounding in the triangulation.
+BOX_TOUCH_M = 0.001
 # Order of the checks: the first check that finds a pair keeps it.
 SOORT_ORDER = {"dubbel": 0, "hard": 1, "afstand": 2}
 # Shares of the progress: loading the files, then the checks.
@@ -97,6 +99,16 @@ def _elements(model: ifcopenshell.file, klassen: list[str] | None) -> list[ifcop
 
 def _same_box(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> bool:
     return all(abs(p - q) <= DUPLICATE_BOX_M for corner in range(2) for p, q in zip(a[corner], b[corner], strict=True))
+
+
+def box_overlap(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> tuple[float, Vec3] | None:
+    """The smallest extent and the centre of the overlap of two boxes; None when the boxes do not even touch."""
+    low = [max(p, q) for p, q in zip(a[0], b[0], strict=True)]
+    high = [min(p, q) for p, q in zip(a[1], b[1], strict=True)]
+    smallest = min(q - p for p, q in zip(low, high, strict=True))
+    if smallest < -BOX_TOUCH_M:
+        return None
+    return max(smallest, 0.0), tuple((p + q) / 2 for p, q in zip(low, high, strict=True))
 
 
 class ClashScene:
@@ -204,6 +216,18 @@ class ClashScene:
                     )
         return found
 
+    def _penetration(self, a: str, b: str, distance: float, point: Vec3) -> tuple[float, Vec3]:
+        """Depth and point of a hard clash, from the overlap of the two boxes.
+
+        The distance of the tree is the length of one ray along a face normal, which can run through a whole element.
+        The real depth is never larger than the overlap of the boxes, and grid, room and camera need a point inside it.
+        Without a usable overlap (the same GlobalId in two files shares one box) the answer of the tree stays.
+        """
+        overlap = box_overlap(self.boxes[a], self.boxes[b]) if a in self.boxes and b in self.boxes else None
+        if overlap is None:
+            return distance, point
+        return min(abs(distance), overlap[0]), overlap[1]
+
     def check(self, check: ClashCheck) -> list[Botsing]:
         elements_a, owners_a = self._side(check.set_a)
         elements_b, owners_b = self._side(check.set_b)
@@ -231,13 +255,15 @@ class ClashScene:
             if check.alleen_tussen_modellen and model_a.sleutel == model_b.sleutel:
                 continue
             seen.add(pair)
-            midpoint = tuple(round((p + q) / 2, 4) for p, q in zip(clash.p1, clash.p2, strict=True))
+            depth, point = float(clash.distance), tuple((p + q) / 2 for p, q in zip(clash.p1, clash.p2, strict=True))
+            if check.soort == "hard":
+                depth, point = self._penetration(a, b, depth, point)
             found.append(
                 Botsing(
                     a=self._ref(entity_a, model_a),
                     b=self._ref(entity_b, model_b),
-                    punt=midpoint,
-                    afstand=round(float(clash.distance), 4),
+                    punt=tuple(round(v, 4) for v in point),
+                    afstand=round(depth, 4),
                     soort=check.soort,
                     regel=check.regel,
                 )
@@ -288,9 +314,14 @@ def run_checks(checks: list[ClashCheck], progress: Callable[[float], None] = _no
                 seen.add(pair)
                 found.append((clash, check))
         progress(LOAD_SHARE + CHECK_SHARE * number / len(ordered))
+    last = -1
     for number, (clash, check) in enumerate(found, start=1):
         _enrich(clash, check, scene, paths)
-        progress(LOAD_SHARE + CHECK_SHARE + CONTEXT_SHARE * number / len(found))
+        value = LOAD_SHARE + CHECK_SHARE + CONTEXT_SHARE * number / len(found)
+        percent = int(value * 100)
+        if percent != last:
+            last = percent
+            progress(value)
     progress(1.0)
     return [clash for clash, _ in found]
 

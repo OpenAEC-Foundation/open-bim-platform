@@ -1,7 +1,7 @@
 import models
 import pytest
 
-from openbim_kern.clash import ClashCheck, ClashModel, run_checks
+from openbim_kern.clash import ClashCheck, ClashModel, box_overlap, run_checks
 from openbim_kern.clash_context import ModelContext, classify
 
 
@@ -126,3 +126,107 @@ def test_a_failing_reader_runs_once_and_gives_none(ifc_small, monkeypatch, reade
     results = [getattr(context, question)((0.0, 0.0, 0.0)) for _ in range(3)]
     assert results == [None, None, None]
     assert len(calls) == 1
+
+
+# (name, boxes as class, name, lowest and highest corner; expected depth, point, bucket, severity). In every case the
+# tree gives a longer ray than the overlap of the boxes, except the last two, where both agree.
+BOXES = [
+    (
+        "long window 2 mm in a reveal",
+        ("IfcWindow", (0.0, -0.05, 0.5), (3.002, 0.35, 2.0)),
+        ("IfcWall", (3.0, 0.0, 0.0), (3.5, 0.3, 2.7)),
+        0.002,
+        (3.001, 0.15, 1.25),
+        "contact",
+        "klein",
+    ),
+    (
+        "window flush in a wall",
+        ("IfcWindow", (1.0, 0.0, 0.9), (2.0, 0.1, 2.1)),
+        ("IfcWall", (0.0, 0.0, 0.0), (5.0, 0.3, 2.7)),
+        0.1,
+        (1.5, 0.05, 1.5),
+        "beoordelen",
+        "groot",
+    ),
+    (
+        "duct 200 mm into a beam",
+        ("IfcBeam", (0.0, 0.0, 0.0), (5.0, 1.0, 1.0)),
+        ("IfcDuctSegment", (4.8, 0.25, -1.0), (9.0, 0.75, 4.0)),
+        0.2,
+        (4.9, 0.5, 0.5),
+        "beoordelen",
+        "kritiek",
+    ),
+    (
+        "duct 15 mm into a beam",
+        ("IfcBeam", (0.0, 0.0, 0.0), (5.0, 1.0, 1.0)),
+        ("IfcDuctSegment", (4.985, 0.25, -1.0), (9.0, 0.75, 4.0)),
+        0.015,
+        (4.9925, 0.5, 0.5),
+        "beoordelen",
+        "klein",
+    ),
+    (
+        "beam 30 mm into a column",
+        ("IfcColumn", (0.0, 0.0, 0.0), (0.3, 0.3, 3.0)),
+        ("IfcBeam", (0.27, -0.1, 2.5), (3.27, 0.4, 2.8)),
+        0.03,
+        (0.285, 0.15, 2.65),
+        "aangrenzend",
+        "klein",
+    ),
+    (
+        "duct straight through a wall",
+        ("IfcWall", (0.0, 0.0, 0.0), (5.0, 0.2, 3.0)),
+        ("IfcDuctSegment", (2.0, -0.5, 1.0), (2.3, 0.7, 1.3)),
+        0.2,
+        (2.15, 0.1, 1.15),
+        "beoordelen",
+        "groot",
+    ),
+    (
+        "duct 2 mm into a slab",
+        ("IfcSlab", (0.0, 0.0, -0.2), (4.0, 4.0, 0.0)),
+        ("IfcDuctSegment", (1.0, 1.0, -0.002), (3.0, 1.3, 0.298)),
+        0.002,
+        (2.0, 1.15, -0.001),
+        "contact",
+        "klein",
+    ),
+]
+
+
+@pytest.mark.parametrize("name,one,other,depth,point,emmer,ernst", BOXES, ids=[b[0] for b in BOXES])
+def test_a_hard_clash_is_as_deep_as_the_overlap_of_the_boxes(tmp_path, name, one, other, depth, point, emmer, ernst):
+    path = models.ifc_boxes(tmp_path / "boxes.ifc", [(one[0], "een", *one[1:]), (other[0], "ander", *other[1:])])
+    m = ClashModel(sleutel="m", versie="1", pad=path)
+    (clash,) = run_checks([ClashCheck(set_a=[m], set_b=[m], soort="hard")])
+    assert clash.afstand == pytest.approx(depth, abs=1e-3)
+    assert clash.punt == pytest.approx(point, abs=1e-3)
+    assert (clash.emmer, clash.ernst) == (emmer, ernst)
+
+
+def test_a_clearance_keeps_the_answer_of_the_tree(tmp_path):
+    path = models.ifc_boxes(
+        tmp_path / "boxes.ifc",
+        [
+            ("IfcWall", "een", (0.0, 0.0, 0.0), (5.0, 0.2, 3.0)),
+            ("IfcDuctSegment", "ander", (1.0, 0.25, 1.0), (2.0, 1.0, 1.5)),
+        ],
+    )
+    m = ClashModel(sleutel="m", versie="1", pad=path)
+    (clash,) = run_checks([ClashCheck(set_a=[m], set_b=[m], soort="afstand", tolerantie=0.1)])
+    assert clash.afstand == pytest.approx(0.05, abs=1e-3)
+    assert clash.punt[1] == pytest.approx(0.225, abs=1e-3)
+
+
+def test_the_overlap_of_two_boxes():
+    a = ((0.0, 0.0, 0.0), (1.0, 2.0, 3.0))
+    smallest, centre = box_overlap(a, ((0.9, 1.0, -1.0), (5.0, 1.5, 5.0)))
+    assert smallest == pytest.approx(0.1)
+    assert centre == pytest.approx((0.95, 1.25, 1.5))
+    # Boxes that just touch (also through rounding) have no depth; boxes further apart have no overlap at all.
+    assert box_overlap(a, ((1.0, 0.0, 0.0), (2.0, 1.0, 1.0)))[0] == 0.0
+    assert box_overlap(a, ((1.0001, 0.0, 0.0), (2.0, 1.0, 1.0)))[0] == 0.0
+    assert box_overlap(a, ((1.5, 0.0, 0.0), (2.0, 1.0, 1.0))) is None

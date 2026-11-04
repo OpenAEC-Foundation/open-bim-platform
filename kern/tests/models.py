@@ -170,20 +170,8 @@ def ifc_georef(path: Path) -> Path:
     return _write(_build("IFC4", classify=True, georef=True), path)
 
 
-def ifc_clash_context(path: Path) -> Path:
-    """IFC4 model with one pair for every classification rule of a clash round (all on the ground floor).
-
-    Each group sits in its own strip along Y, so the groups do not touch each other:
-    - y 0: a load-bearing wall with an opening and a door slightly larger than the opening (so it overlaps the wall
-      at the jambs), and a duct crossing the wall 200 mm (in the space "Gang 1");
-    - y 3: an assembly of two overlapping members;
-    - y 6: two walls joined by a path connection, overlapping 100 mm, and a virtual element across one of them;
-    - y 12: two pipes in one distribution system, overlapping 30 mm;
-    - y 15: a beam 30 mm into a column;
-    - y 18: a slab with a duct 2 mm into it;
-    - y 25: two walls exactly on top of each other (duplicates).
-    There is a grid with axes A, B and 1, 2.
-    """
+def _one_storey():
+    """A new IFC4 file with one storey, and a function that places box elements in it."""
     api = ifcopenshell.api
     f = api.run("project.create_file", version="IFC4")
     project = api.run("root.create_entity", f, ifc_class="IfcProject", name="Testproject")
@@ -219,6 +207,34 @@ def ifc_clash_context(path: Path) -> Path:
         if container:
             api.run("spatial.assign_container", f, products=[element], relating_structure=storey)
         return element
+
+    return f, make, storey
+
+
+def ifc_boxes(path: Path, boxes: list[tuple[str, str, tuple[float, float, float], tuple[float, float, float]]]) -> Path:
+    """IFC4 model with box elements of known size: every box is (class, name, lowest corner, highest corner)."""
+    f, make, _ = _one_storey()
+    for ifc_class, name, low, high in boxes:
+        make(ifc_class, name, *low, high[0] - low[0], high[1] - low[1], high[2] - low[2])
+    return _write(f, path)
+
+
+def ifc_clash_context(path: Path) -> Path:
+    """IFC4 model with one pair for every classification rule of a clash round (all on the ground floor).
+
+    Each group sits in its own strip along Y, so the groups do not touch each other:
+    - y 0: a load-bearing wall with an opening and a door slightly larger than the opening (so it overlaps the wall
+      at the jambs), and a duct crossing the wall 200 mm (in the space "Gang 1");
+    - y 3: an assembly of two overlapping members;
+    - y 6: two walls joined by a path connection, overlapping 100 mm, and a virtual element across one of them;
+    - y 12: two pipes in one distribution system, overlapping 30 mm;
+    - y 15: a beam 30 mm into a column;
+    - y 18: a slab with a duct 2 mm into it;
+    - y 25: two walls exactly on top of each other (duplicates).
+    There is a grid with axes A, B and 1, 2.
+    """
+    api = ifcopenshell.api
+    f, make, storey = _one_storey()
 
     # y 0: dragende wand met opening en deur, en een kanaal er 200 mm doorheen.
     bearing = make("IfcWall", "Dragende wand", 0.0, 0.0, 0.0, 5.0, WALL_THICKNESS, WALL_HEIGHT)

@@ -5,7 +5,8 @@ import ifcopenshell
 import models
 import pytest
 
-from openbim_kern.clash import ClashCheck, ClashModel, find_clashes, run_checks
+from openbim_kern import clash as clash_module
+from openbim_kern.clash import Botsing, ClashCheck, ClashModel, ClashScene, ElementRef, find_clashes, run_checks
 from openbim_kern.jobs.worker import queues_from_env, run_worker
 from openbim_kern.tools.registry import REGISTRY
 
@@ -197,3 +198,18 @@ def test_progress_runs_up_to_one(ifc_small):
     assert seen.index(pytest.approx(0.5)) < seen.index(
         pytest.approx(0.7)
     )  # loading ends at 50%, then one step per check
+
+
+def test_the_context_step_writes_progress_per_whole_percent(ifc_small, monkeypatch):
+    ref = ElementRef(sleutel="m", versie="1", globalid="g")
+    many = [
+        Botsing(a=ref.model_copy(update={"globalid": f"a{i}"}), b=ref, punt=(0.0, 0.0, 0.0), afstand=0.1)
+        for i in range(2000)
+    ]
+    monkeypatch.setattr(ClashScene, "check", lambda self, check: many)
+    monkeypatch.setattr(clash_module, "_enrich", lambda *args: None)
+    seen = []
+    run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard")], progress=seen.append)
+    in_context = [value for value in seen if value > 0.9]
+    assert len(in_context) <= 12  # 90 to 100%, and the closing 100%
+    assert seen[-1] == pytest.approx(1.0)

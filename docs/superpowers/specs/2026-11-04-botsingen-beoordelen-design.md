@@ -106,8 +106,15 @@ wijzigen samen *(keuze)*.
 - `dubbel`: paren met dezelfde klasse en een omhullende doos die per zijde hoogstens 10 mm afwijkt. De dozen komen uit de
   vertices tijdens het trianguleren. Dit gaat niet via een harde vraag: exact samenvallende volumes hebben coplanaire vlakken
   en geven in de geometrieboom geen botsing. `punt` is het midden van de doos en `afstand` de kleinste maat ervan.
+- `hard`: `afstand` is het minimum van de afstand van de geometrieboom en de kleinste overlap van de twee omhullende dozen, over
+  de drie assen. De afstand van de boom is de lengte van één straal langs een vlaknormaal, geen doordringingsdiepte: een raam dat
+  2 mm in een dag steekt kan zo 400 mm krijgen. De echte diepte is nooit groter dan de overlap van de dozen. `punt` is het midden
+  van die overlap, omdat raster, ruimte en camera daarvan afhangen. Bij `afstand` en `dubbel` verandert hier niets.
+- De detectie blijft die van de geometrieboom: echte overlappen met samenvallende vlakken worden niet altijd gevonden. In een
+  controle met 400 willekeurige dozenparen ontbraken er 45, waaronder twee balken met 1 m overlap.
 - `IfcVirtualElement` valt voortaan af, naast de al uitgesloten openingen.
-- De tool meldt voortgang: laden tot 50% (naar bestandsgrootte), controles tot 90% (per controle), context tot 100%.
+- De tool meldt voortgang: laden tot 50% (naar bestandsgrootte), controles tot 90% (per controle), context tot 100%. De voortgang
+  wordt alleen weggeschreven als een heel procent verandert.
 
 ### 6.3 Uitvoer per botsing
 
