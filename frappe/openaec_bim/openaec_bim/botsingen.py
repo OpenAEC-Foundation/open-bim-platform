@@ -179,8 +179,10 @@ def start_controles(
 			for m in items
 		]
 
+	# De kern leest `regel` als tekst: zonder regel (de snelle keuzes) gaat het veld niet mee.
 	kern_controles = [
-		{**c, "set_a": kern_set(c["set_a"]), "set_b": kern_set(c["set_b"])} for c in controles
+		{**{k: v for k, v in c.items() if k != "regel" or v}, "set_a": kern_set(c["set_a"]), "set_b": kern_set(c["set_b"])}
+		for c in controles
 	]
 	try:
 		doc.kern_taak = kern.start_botsingen(kern_controles, afgeleid.schrijfadres(doc.resultaat, GELDIG))

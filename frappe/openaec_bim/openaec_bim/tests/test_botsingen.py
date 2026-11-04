@@ -126,6 +126,13 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual((controle["set_a"][0]["sleutel"], controle["set_a"][0]["versie"]), (self.constructie, "1"))
 		self.assertIn("bron", controle["set_a"][0])
 
+	def test_de_kern_krijgt_geen_lege_regel_mee(self):
+		# De kern leest `regel` als tekst: een controle zonder regel (de snelle keuzes) stuurt het veld niet mee.
+		botsingen.start_controles(self.project, [self.controle()])
+		controle = self.kern.laatste_botsingen["controles"][0]
+		self.assertNotIn("regel", controle)
+		self.assertTrue(all(waarde is not None for sleutel, waarde in controle.items() if sleutel != "ernst"))
+
 	def test_soort_is_gemengd_bij_verschillende_soorten(self):
 		naam = botsingen.start_controles(self.project, [self.controle(), self.controle(soort="afstand", tolerantie=0.05)])
 		doc = frappe.get_doc("BIM Botsingsronde", naam)
