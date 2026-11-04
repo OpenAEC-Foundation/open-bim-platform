@@ -65,6 +65,9 @@ MAX_WEERGAVEN = 50
 MAX_VERLOOP = 20
 REGELSOORTEN = ("uit", "hard", "afstand")
 MAX_MM = 1000
+# De filters van een weergave: lijsten van tekst, en daarnaast de emmer en de zoektekst.
+FILTER_LIJSTEN = ("ernst", "status", "categorie", "disciplines", "verdieping", "ontwikkeling")
+FILTER_EMMERS = (*EMMERS, "weg")
 
 
 def _weiger(melding: str, foutcode: str, uitzondering=frappe.ValidationError):
@@ -773,15 +776,31 @@ def _regel(regel) -> dict:
 	return {"a": a, "b": b, "soort": regel["soort"], "mm": mm, "ernst": ernst}
 
 
+def _weergavefilter(filter_) -> dict:
+	"""Alleen bekende sleutels, lijsten van tekst waar lijsten horen en tekst bij het tekstveld: de viewer rekent erop."""
+	if not isinstance(filter_, dict):
+		_weiger(_("Het filter van een weergave is een object."), "weergave_ongeldig")
+	for sleutel, waarde in filter_.items():
+		if sleutel in FILTER_LIJSTEN:
+			goed = isinstance(waarde, list) and all(isinstance(w, str) for w in waarde)
+		elif sleutel == "tekst":
+			goed = isinstance(waarde, str)
+		elif sleutel == "emmer":
+			goed = waarde is None or waarde in FILTER_EMMERS
+		else:
+			goed = False
+		if not goed:
+			_weiger(_("Het filter van een weergave is ongeldig: {0}.").format(sleutel), "weergave_ongeldig")
+	return filter_
+
+
 def _weergave(weergave) -> dict:
 	if not isinstance(weergave, dict):
 		_weiger(_("Een weergave is een object."), "weergave_ongeldig")
 	naam = str(weergave.get("naam") or "").strip()
 	if not naam:
 		_weiger(_("Een weergave heeft een naam nodig."), "weergave_ongeldig")
-	filter_ = weergave.get("filter") or {}
-	if not isinstance(filter_, dict):
-		_weiger(_("Het filter van een weergave is een object."), "weergave_ongeldig")
+	filter_ = _weergavefilter(weergave.get("filter") if weergave.get("filter") is not None else {})
 	groep = weergave.get("groep") or None
 	if groep is not None and not isinstance(groep, str):
 		_weiger(_("De groepering van een weergave is een tekst."), "weergave_ongeldig")

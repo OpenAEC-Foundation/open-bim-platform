@@ -297,7 +297,9 @@ heropenen kan wel:
 - Regel: `{a, b, soort: "uit"|"hard"|"afstand", mm, ernst}`. Discipline `a` en `b` zijn gesorteerd.
 - De discipline van een model is de eerste submap van de modelmap. Staat een model direct in de modelmap, dan is de discipline
   de bestandsnaam zonder `.ifc`, zodat er altijd iets te kiezen is. Hetzelfde geldt voor `disciplines` op een botsing *(keuze)*.
-- Weergave: `{naam, filter, groep}`; hoogstens 50, namen uniek.
+- Weergave: `{naam, filter, groep}`; hoogstens 50, namen uniek. De server controleert de vorm van `filter`: alleen bekende sleutels,
+  lijsten van tekst bij `ernst`, `status`, `categorie`, `disciplines`, `verdieping` en `ontwikkeling`, tekst bij `tekst`, en een
+  bekende waarde of leeg bij `emmer`.
 - Alles gaat via het auditlog.
 
 ### 7.7 Verloop

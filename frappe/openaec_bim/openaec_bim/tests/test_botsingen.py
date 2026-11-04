@@ -845,3 +845,38 @@ class TestBotsingen(ProjectTest):
 		botsingen.bijwerken(doc)
 		derde = botsingen.start_controles(self.project, [self.controle()], voorinstelling="harde")
 		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", derde, "vorige_ronde"), eerste)
+
+	# Weergaven
+
+	def test_het_filter_van_een_weergave_wordt_op_vorm_gecontroleerd(self):
+		for slecht in (
+			{"ernst": None},
+			{"ernst": "kritiek"},
+			{"status": [1]},
+			{"verdieping": {"a": 1}},
+			{"tekst": ["x"]},
+			{"tekst": None},
+			{"emmer": "onzin"},
+			{"emmer": ["beoordelen"]},
+			{"onbekend": []},
+			"geen object",
+			[],
+		):
+			with self.assertRaises(frappe.ValidationError, msg=str(slecht)):
+				botsingen.instellingen_bewaar(self.project, weergaven=[{"naam": "N", "filter": slecht, "groep": None}])
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "weergave_ongeldig")
+		self.assertEqual(botsingen.instellingen(self.project)["weergaven"], [])
+		goed = {
+			"emmer": "weg",
+			"ernst": ["kritiek"],
+			"status": [],
+			"categorie": ["a"],
+			"disciplines": [],
+			"verdieping": ["00"],
+			"ontwikkeling": ["eerder_weg"],
+			"tekst": "wand",
+		}
+		uit = botsingen.instellingen_bewaar(self.project, weergaven=[{"naam": "N", "filter": goed, "groep": None}])
+		self.assertEqual(uit["weergaven"][0]["filter"], goed)
+		for ook_goed in ({"emmer": None}, {}):
+			botsingen.instellingen_bewaar(self.project, weergaven=[{"naam": "N", "filter": ook_goed, "groep": None}])
