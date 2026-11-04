@@ -321,6 +321,15 @@ body {
   min-width: 0;
 }
 
+/* The filters of a clash round: every field gets room to show its text, two or three to a row in the column. */
+.botsing__filters .issues__filter > * {
+  flex: 1 1 8.5rem;
+}
+
+.botsing__filters .issues__filter > input[type="search"] {
+  flex-basis: 100%;
+}
+
 .issues__lijst,
 .issue__lijst {
   margin: 0;
