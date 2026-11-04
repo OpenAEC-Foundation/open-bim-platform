@@ -108,8 +108,13 @@ wijzigen samen *(keuze)*.
   en geven in de geometrieboom geen botsing. `punt` is het midden van de doos en `afstand` de kleinste maat ervan.
 - `hard`: `afstand` is het minimum van de afstand van de geometrieboom en de kleinste overlap van de twee omhullende dozen, over
   de drie assen. De afstand van de boom is de lengte van één straal langs een vlaknormaal, geen doordringingsdiepte: een raam dat
-  2 mm in een dag steekt kan zo 400 mm krijgen. De echte diepte is nooit groter dan de overlap van de dozen. `punt` is het midden
-  van die overlap, omdat raster, ruimte en camera daarvan afhangen. Bij `afstand` en `dubbel` verandert hier niets.
+  2 mm in een dag steekt kan zo 400 mm krijgen. De echte diepte is nooit groter dan de overlap van de dozen. Een gevolg: een echte
+  doorsteek door een element dunner dan 5 mm telt als `contact` / `klein`, want de diepte is dan de dikte van dat element.
+- De boom filtert bij `hard` op zijn eigen straal. Daarom vervalt daarna ook een rij met een diepte onder de tolerantie.
+- `punt` bij `hard` is het midden van de straal van de boom, per as geklemd in de overlap van de dozen. Dat ligt altijd in de
+  overlap en blijft bij het contact, en raster, ruimte en camera hangen ervan af. Het midden van de overlap zelf ligt bij gedraaide
+  en L-vormige elementen meters naast het contact (gemeten: 3,7 m bij een diagonale balk door een wand, 1,65 m en buiten de wand
+  bij een L-vormige wand). Zonder overlap blijft het punt van de boom. Bij `afstand` en `dubbel` verandert hier niets.
 - De detectie blijft die van de geometrieboom: echte overlappen met samenvallende vlakken worden niet altijd gevonden. In een
   controle met 400 willekeurige dozenparen ontbraken er 45, waaronder twee balken met 1 m overlap.
 - `IfcVirtualElement` valt voortaan af, naast de al uitgesloten openingen.

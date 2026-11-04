@@ -219,6 +219,33 @@ def ifc_boxes(path: Path, boxes: list[tuple[str, str, tuple[float, float, float]
     return _write(f, path)
 
 
+def ifc_diagonal_beam(path: Path) -> Path:
+    """A long beam at 45 degrees through a wall; they meet near (0.9, 1.1), their boxes over 10 m."""
+    f, make, _ = _one_storey()
+    make("IfcWall", "Wand", -5.0, 1.0, 0.0, 20.0, 0.2, 3.0)
+    make("IfcBeam", "Balk", 0.0, 0.0, 1.0, 14.0, 0.3, 0.3, angle=45.0)
+    return _write(f, path)
+
+
+def ifc_l_wall(path: Path) -> Path:
+    """IFC4 model with an L-shaped wall (legs of 6 m along X and Y) and a duct through the leg along X."""
+    api = ifcopenshell.api
+    f, make, storey = _one_storey()
+    body = next(c for c in f.by_type("IfcGeometricRepresentationSubContext") if c.ContextIdentifier == "Body")
+    wall = api.run("root.create_entity", f, ifc_class="IfcWall", name="L-wand")
+    corners = [(0.0, 0.0), (6.0, 0.0), (6.0, 0.2), (0.2, 0.2), (0.2, 6.0), (0.0, 6.0)]
+    count = len(corners)
+    vertices = [(x, y, z) for z in (0.0, 3.0) for x, y in corners]
+    faces = [list(range(count))[::-1], [i + count for i in range(count)]]
+    faces += [[i, (i + 1) % count, (i + 1) % count + count, i + count] for i in range(count)]
+    rep = api.run("geometry.add_mesh_representation", f, context=body, vertices=[vertices], faces=[faces])
+    api.run("geometry.assign_representation", f, product=wall, representation=rep)
+    api.run("geometry.edit_object_placement", f, product=wall)
+    api.run("spatial.assign_container", f, products=[wall], relating_structure=storey)
+    make("IfcDuctSegment", "Kanaal", 0.5, -0.5, 1.0, 0.3, 4.0, 0.3)
+    return _write(f, path)
+
+
 def ifc_cut_away(path: Path) -> Path:
     """IFC4 model with a wall that its opening cuts away completely, so that the wall has no vertices at all.
 

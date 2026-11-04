@@ -101,14 +101,19 @@ def _same_box(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> bool:
     return all(abs(p - q) <= DUPLICATE_BOX_M for corner in range(2) for p, q in zip(a[corner], b[corner], strict=True))
 
 
-def box_overlap(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> tuple[float, Vec3] | None:
-    """The smallest extent and the centre of the overlap of two boxes; None when the boxes do not even touch."""
-    low = [max(p, q) for p, q in zip(a[0], b[0], strict=True)]
-    high = [min(p, q) for p, q in zip(a[1], b[1], strict=True)]
+def box_overlap(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> tuple[float, Vec3, Vec3] | None:
+    """The smallest extent and the two corners of the overlap of two boxes; None when the boxes do not even touch."""
+    low = tuple(max(p, q) for p, q in zip(a[0], b[0], strict=True))
+    high = tuple(min(p, q) for p, q in zip(a[1], b[1], strict=True))
     smallest = min(q - p for p, q in zip(low, high, strict=True))
     if smallest < -BOX_TOUCH_M:
         return None
-    return max(smallest, 0.0), tuple((p + q) / 2 for p, q in zip(low, high, strict=True))
+    return max(smallest, 0.0), low, high
+
+
+def _clamp(point: Vec3, low: Vec3, high: Vec3) -> Vec3:
+    """The point moved into the box, per axis. Boxes that only touch can have `low` just above `high`."""
+    return tuple(max(min(p, q), min(v, max(p, q))) for v, p, q in zip(point, low, high, strict=True))
 
 
 class ClashScene:
@@ -223,16 +228,19 @@ class ClashScene:
         return found
 
     def _penetration(self, a: str, b: str, distance: float, point: Vec3) -> tuple[float, Vec3]:
-        """Depth and point of a hard clash, from the overlap of the two boxes.
+        """Depth and point of a hard clash: the ray of the tree, limited by the overlap of the two boxes.
 
         The distance of the tree is the length of one ray along a face normal, which can run through a whole element.
-        The real depth is never larger than the overlap of the boxes, and grid, room and camera need a point inside it.
+        The real depth is never larger than the overlap of the boxes. The middle of the ray stays at the contact, where
+        the middle of the overlap can lie metres away with rotated or L-shaped elements; grid, room and camera need a
+        point at the contact, so the point is the middle of the ray, moved into the overlap where it sticks out.
         Without a usable overlap (the same GlobalId in two files shares one box) the answer of the tree stays.
         """
         overlap = box_overlap(self.boxes[a], self.boxes[b]) if a in self.boxes and b in self.boxes else None
         if overlap is None:
             return distance, point
-        return min(abs(distance), overlap[0]), overlap[1]
+        smallest, low, high = overlap
+        return min(abs(distance), smallest), _clamp(point, low, high)
 
     def check(self, check: ClashCheck) -> list[Botsing]:
         elements_a, owners_a = self._side(check.set_a)
@@ -264,6 +272,9 @@ class ClashScene:
             depth, point = float(clash.distance), tuple((p + q) / 2 for p, q in zip(clash.p1, clash.p2, strict=True))
             if check.soort == "hard":
                 depth, point = self._penetration(a, b, depth, point)
+                # The tree filtered on its own ray, which can be much longer than the depth.
+                if abs(depth) < check.tolerantie:
+                    continue
             found.append(
                 Botsing(
                     a=self._ref(entity_a, model_a),
