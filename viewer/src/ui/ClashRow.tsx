@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clash, ClashElement, ClashSeverity, ClashStatus } from "../model/bcf";
-import { REDEN_MAX, elementNaam, rijActies } from "../model/clashes";
+import { REDEN_MAX, elementNaam, nietInBeeldTekst, rijActies } from "../model/clashes";
 
 const ERNST_BADGE: Record<ClashSeverity, string> = { klein: "neutral", groot: "warning", kritiek: "danger" };
 const STATUS_BADGE: Record<ClashStatus, string> = {
@@ -112,7 +112,7 @@ export function ClashRow({ b, open, mag, bezig, afwijzen, fout, nietInBeeld, onK
           {fout && <p className="viewer__error">{fout}</p>}
           {nietInBeeld.length > 0 && (
             <p className="viewer__hint" data-melding="niet-in-beeld">
-              {t("niet_in_beeld", { namen: nietInBeeld.join(", ") })}
+              {t(nietInBeeldTekst(b), { namen: nietInBeeld.join(", ") })}
             </p>
           )}
           {beslissen && !afwijzen && (

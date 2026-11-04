@@ -246,6 +246,7 @@
   "beoordelen_alleen_lezen": "Je kunt de botsingen bekijken, maar niet beoordelen.",
   "ronde_heeft_opvolger": "Er is een nieuwere ronde: beslis daar. Deze ronde is alleen nog te bekijken.",
   "niet_in_beeld": "Niet in beeld te vinden: {{namen}}. Staat het model aan?",
+  "niet_in_beeld_weg": "Niet in beeld te vinden: {{namen}}. Deze botsing is niet meer gevonden: het element kan uit het model verdwenen zijn.",
   "actie": {
     "bevestigen": "Bevestigen",
     "accepteren": "Accepteren",

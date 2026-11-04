@@ -27,7 +27,7 @@ import {
 import { ClashFilters } from "./ClashFilters";
 import { ClashRow, RedenVeld } from "./ClashRow";
 import { ClashTrends } from "./ClashTrends";
-import { describe } from "./format";
+import { describe, isSuperseded } from "./format";
 import type { Weergave } from "./weergave";
 
 const EMMERS: ClashBucket[] = ["beoordelen", "contact", "aangrenzend"];
@@ -57,6 +57,7 @@ export function ClashRound({
   modellen,
   instellingen,
   onInstellingen,
+  onVerouderd,
   onTerug,
 }: {
   coordinatie: Coordinatie;
@@ -65,6 +66,8 @@ export function ClashRound({
   modellen: ModelInfo[];
   instellingen: ClashSettings;
   onInstellingen: (instellingen: ClashSettings) => void;
+  /** The host refused a decision because of a newer round: load the round again, so that the buttons go. */
+  onVerouderd: () => void;
   onTerug: () => void;
 }) {
   const { t } = useTranslation();
@@ -191,6 +194,7 @@ export function ClashRound({
       if (volgt) kies(volgt, { auto: true, scroll: true });
     } catch (e) {
       setRijFout({ naam: b.naam, melding: describe(e) });
+      if (isSuperseded(e)) onVerouderd();
     } finally {
       loopt.current = false;
       setBezig(false);
@@ -208,6 +212,7 @@ export function ClashRound({
       zetGroepsActie(null);
     } catch (e) {
       setGroepFout(describe(e));
+      if (isSuperseded(e)) onVerouderd();
     } finally {
       loopt.current = false;
       setBezig(false);
@@ -345,7 +350,7 @@ export function ClashRound({
               const dicht = ingeklapt.has(sleutel);
               const limiet = limieten[sleutel] ?? PER_KEER;
               const open = teBeslissen(rijen).length;
-              const actie = groepsActie?.sleutel === sleutel ? groepsActie : null;
+              const actie = mag && groepsActie?.sleutel === sleutel ? groepsActie : null;
               return (
                 <section key={sleutel} className="inspector__section botsing__groep">
                   <h3 className="inspector__section-title botsing__groepkop" data-groep={sleutel}>

@@ -130,20 +130,26 @@ export class FragmentsEngine {
       }
       sizes.push(boxes.length ? this.jointSize(boxes) : null);
     }
-    // Every model goes transparent (an element of a third model could hide the pair); only the models that hold
-    // one of the elements get them back at full opacity and marked.
-    if (ISOLATE_GHOST && found.size > 0) {
-      for (const [key, model] of this.fragments.list) {
-        this.ghosted.add(key);
-        await model.setOpacity(undefined, GHOST_OPACITY);
+    try {
+      // Every model goes transparent (an element of a third model could hide the pair); only the models that hold
+      // one of the elements get them back at full opacity and marked.
+      if (ISOLATE_GHOST && found.size > 0) {
+        for (const [key, model] of this.fragments.list) {
+          this.ghosted.add(key);
+          await model.setOpacity(undefined, GHOST_OPACITY);
+        }
       }
+      for (const [, entries] of found) {
+        const model = entries[0].model;
+        if (ISOLATE_GHOST) await model.resetOpacity(entries.map((entry) => entry.id));
+        for (const { id, material } of entries) await model.highlight([id], material);
+      }
+      await this.jump(new THREE.Vector3(...ifcToThree(point, this.basis())), isolateRadius(sizes));
+    } catch (error) {
+      // A failed isolation must not leave everything transparent. The first error is the one to report.
+      await this.clearIsolation().catch(() => undefined);
+      throw error;
     }
-    for (const [, entries] of found) {
-      const model = entries[0].model;
-      if (ISOLATE_GHOST) await model.resetOpacity(entries.map((entry) => entry.id));
-      for (const { id, material } of entries) await model.highlight([id], material);
-    }
-    await this.jump(new THREE.Vector3(...ifcToThree(point, this.basis())), isolateRadius(sizes));
     return { a: sizes[0] !== null, b: sizes[1] !== null };
   }
 

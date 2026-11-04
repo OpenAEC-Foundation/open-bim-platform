@@ -26,6 +26,7 @@ import {
   nietGereed,
   nietInBeeld,
   rijActies,
+  nietInBeeldTekst,
   rondeTitel,
   schoneWeergaven,
   zonderChip,
@@ -656,12 +657,25 @@ describe("wie mag beslissen", () => {
   });
 });
 
+describe("de melding als een element niet in beeld is", () => {
+  test("op een rij die weg is, kan het element echt verdwenen zijn", () => {
+    expect(nietInBeeldTekst(botsing("1", "G", "opgelost", { ontwikkeling: "weg" }))).toBe("niet_in_beeld_weg");
+    expect(nietInBeeldTekst(botsing("1", "G", "opgelost", { ontwikkeling: "eerder_weg" }))).toBe("niet_in_beeld_weg");
+  });
+  test("op een gevonden rij staat het model uit", () => {
+    for (const ontwikkeling of ["nieuw", "blijft", "terug", null] as const) {
+      expect(nietInBeeldTekst(botsing("1", "G", "actief", { ontwikkeling }))).toBe("niet_in_beeld");
+    }
+  });
+});
+
 describe("de titel van een ronde", () => {
   const moment = new Date(2026, 10, 4, 14, 32);
 
   test("de naam met datum en tijd, in de taal van de viewer", () => {
-    expect(rondeTitel("Harde botsingen", moment, "nl")).toBe("Harde botsingen 4 nov 2026, 14:32");
-    expect(rondeTitel("Hard clashes", moment, "en")).toMatch(/^Hard clashes Nov 4, 2026, 2:32\sPM$/);
+    // The form, not the exact text: the punctuation differs per version of the ICU data ("4 nov 2026" or "4 nov. 2026").
+    expect(rondeTitel("Harde botsingen", moment, "nl")).toMatch(/^Harde botsingen 4 nov\.? 2026,? 14[:.]32$/);
+    expect(rondeTitel("Hard clashes", moment, "en")).toMatch(/^Hard clashes Nov 4, 2026,? (at )?2:32\sPM$/);
   });
 
   test("twee rondes op een ander moment heten anders", () => {

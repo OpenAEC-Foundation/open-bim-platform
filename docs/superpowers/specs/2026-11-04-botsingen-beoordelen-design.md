@@ -310,9 +310,10 @@ heropenen kan wel:
 - `zet_status_veel(botsingen, status, reden=None)`: tot 500 tegelijk, voor de groepsactie; één rechtencontrole per ronde. Een
   bevestiging maakt per botsing één issue.
 - Een ronde met een opvolger (een ronde met `vorige_ronde` gelijk aan deze) is alleen-lezen: wat daar nog beslist wordt, komt niet
-  in de opvolger. `zet_status` en `zet_status_veel` weigeren dan (`ronde_heeft_opvolger`). Een mislukte opvolger telt niet: die nam
-  niets over, en de volgende ronde in de reeks volgt deze weer. `ronde_naar_json` geeft `heeft_opvolger`, en de viewer toont zo'n
-  ronde zonder beslisknoppen, met één regel uitleg.
+  in de opvolger. `zet_status`, `zet_status_veel` en `naar_issue` weigeren dan (`ronde_heeft_opvolger`); een issue dat er al is, blijft
+  `naar_issue` geven. Een mislukte opvolger telt niet: die nam niets over, en de volgende ronde in de reeks volgt deze weer.
+  `ronde_naar_json` geeft `heeft_opvolger`, en de viewer toont zo'n ronde zonder beslisknoppen, met één regel uitleg. Start iemand
+  anders een opvolger terwijl de ronde open staat, dan haalt de viewer de rondes op bij die weigering en verdwijnen de knoppen meteen.
 - `naar_issue` blijft en gebruikt de elementnamen in titel en omschrijving. Past de titel niet in het veld, dan wordt ze gekort met
   een weglatingsteken; de volledige namen staan in de omschrijving.
 
@@ -455,7 +456,8 @@ Na een beslissing springt de selectie met `volgende` door. De rij blijft staan t
 - `isoleer` zoekt de elementen pas in de wachtrij, op het moment van uitvoeren: een model dat nog laadt telt dan niet als ontbrekend.
   Het geeft terug wat gevonden is, `{a, b}`; een lege doos telt als niet gevonden. Is niets gevonden, dan wordt niets doorzichtig en
   gaat alleen de camera naar het botspunt. De opengeklapte rij noemt in één regel welk element niet in beeld te vinden is, en toont
-  ook een fout bij het isoleren.
+  ook een fout bij het isoleren. Op een gevonden rij vraagt die regel of het model aan staat; op een rij die weg is, zegt ze dat het
+  element uit het model verdwenen kan zijn. Mislukt het isoleren halverwege, dan gaat het beeld terug en blijft niets doorzichtig.
 - `herstel` zet alles terug. De keuze *Alles tonen* en het verlaten van de ronde of het tabblad roepen `herstel` aan.
 - Doorzichtig maken moet ook op een federatie van 288 MB vlot blijven. Is het te traag, dan alleen het paar markeren met de
   camera erop, en dat noteren in de meting.

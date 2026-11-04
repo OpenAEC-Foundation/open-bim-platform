@@ -485,6 +485,11 @@ export function nietInBeeld(b: Clash, uit: IsolateResult | null): string[] {
   return [...(uit.a ? [] : [elementNaam(b.element_a)]), ...(uit.b ? [] : [elementNaam(b.element_b)])];
 }
 
+/** On a row that is gone the element may really have left the model; "is the model on?" would send you the wrong way. */
+export function nietInBeeldTekst(b: Clash): "niet_in_beeld" | "niet_in_beeld_weg" {
+  return b.ontwikkeling === "weg" || b.ontwikkeling === "eerder_weg" ? "niet_in_beeld_weg" : "niet_in_beeld";
+}
+
 export type SneltoetsActie = "volgende" | "vorige" | "bevestigen" | "accepteren" | "afwijzen" | "alles_tonen" | "hulp";
 
 const SNELTOETSEN: Record<string, SneltoetsActie> = {

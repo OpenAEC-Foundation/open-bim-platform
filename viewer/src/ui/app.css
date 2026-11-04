@@ -73,6 +73,7 @@ body {
   padding: var(--spacing-3) var(--spacing-4);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .viewer__error {
@@ -406,6 +407,7 @@ body {
 
 .issue__waarschuwing {
   color: var(--color-semantic-warning);
+  overflow-wrap: anywhere;
 }
 
 .issue__tekst {

@@ -27,6 +27,11 @@ export function isNoFolder(error: unknown): boolean {
   return error instanceof HostError && error.fout?.error_code === "geen_map";
 }
 
+/** The host refused a decision because a newer round took over: the round on screen is out of date. */
+export function isSuperseded(error: unknown): boolean {
+  return error instanceof HostError && error.fout?.error_code === "ronde_heeft_opvolger";
+}
+
 /** A readable message for an error of the host or the engine. */
 export function describe(error: unknown): string {
   if (error instanceof HostError) return error.fout ? `${error.fout.melding} ${error.fout.remedie}` : error.message;

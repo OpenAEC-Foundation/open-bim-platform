@@ -96,6 +96,7 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
         modellen={modellen}
         instellingen={instellingen ?? GEEN_INSTELLINGEN}
         onInstellingen={setInstellingen}
+        onVerouderd={() => void laad()}
         onTerug={() => setOpen(null)}
       />
     );
