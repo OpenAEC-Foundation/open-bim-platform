@@ -212,6 +212,8 @@ Lege velden blijven dus geldig.
 - Zijn de `regels` anders dan die van de vorige ronde, dan is de ronde *gewijzigd*: beslissingen gaan gewoon mee, maar paren die
   niet meer gevonden zijn, zijn wel `weg` zonder dat hun issue vanzelf sluit, want ze kunnen ook buiten de nieuwe regels vallen.
   De samenvatting krijgt `regels_gewijzigd` en de viewer noemt dat in één regel *(keuze)*.
+- Twee lopende rondes in één reeks zouden dezelfde voorganger krijgen, en de keten zou splitsen. `start_controles` weigert daarom
+  een tweede ronde met dezelfde `reeks` zolang er een op `wacht` of `bezig` staat (`ronde_loopt`), met een melding die de viewer toont.
 - `titel` standaard: de naam van de voorinstelling met datum en tijd.
 - `bijwerken` neemt `voortgang` over van de kerntaak.
 
@@ -281,6 +283,10 @@ heropenen kan wel:
     enige weg naar een issue; `botsing_naar_issue` blijft in de API bestaan *(keuze)*.
 - `zet_status_veel(botsingen, status, reden=None)`: tot 500 tegelijk, voor de groepsactie; één rechtencontrole per ronde. Een
   bevestiging maakt per botsing één issue.
+- Een ronde met een opvolger (een ronde met `vorige_ronde` gelijk aan deze) is alleen-lezen: wat daar nog beslist wordt, komt niet
+  in de opvolger. `zet_status` en `zet_status_veel` weigeren dan (`ronde_heeft_opvolger`). Een mislukte opvolger telt niet: die nam
+  niets over, en de volgende ronde in de reeks volgt deze weer. `ronde_naar_json` geeft `heeft_opvolger`, en de viewer toont zo'n
+  ronde zonder beslisknoppen, met één regel uitleg.
 - `naar_issue` blijft en gebruikt de elementnamen in titel en omschrijving. Past de titel niet in het veld, dan wordt ze gekort met
   een weglatingsteken; de volledige namen staan in de omschrijving.
 

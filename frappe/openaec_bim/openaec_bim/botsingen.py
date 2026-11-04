@@ -148,6 +148,9 @@ def start_controles(
 		versies[item["bestand"]] = str(versie)
 	voorinstelling = (voorinstelling or "").strip() or None
 	reeks = voorinstelling or "sets:" + hashlib.sha1(_json([set_a, set_b, soort]).encode()).hexdigest()
+	# De vorige ronde wordt hier bepaald: twee lopende rondes zouden dezelfde voorganger delen en de keten splitsen.
+	if frappe.db.exists(RONDE, {"project": project.name, "reeks": reeks, "status": ("in", ("wacht", "bezig"))}):
+		_weiger(_("Deze controle loopt al. Wacht tot die ronde klaar is en start dan een nieuwe."), "ronde_loopt")
 	vorige = frappe.db.get_value(
 		RONDE, {"project": project.name, "status": "klaar", "reeks": reeks}, "name", order_by="creation desc"
 	)
@@ -588,10 +591,23 @@ def _beoordeel(doc, status: str, reden: str | None) -> dict:
 	return naar_json(doc)
 
 
+def _heeft_opvolger(ronde: str) -> bool:
+	"""Bouwt een andere ronde op deze voort? Een mislukte opvolger telt niet: die nam niets over, en de volgende ronde in
+	de reeks volgt deze weer."""
+	return bool(frappe.db.exists(RONDE, {"vorige_ronde": ronde, "status": ("!=", "fout")}))
+
+
+def _vereis_geen_opvolger(ronde: str) -> None:
+	"""De opvolger heeft de beslissingen al overgenomen, of doet dat zo: wat hier nog beslist wordt, ging stil verloren."""
+	if _heeft_opvolger(ronde):
+		_weiger(_("Er is een nieuwere ronde: beslis daar. Deze ronde is alleen nog te bekijken."), "ronde_heeft_opvolger")
+
+
 def zet_status(botsing: str, status: str, reden: str | None = None) -> dict:
 	"""Beoordeelt een botsing; `bevestigd` maakt een issue als er nog geen is en houdt het daarna."""
 	doc = frappe.get_doc(BOTSING, botsing)
 	_vereis_schrijver(_project_van(doc))
+	_vereis_geen_opvolger(doc.ronde)
 	return _beoordeel(doc, status, _controleer_status(status, reden))
 
 
@@ -606,6 +622,7 @@ def zet_status_veel(botsingen: list[str], status: str, reden: str | None = None)
 	for doc in docs:
 		if doc.ronde not in gecontroleerd:
 			_vereis_schrijver(_project_van(doc))
+			_vereis_geen_opvolger(doc.ronde)
 			gecontroleerd.add(doc.ronde)
 	return [_beoordeel(doc, status, reden) for doc in docs]
 
@@ -668,7 +685,8 @@ def naar_issue(botsing: str) -> dict:
 	return issues.topic(t["guid"])
 
 
-def ronde_naar_json(ronde) -> dict:
+def ronde_naar_json(ronde, heeft_opvolger: bool | None = None) -> dict:
+	"""Een ronde voor de viewer; wie een hele lijst maakt, geeft `heeft_opvolger` mee en vraagt het niet per rij."""
 	return {
 		"naam": ronde.name,
 		"titel": ronde.titel,
@@ -685,6 +703,7 @@ def ronde_naar_json(ronde) -> dict:
 		"aantal": cint(ronde.aantal),
 		"bron_versies": json.loads(ronde.bron_versies or "{}"),
 		"vorige_ronde": ronde.vorige_ronde,
+		"heeft_opvolger": _heeft_opvolger(ronde.name) if heeft_opvolger is None else heeft_opvolger,
 		"gestart": str(ronde.creation),
 		"gestart_door": ronde.owner,
 		"fout": json.loads(ronde.fout) if ronde.fout else None,
@@ -695,12 +714,18 @@ def rondes(project) -> list[dict]:
 	"""De rondes van het project, nieuwste eerst; lopende rondes worden eerst bij de kern bijgewerkt."""
 	project = issues._project(project)
 	issues._vereis_lezen(project)
-	uit = []
+	docs = []
 	for naam in frappe.get_all(RONDE, {"project": project.name}, pluck="name", order_by="creation desc"):
 		doc = frappe.get_doc(RONDE, naam)
 		_werk_bij(doc)
-		uit.append(ronde_naar_json(doc))
-	return uit
+		docs.append(doc)
+	# Na het bijwerken: een opvolger kan zojuist mislukt zijn.
+	opvolgers = frappe.get_all(
+		RONDE,
+		{"project": project.name, "vorige_ronde": ("is", "set"), "status": ("!=", "fout")},
+		pluck="vorige_ronde",
+	)
+	return [ronde_naar_json(doc, doc.name in opvolgers) for doc in docs]
 
 
 def lijst(ronde: str) -> list[dict]:

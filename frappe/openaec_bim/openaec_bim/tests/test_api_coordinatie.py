@@ -102,10 +102,10 @@ class TestApiCoordinatie(ProjectTest):
 				"tolerantie": 0.0,
 			}
 		]
-		for waarde in (controles, json.dumps(controles)):
-			ronde = api_coordinatie.botsingsronde_start(self.map, controles=waarde, voorinstelling="harde")["ronde"]
+		for naam, waarde in (("harde", controles), ("dubbel", json.dumps(controles))):
+			ronde = api_coordinatie.botsingsronde_start(self.map, controles=waarde, voorinstelling=naam)["ronde"]
 			doc = frappe.get_doc("BIM Botsingsronde", ronde)
-			self.assertEqual((doc.reeks, len(json.loads(doc.regels))), ("harde", 1))
+			self.assertEqual((doc.reeks, len(json.loads(doc.regels))), (naam, 1))
 			self.assertEqual(len(self.kern.laatste_botsingen["controles"]), 1)
 
 	def test_audit_export_alleen_met_schrijfrecht(self):

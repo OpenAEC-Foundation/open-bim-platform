@@ -543,8 +543,9 @@ class TestBotsingen(ProjectTest):
 		self.assertIn("w1", t["description"])
 
 	def test_groepsactie_met_grens_en_rechten(self):
-		eerste = self.ronde_met([("w1", "k1"), ("w2", "k2")])
-		tweede = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		paren = [("w1", "k1"), ("w2", "k2")]
+		eerste = self.lever(botsingen.start_controles(self.project, [self.controle()], voorinstelling="een"), paren)
+		tweede = self.lever(botsingen.start_controles(self.project, [self.controle()], voorinstelling="twee"), paren)
 		namen = [self.rij(r, g).name for r in (eerste, tweede) for g in ("w1", "w2")]
 		with patch.object(botsingen.issues, "_schrijver", wraps=botsingen.issues._schrijver) as controle:
 			uit = botsingen.zet_status_veel(namen, "genegeerd", "Bedoeld zo")
@@ -782,3 +783,65 @@ class TestBotsingen(ProjectTest):
 		terug = self.rij(self.ronde_met([("w1", "k1")]), "w1")
 		self.assertEqual((terug.status, terug.issue), ("bevestigd", issue))
 		self.assertNotEqual(frappe.db.get_value("BIM Issue", issue, "status"), "Opgelost")
+
+	# Een oude ronde en twee rondes tegelijk
+
+	def test_op_een_ronde_met_een_opvolger_beslist_niemand_meer(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		naam = self.rij(eerste, "w1").name
+		tweede = self.start()
+		for poging in (lambda: botsingen.zet_status(naam, "genegeerd"), lambda: botsingen.zet_status_veel([naam], "genegeerd")):
+			with self.assertRaises(frappe.ValidationError):
+				poging()
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "ronde_heeft_opvolger")
+		self.lever(tweede, [("w1", "k1")])
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.zet_status(naam, "genegeerd")
+		frappe.local.response.pop("foutcode", None)
+		self.assertEqual(frappe.db.get_value("BIM Botsing", naam, "status"), "nieuw")
+		self.assertEqual(botsingen.zet_status(self.rij(tweede, "w1").name, "genegeerd")["status"], "genegeerd")
+
+	def test_een_mislukte_opvolger_telt_niet(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		tweede = self.start()
+		doc = frappe.get_doc("BIM Botsingsronde", tweede)
+		self.kern.taken[doc.kern_taak] = {"status": "fout", "fout": {"error_code": "interne_fout", "melding": "kapot"}}
+		botsingen.bijwerken(doc)
+		standen = {r["naam"]: r["heeft_opvolger"] for r in botsingen.rondes(self.project)}
+		self.assertEqual(standen, {eerste: False, tweede: False})
+		self.assertEqual(botsingen.zet_status(self.rij(eerste, "w1").name, "genegeerd")["status"], "genegeerd")
+		derde = self.start()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", derde, "vorige_ronde"), eerste)
+
+	def test_de_lijst_noemt_de_opvolger_zonder_het_per_rij_te_vragen(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		tweede = self.ronde_met([("w1", "k1")])
+		with patch.object(botsingen, "_heeft_opvolger") as per_rij:
+			uit = botsingen.rondes(self.project)
+		per_rij.assert_not_called()
+		self.assertEqual({r["naam"]: r["heeft_opvolger"] for r in uit}, {eerste: True, tweede: False})
+		self.assertTrue(botsingen.ronde_naar_json(frappe.get_doc("BIM Botsingsronde", eerste))["heeft_opvolger"])
+		self.assertFalse(botsingen.ronde_naar_json(frappe.get_doc("BIM Botsingsronde", tweede))["heeft_opvolger"])
+
+	def test_een_tweede_lopende_ronde_in_een_reeks_wordt_geweigerd(self):
+		eerste = botsingen.start_controles(self.project, [self.controle()], voorinstelling="harde")
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [self.controle(tolerantie=0.01)], voorinstelling="harde")
+		self.assertEqual(frappe.local.response.pop("foutcode", None), "ronde_loopt")
+		# Een andere reeks gaat gewoon door.
+		self.assertTrue(botsingen.start_controles(self.project, [self.controle()], voorinstelling="andere"))
+		# Zonder voorinstelling geldt hetzelfde.
+		sets = ([{"bestand": self.constructie}], [{"bestand": self.installaties}])
+		botsingen.start(self.project, *sets, "hard", 0.0)
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start(self.project, *sets, "hard", 0.05)
+		self.assertEqual(frappe.local.response.pop("foutcode", None), "ronde_loopt")
+		# Is de ronde klaar of mislukt, dan kan het weer.
+		self.lever(eerste, [("w1", "k1")])
+		tweede = botsingen.start_controles(self.project, [self.controle()], voorinstelling="harde")
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", tweede, "vorige_ronde"), eerste)
+		doc = frappe.get_doc("BIM Botsingsronde", tweede)
+		self.kern.taken[doc.kern_taak] = {"status": "fout", "fout": {"error_code": "interne_fout", "melding": "kapot"}}
+		botsingen.bijwerken(doc)
+		derde = botsingen.start_controles(self.project, [self.controle()], voorinstelling="harde")
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", derde, "vorige_ronde"), eerste)
