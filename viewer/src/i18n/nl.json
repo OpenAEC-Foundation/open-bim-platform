@@ -116,5 +116,70 @@
   "naar_issue": "Issue maken",
   "heeft_issue": "Issue",
   "issue_gemaakt": "Issue „{{titel}}” gemaakt.",
-  "koppeling": "Gekoppeld aan versie {{vorige}}: {{procent}}% van de elementen teruggevonden"
+  "koppeling": "Gekoppeld aan versie {{vorige}}: {{procent}}% van de elementen teruggevonden",
+  "start_uitleg": "Kies wat je wilt controleren, of stel het zelf in.",
+  "voorinstelling": {
+    "harde": {
+      "titel": "Harde botsingen",
+      "uitleg": "Alle modellen tegen alle, elementen die in elkaar steken."
+    },
+    "constructie_installaties": {
+      "titel": "Constructie tegen installaties",
+      "uitleg": "Balken, kolommen, funderingen, palen, vloeren en wanden tegen leidingen en kanalen."
+    },
+    "wanden_installaties": {
+      "titel": "Wanden en vloeren tegen installaties",
+      "uitleg": "Alleen wanden en vloeren tegen leidingen en kanalen."
+    },
+    "tussen_modellen": {
+      "titel": "Tussen modellen",
+      "uitleg": "Harde botsingen, maar alleen tussen verschillende modellen."
+    },
+    "bijna": {
+      "titel": "Bijna-botsingen",
+      "uitleg": "Elementen van verschillende modellen die dichter bij elkaar liggen dan de afstand."
+    },
+    "dubbel": {
+      "titel": "Dubbele elementen",
+      "uitleg": "Hetzelfde element dat twee keer in de modellen zit."
+    },
+    "regels": {
+      "titel": "Volgens de projectregels",
+      "uitleg": "De regels per paar disciplines van dit project."
+    },
+    "zelf": {
+      "titel": "Zelf instellen",
+      "uitleg": "Kies zelf de sets, het soort en de tolerantie."
+    }
+  },
+  "voorinstelling_reden": {
+    "geen_modellen": "Er zijn geen gereed gemelde modellen.",
+    "geen_constructie": "Geen model bevat constructieve elementen.",
+    "geen_installaties": "Geen model bevat installatie-elementen.",
+    "geen_wanden_vloeren": "Geen model bevat wanden of vloeren.",
+    "een_model": "Hiervoor zijn minstens twee modellen nodig.",
+    "geen_regels": "Er zijn nog geen regels die op deze modellen passen."
+  },
+  "bijna_mm": "Afstand (mm)",
+  "mm_ongeldig": "Vul een getal in van 0 tot 1000 millimeter.",
+  "overlap_waarschuwing": "De modellen van deze keuze liggen niet bij elkaar. Controleer of ze op dezelfde plek en in hetzelfde coördinatenstelsel staan; starten kan nog steeds.",
+  "ronde_voortgang": "{{procent}}%",
+  "regels_knop": "Regels",
+  "regels_titel": "Regels per disciplinepaar",
+  "regels_uitleg": "Per paar disciplines het soort controle, de afstand en de ernst. Ze gelden voor de keuze Volgens de projectregels.",
+  "regels_alleen_lezen": "Je kunt de regels bekijken, maar niet wijzigen.",
+  "regels_geen": "Er zijn nog geen modellen om regels voor te maken.",
+  "regel_soort": {
+    "uit": "Uit",
+    "hard": "Hard",
+    "afstand": "Afstand"
+  },
+  "regel_mm": "Afstand (mm)",
+  "ernst_veld": "Ernst",
+  "ernst": {
+    "auto": "Automatisch",
+    "klein": "Klein",
+    "groot": "Groot",
+    "kritiek": "Kritiek"
+  }
 }

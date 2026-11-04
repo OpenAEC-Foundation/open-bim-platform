@@ -9,6 +9,7 @@ import {
   elementNaam,
   elementenVan,
   emmerTelling,
+  mmWaarde,
   facetten,
   filter,
   groepeer,
@@ -445,5 +446,18 @@ describe("namen en sneltoetsen", () => {
     expect(toets("a", { target: { tagName: "SELECT" } })).toBeNull();
     expect(toets("a", { target: { tagName: "DIV", isContentEditable: true } })).toBeNull();
     expect(toets("a", { target: { tagName: "BUTTON" } })).toBe("accepteren");
+  });
+});
+
+describe("mmWaarde", () => {
+  test("accepts numbers from 0 to 1000 with a comma or a point", () => {
+    expect(mmWaarde("50")).toBe(50);
+    expect(mmWaarde(" 12,5 ")).toBe(12.5);
+    expect(mmWaarde("0")).toBe(0);
+    expect(mmWaarde("1000")).toBe(1000);
+  });
+
+  test("refuses empty, negative, too large and non-numeric text", () => {
+    for (const tekst of ["", "  ", "-1", "1000,1", "abc", "1e2", "0x10", "5 mm", "1,2,3"]) expect(mmWaarde(tekst)).toBeNull();
   });
 });

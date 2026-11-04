@@ -64,6 +64,14 @@ function telKlassen(modellen: ModelInfo[], past: (klasse: string) => boolean): b
   return modellen.some((m) => Object.entries(m.index?.aantallen_per_klasse ?? {}).some(([klasse, aantal]) => aantal > 0 && past(klasse)));
 }
 
+/** Millimetres typed in a field (comma or point), 0 to 1000; null when it is not a number in that range. */
+export function mmWaarde(tekst: string): number | null {
+  const schoon = tekst.trim().replace(",", ".");
+  if (!/^\d+(\.\d+)?$/.test(schoon)) return null;
+  const mm = Number(schoon);
+  return mm <= 1000 ? mm : null;
+}
+
 /** Near-clashes between models, at `mm` millimetres. */
 export function bijnaMet(mm: number, modellen: ModelInfo[]): ClashCheck[] {
   const set = alle(klaar(modellen));

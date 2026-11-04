@@ -116,5 +116,70 @@
   "naar_issue": "Create issue",
   "heeft_issue": "Issue",
   "issue_gemaakt": "Issue “{{titel}}” created.",
-  "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again"
+  "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again",
+  "start_uitleg": "Choose what to check, or set it up yourself.",
+  "voorinstelling": {
+    "harde": {
+      "titel": "Hard clashes",
+      "uitleg": "All models against all, elements that penetrate each other."
+    },
+    "constructie_installaties": {
+      "titel": "Structure against installations",
+      "uitleg": "Beams, columns, footings, piles, slabs and walls against pipes and ducts."
+    },
+    "wanden_installaties": {
+      "titel": "Walls and floors against installations",
+      "uitleg": "Only walls and floors against pipes and ducts."
+    },
+    "tussen_modellen": {
+      "titel": "Between models",
+      "uitleg": "Hard clashes, but only between different models."
+    },
+    "bijna": {
+      "titel": "Near-clashes",
+      "uitleg": "Elements of different models that are closer together than the distance."
+    },
+    "dubbel": {
+      "titel": "Duplicate elements",
+      "uitleg": "The same element that is in the models twice."
+    },
+    "regels": {
+      "titel": "By the project rules",
+      "uitleg": "The rules per pair of disciplines of this project."
+    },
+    "zelf": {
+      "titel": "Set it up yourself",
+      "uitleg": "Choose the sets, the kind and the tolerance yourself."
+    }
+  },
+  "voorinstelling_reden": {
+    "geen_modellen": "There are no models that are ready.",
+    "geen_constructie": "No model has structural elements.",
+    "geen_installaties": "No model has installation elements.",
+    "geen_wanden_vloeren": "No model has walls or floors.",
+    "een_model": "This needs at least two models.",
+    "geen_regels": "There are no rules yet that fit these models."
+  },
+  "bijna_mm": "Distance (mm)",
+  "mm_ongeldig": "Enter a number from 0 to 1000 millimetres.",
+  "overlap_waarschuwing": "The models of this choice are not near each other. Check that they are in the same place and the same coordinate system; you can still start.",
+  "ronde_voortgang": "{{procent}}%",
+  "regels_knop": "Rules",
+  "regels_titel": "Rules per pair of disciplines",
+  "regels_uitleg": "For each pair of disciplines the kind of check, the distance and the severity. They apply to the choice By the project rules.",
+  "regels_alleen_lezen": "You can view the rules but not change them.",
+  "regels_geen": "There are no models yet to make rules for.",
+  "regel_soort": {
+    "uit": "Off",
+    "hard": "Hard",
+    "afstand": "Clearance"
+  },
+  "regel_mm": "Distance (mm)",
+  "ernst_veld": "Severity",
+  "ernst": {
+    "auto": "Automatic",
+    "klein": "Small",
+    "groot": "Large",
+    "kritiek": "Critical"
+  }
 }

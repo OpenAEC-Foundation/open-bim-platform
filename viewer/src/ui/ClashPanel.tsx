@@ -2,12 +2,16 @@ import { Icon, uiChevronLeft, uiPlus } from "@openaec/icons";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
-import type { Clash, ClashRound, ClashStatus } from "../model/bcf";
+import type { Clash, ClashRound, ClashSettings, ClashStatus } from "../model/bcf";
 import { STATUSSEN, groepeer, telStatussen } from "../model/clashes";
+import { ClashRules } from "./ClashRules";
+import { ClashStart } from "./ClashStart";
 import { describe } from "./format";
 import type { Weergave } from "./weergave";
 
 const POLL_MS = 5000;
+/** Used while the settings are not loaded (or could not be): no rules, read-only. */
+const GEEN_INSTELLINGEN: ClashSettings = { regels: [], weergaven: [], mag_wijzigen: false };
 
 /** Clash rounds of the project: start one between two sets of models, follow it, and work through the results. */
 export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: Coordinatie; weergave: Weergave; modellen: ModelInfo[] }) {
@@ -15,6 +19,8 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
   const [rondes, setRondes] = useState<ClashRound[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [nieuw, setNieuw] = useState(false);
+  const [regels, setRegels] = useState(false);
+  const [instellingen, setInstellingen] = useState<ClashSettings | null>(null);
   const [fout, setFout] = useState<string | null>(null);
 
   const laad = useCallback(async () => {
@@ -30,6 +36,21 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
     void laad();
   }, [laad]);
 
+  useEffect(() => {
+    let cancelled = false;
+    coordinatie
+      .botsingInstellingen()
+      .then((i) => {
+        if (!cancelled) setInstellingen(i);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setFout(t("botsingen_fout", { melding: describe(e) }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [coordinatie, t]);
+
   // While a round runs at the kern, ask again now and then.
   const lopend = rondes?.some((r) => r.status === "wacht" || r.status === "bezig") ?? false;
   useEffect(() => {
@@ -41,15 +62,26 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
   const ronde = rondes?.find((r) => r.naam === open) ?? null;
   if (nieuw) {
     return (
-      <NieuweRonde
+      <ClashStart
         coordinatie={coordinatie}
         modellen={modellen}
-        onKlaar={async (naam) => {
+        instellingen={instellingen ?? GEEN_INSTELLINGEN}
+        onKlaar={async () => {
           setNieuw(false);
-          if (naam) {
-            await laad();
-            setOpen(naam);
-          }
+          await laad();
+        }}
+      />
+    );
+  }
+  if (regels && instellingen) {
+    return (
+      <ClashRules
+        coordinatie={coordinatie}
+        modellen={modellen}
+        instellingen={instellingen}
+        onKlaar={(bewaard) => {
+          if (bewaard) setInstellingen(bewaard);
+          setRegels(false);
         }}
       />
     );
@@ -62,6 +94,9 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
       <div className="issues__balk">
         <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" onClick={() => setNieuw(true)} disabled={klaar.length === 0}>
           <Icon svg={uiPlus} size={14} /> {t("ronde_nieuw")}
+        </button>
+        <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => setRegels(true)} disabled={!instellingen}>
+          {t("regels_knop")}
         </button>
       </div>
       {fout && <p className="viewer__error">{fout}</p>}
@@ -76,6 +111,9 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
                 <span className={`oa-badge ${r.status === "fout" ? "oa-badge--danger" : r.status === "klaar" ? "oa-badge--success" : "oa-badge--info"}`}>
                   {t(`ronde_status.${r.status}`)}
                 </span>
+                {(r.status === "wacht" || r.status === "bezig") && r.voortgang != null && (
+                  <span>{t("ronde_voortgang", { procent: Math.round(r.voortgang) })}</span>
+                )}
                 {r.status === "klaar" && <span>{t("aantal_botsingen", { count: r.aantal })}</span>}
                 <span>{t(`soort_${r.soort}`)}</span>
               </span>
@@ -83,93 +121,6 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function NieuweRonde({
-  coordinatie,
-  modellen,
-  onKlaar,
-}: {
-  coordinatie: Coordinatie;
-  modellen: ModelInfo[];
-  onKlaar: (ronde: string | null) => Promise<void>;
-}) {
-  const { t } = useTranslation();
-  const klaar = modellen.filter((m) => m.status === "klaar");
-  const [setA, setSetA] = useState<Set<string>>(new Set());
-  const [setB, setSetB] = useState<Set<string>>(new Set());
-  const [soort, setSoort] = useState<"hard" | "afstand">("hard");
-  const [mm, setMm] = useState("10");
-  const [fout, setFout] = useState<string | null>(null);
-  const [bezig, setBezig] = useState(false);
-
-  const wissel = (set: Set<string>, sleutel: string) => {
-    const volgende = new Set(set);
-    if (volgende.has(sleutel)) volgende.delete(sleutel);
-    else volgende.add(sleutel);
-    return volgende;
-  };
-  const tolerantie = Number(mm.replace(",", ".")) / 1000;
-  const geldig = setA.size > 0 && setB.size > 0 && Number.isFinite(tolerantie) && tolerantie >= 0 && tolerantie <= 1;
-
-  const start = async () => {
-    setBezig(true);
-    try {
-      const naar = (set: Set<string>) => [...set].map((bestand) => ({ bestand }));
-      const { ronde } = await coordinatie.botsingsrondeControles([{ set_a: naar(setA), set_b: naar(setB), soort, tolerantie }], null);
-      await onKlaar(ronde);
-    } catch (e) {
-      setFout(describe(e));
-      setBezig(false);
-    }
-  };
-
-  const kies = (titel: string, set: Set<string>, zet: (s: Set<string>) => void) => (
-    <fieldset className="ronde__set">
-      <legend className="oa-label">{titel}</legend>
-      {klaar.map((m) => (
-        <label key={m.bron.sleutel} className="model-list__toggle">
-          <input type="checkbox" checked={set.has(m.bron.sleutel)} onChange={() => zet(wissel(set, m.bron.sleutel))} />
-          <span className="model-list__name">{m.naam}</span>
-        </label>
-      ))}
-    </fieldset>
-  );
-
-  return (
-    <div className="issue issue--nieuw">
-      <div className="inspector__title">
-        <strong>{t("ronde_nieuw")}</strong>
-        <span>{t("ronde_uitleg")}</span>
-      </div>
-      <div className="issue__formulier">
-        {kies(t("set_a"), setA, setSetA)}
-        {kies(t("set_b"), setB, setSetB)}
-        <fieldset className="ronde__set">
-          <legend className="oa-label">{t("soort")}</legend>
-          {(["hard", "afstand"] as const).map((s) => (
-            <label key={s} className="model-list__toggle">
-              <input type="radio" name="soort" checked={soort === s} onChange={() => setSoort(s)} />
-              <span>{t(`soort_${s}_uitleg`)}</span>
-            </label>
-          ))}
-        </fieldset>
-        <label className="oa-field">
-          <span className="oa-label">{t("tolerantie_mm")}</span>
-          <input className="oa-input" inputMode="decimal" value={mm} onChange={(e) => setMm(e.target.value)} />
-        </label>
-        {fout && <p className="viewer__error">{fout}</p>}
-        <div className="issues__balk">
-          <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => void onKlaar(null)} disabled={bezig}>
-            {t("annuleren")}
-          </button>
-          <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" onClick={() => void start()} disabled={bezig || !geldig}>
-            {t("ronde_starten")}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
