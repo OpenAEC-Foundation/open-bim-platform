@@ -258,7 +258,7 @@ def _sleutel(a: dict, b: dict) -> str:
 
 def _element(ref: dict) -> dict:
 	uit = {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
-	for veld in ("naam", "verdieping"):
+	for veld in ("klasse", "naam", "verdieping"):
 		if ref.get(veld):
 			uit[veld] = ref[veld]
 	return uit
@@ -284,7 +284,7 @@ def _gevolgd(element: dict, versies: dict) -> dict | None:
 	globalid, compleet = koppeling.volg(element["bestand"], element["globalid"], cint(element["versie"]), naar)
 	if not compleet:
 		globalid = element["globalid"]
-	return None if globalid is None else {"bestand": element["bestand"], "versie": str(naar), "globalid": globalid}
+	return None if globalid is None else {**element, "versie": str(naar), "globalid": globalid}
 
 
 def _vorige(doc, versies: dict) -> dict[str, tuple[dict, dict, dict]]:

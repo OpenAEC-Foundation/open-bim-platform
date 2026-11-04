@@ -194,7 +194,7 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual((doc.status, doc.aantal), ("klaar", 2))
 		b = self.botsing(ronde, "w1", "k1")
 		self.assertEqual((b.status, b.groep, b.afstand), ("nieuw", "IfcWall × IfcDuctSegment", 0.05))
-		self.assertEqual(json.loads(b.element_a), {"bestand": self.constructie, "versie": "1", "globalid": "w1"})
+		self.assertEqual(json.loads(b.element_a), {"bestand": self.constructie, "versie": "1", "globalid": "w1", "klasse": "IfcWall"})
 		self.assertEqual(json.loads(b.punt), [1.0, 2.0, 3.0])
 
 	def test_een_nieuwe_versie_tijdens_de_ronde_verandert_de_ronde_niet(self):
@@ -711,3 +711,26 @@ class TestBotsingen(ProjectTest):
 		self.assertIn(a, issue.beschrijving)
 		self.assertIn(b, issue.beschrijving)
 		self.assertIn("w1", issue.beschrijving)
+
+	# Wat de kern geeft, komt in de rij van de API
+
+	def test_klasse_en_naam_van_de_kern_staan_in_de_rij_van_de_api(self):
+		[rij] = botsingen.lijst(self.ronde_met([("w1", "k1")], namen={"w1": "Wand B 0"}, velden={"verdieping": "00"}))
+		a, b = rij["element_a"], rij["element_b"]
+		self.assertEqual((a["klasse"], a["naam"], a["verdieping"]), ("IfcWall", "Wand B 0", "00"))
+		self.assertEqual((b["klasse"], b.get("naam")), ("IfcDuctSegment", None))
+
+	def test_een_gevolgde_botsing_die_weg_is_houdt_haar_namen(self):
+		eerste = self.ronde_met([("w1", "k1")], namen={"w1": "Wand B 0", "k1": "Kanaal"}, velden={"verdieping": "00"})
+		self.nieuwe_versie_installaties(terugval=[("k1", "k2")])
+		weg = self.ronde_met([])
+		[rij] = botsingen.lijst(weg)
+		self.assertEqual(rij["ontwikkeling"], "weg")
+		self.assertEqual(
+			(rij["element_b"]["globalid"], rij["element_b"]["versie"], rij["element_b"]["naam"], rij["element_b"]["klasse"]),
+			("k2", "2", "Kanaal", "IfcDuctSegment"),
+		)
+		self.assertEqual((rij["element_a"]["naam"], rij["element_a"]["klasse"], rij["element_a"]["verdieping"]), ("Wand B 0", "IfcWall", "00"))
+		[later] = botsingen.lijst(self.ronde_met([]))
+		self.assertEqual((later["ontwikkeling"], later["element_b"]["naam"]), ("eerder_weg", "Kanaal"))
+		self.assertTrue(eerste)
