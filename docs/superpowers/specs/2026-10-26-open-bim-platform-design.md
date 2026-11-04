@@ -315,6 +315,10 @@ DocTypes (eerste opzet):
 - **Botsingen volgen:** een volgende ronde op nieuwe versies koppelt botsingen aan de vorige ronde op het paar
   elementen via de versiekoppeling (5.3), dus ook als een exporteur GlobalIds verandert; een opgeloste botsing die
   terugkomt, wordt weer actief.
+- **Botsingen beoordelen:** de rondes zijn een werklijst met voorinstellingen, regels per disciplinepaar, emmers
+  (te beoordelen, contact, aangrenzend), ernst, filters, groepen, sneltoetsen en een ontwikkeling per botsing; zie
+  [Botsingen beoordelen](2026-11-04-botsingen-beoordelen-design.md). Wat hierboven over statussen en volgen staat,
+  geldt nog; `BIM Botsing` en `BIM Botsingsronde` krijgen daar de extra velden.
 - **API voor de gastpagina:** `openaec_bim.api.*` (sessie van de gebruiker), onder meer `project`, `modellen`,
   `afgeleid_adres` (kortlevend leesadres), `eigenschappen`, `zoek`, `issues`, `issue_bewaar`, `botsingsronde_start`,
   `botsingen`. Elke methode controleert de rechten via Storage.

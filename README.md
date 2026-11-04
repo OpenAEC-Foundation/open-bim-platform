@@ -21,6 +21,7 @@ meting van fase 1b.
 | [Plan fase 1b](docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md) | issues (BCF 3.0), BCF-API, versiekoppeling, auditlog, botsingen |
 | [Conformiteit BCF-API](docs/bcf-conformiteit.md) | de paden van de BCF-API 3.0 op de klantsite, de test en de laatste uitslag |
 | [Meting fase 1b](docs/metingen/2026-fase-1b.md) | de acceptatie van de coördinatie in de werkplek, tijden van koppelen en botsen |
+| [Meting botsingen beoordelen](docs/metingen/2026-botsingen-beoordelen.md) | de werklijst voor botsingen in de werkplek: acceptatie, indeling in emmers en tijden op de demomodellen |
 | [Meting opschonen en splitsen](docs/metingen/2026-opschonen-en-splitsen.md) | de compacte STEP-index: geheugen en tijd van opschonen en splitsen, de winst op echte modellen |
 
 **Fase 1** maakt issues met BCF 3.0 als datamodel, direct gevolgd door de BCF-API 3.0, en een koppeling van elementen
@@ -114,6 +115,18 @@ ontwerpprogramma's biedt de klantsite de BCF-API 3.0 met de Foundation API 1.1 o
 (OAuth2 van Frappe of een API-sleutel); zie [Conformiteit BCF-API](docs/bcf-conformiteit.md). De acceptatie in de
 werkplek is `scripts/werkplek-e2e/bim-coordinatie.mjs` in `openaec-bench`. Plan:
 `docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md`.
+
+**Botsingen beoordelen (fase 1c).** Een botsingsronde start met een snelle keuze (bijvoorbeeld *Constructie tegen
+installaties*, *Tussen modellen* of *Harde botsingen*) en is daarna een werklijst: de kern deelt elke botsing in een
+emmer in (te beoordelen, contact, aangrenzend) met een ernst, de lijst is te filteren en te groeperen (klassen,
+verdieping, disciplines, raster), en een weergave is te bewaren. Het paar staat bij het selecteren geïsoleerd in beeld
+(A en B in twee kleuren, de rest doorzichtig); met `J` en `K` loop je door de lijst, met `B` bevestig je (dat maakt een
+issue), met `A` accepteer je en met `X` wijs je af met een reden. Een volgende ronde toont per botsing de ontwikkeling
+(nieuw, blijft, terug, weg), neemt beslissingen en redenen mee, en zet het issue van een verdwenen botsing op *Opgelost*
+met een reactie van de botsingsronde. Ontwerp:
+[Botsingen beoordelen](docs/superpowers/specs/2026-11-04-botsingen-beoordelen-design.md); meting:
+[Meting botsingen beoordelen](docs/metingen/2026-botsingen-beoordelen.md). De acceptatie in de werkplek is
+`scripts/werkplek-e2e/bim-coordinatie.mjs` in `openaec-bench`.
 
 Nog een besluit van de eigenaar: prijsniveau en status in de catalogus, welke app een `.ifc` standaard opent (nu de
 planner), en een machine met genoeg geheugen voor het omzetten op staging.
