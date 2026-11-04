@@ -1049,6 +1049,14 @@ class TestBotsingen(ProjectTest):
 		nieuw = self.start()
 		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", nieuw, "status"), "wacht")
 
+	def test_een_verlopen_ronde_stopt_ook_haar_taak_in_de_kern(self):
+		# Anders blijft de taak rekenen, houdt ze de wachtrij bezet en komt er een uitkomst die niemand meer leest.
+		ronde = self.lopende_ronde()
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		botsingen.volg_lopende()
+		self.assertIn(("DELETE", f"/v1/taken/{kern_taak}", None), self.kern.verzoeken)
+
 	def test_een_ronde_verloopt_ook_in_de_lijst_van_rondes(self):
 		ronde = self.lopende_ronde()
 		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)

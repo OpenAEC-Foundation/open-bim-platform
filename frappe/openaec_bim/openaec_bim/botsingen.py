@@ -253,6 +253,18 @@ def _verloop_als_stil(doc) -> None:
 		melding = _("Deze ronde is gestopt: er is twee uur lang niets veranderd. Start een nieuwe ronde.")
 		doc.fout = json.dumps({"error_code": "ronde_verlopen", "melding": melding})
 		doc.save(ignore_permissions=True)
+		_stop_kerntaak(doc)
+
+
+def _stop_kerntaak(doc) -> None:
+	"""Een taak die doorloopt, houdt de wachtrij bezet voor een uitkomst die niemand meer leest. Is de kern zelf weg, dan valt
+	er nu niets te stoppen."""
+	if not doc.kern_taak:
+		return
+	try:
+		kern.stop_taak(doc.kern_taak)
+	except kern.KernFout:
+		frappe.logger("openaec_bim").warning("kerntaak %s niet gestopt", doc.kern_taak)
 
 
 def _werk_bij(doc) -> None:

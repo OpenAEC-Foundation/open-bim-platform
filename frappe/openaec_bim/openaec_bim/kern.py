@@ -81,5 +81,10 @@ def taak(taak_id: str) -> dict:
 	return roep("GET", f"/v1/taken/{taak_id}")
 
 
+def stop_taak(taak_id: str) -> None:
+	"""Stopt een wachtende of lopende taak; een taak die al klaar is, blijft zoals ze is."""
+	roep("DELETE", f"/v1/taken/{taak_id}")
+
+
 def eigenschappen(index: dict, globalids: list[str]) -> dict:
 	return roep("POST", "/v1/tools/eigenschappen", {"index": index, "globalids": globalids})["elementen"]
