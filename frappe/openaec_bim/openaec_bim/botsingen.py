@@ -24,7 +24,39 @@ MAX_CONTROLES = 30
 STATUSSEN = ("nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost")
 # De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
 GELDIG = 24 * 3600
-VELDEN = ("ronde", "sleutel", "element_a", "element_b", "punt", "afstand", "status", "issue", "groep")
+VELDEN = (
+	"ronde",
+	"sleutel",
+	"element_a",
+	"element_b",
+	"punt",
+	"afstand",
+	"status",
+	"issue",
+	"groep",
+	"soort",
+	"regel",
+	"emmer",
+	"emmer_reden",
+	"ernst",
+	"categorie",
+	"disciplines",
+	"verdieping",
+	"raster",
+	"ruimte",
+	"ontwikkeling",
+	"nummer",
+	"reden",
+	"beoordeeld_door",
+	"beoordeeld_op",
+	"issue_status_voor",
+)
+EMMERS = ("beoordelen", "contact", "aangrenzend")
+GEVONDEN = ("nieuw", "blijft", "terug")
+OPEN_STATUSSEN = ("nieuw", "actief", "bevestigd")
+# Wat een rij van de vorige ronde aan haar opvolger meegeeft.
+BESLISSING = ("reden", "beoordeeld_door", "beoordeeld_op", "issue", "issue_status_voor", "nummer")
+DICHTE_STATUSSEN = ("Opgelost", "Gesloten")
 
 
 def _weiger(melding: str, foutcode: str, uitzondering=frappe.ValidationError):
@@ -203,7 +235,11 @@ def _sleutel(a: dict, b: dict) -> str:
 
 
 def _element(ref: dict) -> dict:
-	return {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
+	uit = {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
+	for veld in ("naam", "verdieping"):
+		if ref.get(veld):
+			uit[veld] = ref[veld]
+	return uit
 
 
 def _wacht_op_koppeling(doc) -> bool:
@@ -245,19 +281,120 @@ def _vorige(doc, versies: dict) -> dict[str, tuple[dict, dict, dict]]:
 	return uit
 
 
+def _disciplines(project) -> dict[str, str]:
+	"""Per modelbestand de discipline: de submap van de modelmap, of anders de bestandsnaam zonder .ifc."""
+	if not project.modelmap:
+		return {}
+	map_doc = frappe.db.get_value("Opslagmap", project.modelmap, ["name", "ruimte", "naam"], as_dict=True)
+	uit = {}
+	for bestand, discipline in api.ifc_in_map(map_doc):
+		naam = bestand.naam or ""
+		uit[bestand.name] = discipline or (naam[:-4] if naam.lower().endswith(".ifc") else naam)
+	return uit
+
+
+def _dichte_status(project) -> str:
+	"""De dichte status die een issue krijgt als zijn botsing weg is: Opgelost, of anders de laatste van het project."""
+	lijst = issues._regels(project.statussen)
+	return "Opgelost" if not lijst or "Opgelost" in lijst else lijst[-1]
+
+
+def _regels_gewijzigd(doc) -> bool:
+	if not doc.vorige_ronde:
+		return False
+	vorige = frappe.db.get_value(RONDE, doc.vorige_ronde, "regels")
+	return json.loads(vorige or "null") != json.loads(doc.regels or "null")
+
+
+def _ontwikkeling(eerder, gevonden: bool) -> tuple[str, str]:
+	"""(nieuwe status, ontwikkeling) volgens de overgangstabel; `eerder` is de rij van de vorige ronde of None."""
+	if eerder is None:
+		return "nieuw", "nieuw"
+	if gevonden:
+		if eerder.status == "opgelost":
+			return "actief", "terug"
+		if eerder.status in ("bevestigd", "geaccepteerd", "genegeerd"):
+			return eerder.status, "blijft"
+		return "actief", "blijft"
+	return "opgelost", "eerder_weg" if eerder.status == "opgelost" else "weg"
+
+
+def _zet_issue(issue: str, status: str, tekst: str) -> None:
+	"""Het issue naar een status, met een reactie op naam van de botsingsronde; via het document, dus ook in het log."""
+	doc = frappe.get_doc(issues.ISSUE, issue)
+	doc.status = status
+	doc.save(ignore_permissions=True)
+	issues._nieuwe_reactie(doc, {"comment": tekst}, auteur="Botsingsronde")
+
+
+def _issue_volgt(r: dict, eerder, project, gewijzigd: bool) -> None:
+	"""Zet het issue van een rij dicht als haar botsing weg is, en terug als de botsing terugkomt; werkt `r` bij."""
+	if not r["issue"]:
+		return
+	if not frappe.db.exists(issues.ISSUE, r["issue"]):
+		r["issue"] = r["issue_status_voor"] = None
+		return
+	status = frappe.db.get_value(issues.ISSUE, r["issue"], "status")
+	dicht = _dichte_status(project)
+	if r["ontwikkeling"] == "weg" and not gewijzigd and status not in DICHTE_STATUSSEN:
+		r["issue_status_voor"] = status
+		_zet_issue(r["issue"], dicht, _("De botsing is in deze ronde niet meer gevonden; het issue is op {0} gezet.").format(dicht))
+	elif r["ontwikkeling"] == "terug" and eerder.issue_status_voor:
+		if status == dicht:
+			_zet_issue(
+				r["issue"],
+				eerder.issue_status_voor,
+				_("De botsing is in deze ronde weer gevonden; het issue is terug op {0}.").format(eerder.issue_status_voor),
+			)
+		# Is het issue intussen door iemand zelf gewijzigd, dan blijft het zoals het is.
+		r["issue_status_voor"] = None
+
+
+def _samenvatting(rijen: list[dict], gewijzigd: bool) -> dict:
+	gevonden = [r for r in rijen if r["ontwikkeling"] in GEVONDEN]
+	per_emmer = dict.fromkeys(EMMERS, 0)
+	per_categorie: dict[str, int] = {}
+	per_status: dict[str, int] = {}
+	per_ernst: dict[str, int] = {}
+	for r in gevonden:
+		per_emmer[r["emmer"]] += 1
+		if r["categorie"]:
+			per_categorie[r["categorie"]] = per_categorie.get(r["categorie"], 0) + 1
+	open_ = [r for r in gevonden if r["emmer"] == "beoordelen" and r["status"] in OPEN_STATUSSEN]
+	for r in open_:
+		if r["ernst"]:
+			per_ernst[r["ernst"]] = per_ernst.get(r["ernst"], 0) + 1
+	for r in rijen:
+		per_status[r["status"]] = per_status.get(r["status"], 0) + 1
+	return {
+		"totaal": len(gevonden),
+		"per_emmer": per_emmer,
+		"per_categorie": per_categorie,
+		**{o: sum(1 for r in rijen if r["ontwikkeling"] == o) for o in ("nieuw", "blijft", "terug", "weg")},
+		"open": len(open_),
+		"per_ernst": per_ernst,
+		"per_status": per_status,
+		"regels_gewijzigd": gewijzigd,
+	}
+
+
 def verwerk(ronde: str) -> None:
-	"""Lees de botsingen van de kern in en volg ze ten opzichte van de vorige ronde met dezelfde sets."""
+	"""Lees de botsingen van de kern in en volg ze ten opzichte van de vorige ronde in dezelfde reeks."""
 	doc = frappe.get_doc(RONDE, ronde)
+	project = issues._project(doc.project)
 	versies = json.loads(doc.bron_versies)
 	vorige = _vorige(doc, versies)
+	gewijzigd = _regels_gewijzigd(doc)
+	discipline = _disciplines(project)
 	rijen: dict[str, dict] = {}
 	for ruw in json.loads(afgeleid.lees_object(doc.resultaat)):
 		a, b = _element(ruw["a"]), _element(ruw["b"])
 		sleutel = _sleutel(a, b)
 		if sleutel in rijen:
 			continue
-		eerder = vorige.get(sleutel)
-		status = "nieuw" if eerder is None else ("genegeerd" if eerder[0].status == "genegeerd" else "actief")
+		eerder = vorige[sleutel][0] if sleutel in vorige else None
+		status, ontwikkeling = _ontwikkeling(eerder, True)
+		disciplines = sorted(discipline.get(e["bestand"], "") for e in (a, b))
 		rijen[sleutel] = {
 			"sleutel": sleutel,
 			"element_a": a,
@@ -265,22 +402,57 @@ def verwerk(ronde: str) -> None:
 			"punt": [round(flt(x), 4) for x in ruw.get("punt") or []],
 			"afstand": flt(ruw.get("afstand")),
 			"status": status,
-			"issue": eerder[0].issue if eerder else None,
+			"issue": None,
 			"groep": f"{ruw['a'].get('klasse') or '?'} × {ruw['b'].get('klasse') or '?'}",
+			"soort": ruw.get("soort") or (doc.soort if doc.soort in SOORTEN else None),
+			"regel": ruw.get("regel") or None,
+			"emmer": ruw.get("emmer") if ruw.get("emmer") in EMMERS else "beoordelen",
+			"emmer_reden": ruw.get("emmer_reden") or None,
+			"ernst": ruw.get("ernst") or None,
+			"categorie": ruw.get("categorie") or None,
+			"disciplines": " × ".join(disciplines) if all(disciplines) else None,
+			"verdieping": a.get("verdieping") or b.get("verdieping"),
+			"raster": ruw.get("raster") or None,
+			"ruimte": ruw.get("ruimte") or None,
+			"ontwikkeling": ontwikkeling,
+			"nummer": None,
+			"reden": None,
+			"beoordeeld_door": None,
+			"beoordeeld_op": None,
+			"issue_status_voor": None,
 		}
-	aantal = len(rijen)
+		if eerder:
+			for veld in BESLISSING:
+				rijen[sleutel][veld] = eerder.get(veld)
 	for sleutel, (rij, a, b) in vorige.items():
 		if sleutel not in rijen:
+			status, ontwikkeling = _ontwikkeling(rij, False)
 			rijen[sleutel] = {
+				**{veld: rij.get(veld) for veld in VELDEN if veld != "ronde"},
 				"sleutel": _sleutel(a, b),
 				"element_a": a,
 				"element_b": b,
 				"punt": json.loads(rij.punt or "[]"),
-				"afstand": rij.afstand,
-				"status": "opgelost",
-				"issue": rij.issue,
-				"groep": rij.groep,
+				"status": status,
+				"ontwikkeling": ontwikkeling,
+				"emmer": rij.emmer or "beoordelen",
 			}
+	aantal = sum(1 for r in rijen.values() if r["ontwikkeling"] in GEVONDEN)
+	# Nummers: wie er een had houdt het; de rest telt door vanaf het hoogste van de vorige ronde, op volgorde van sleutel.
+	hoogste = 0
+	if doc.vorige_ronde:
+		hoogste = cint(frappe.db.sql("select max(nummer) from `tabBIM Botsing` where ronde = %s", doc.vorige_ronde)[0][0])
+	for sleutel in sorted(rijen):
+		if not cint(rijen[sleutel]["nummer"]):
+			hoogste += 1
+			rijen[sleutel]["nummer"] = hoogste
+	bron = frappe.flags.bim_bron
+	frappe.flags.bim_bron = "achtergrond"
+	try:
+		for sleutel, r in rijen.items():
+			_issue_volgt(r, vorige[sleutel][0] if sleutel in vorige else None, project, gewijzigd)
+	finally:
+		frappe.flags.bim_bron = bron
 	nu, gebruiker = now_datetime(), frappe.session.user
 	velden = ["name", "creation", "modified", "owner", "modified_by", *VELDEN]
 	waarden = []
@@ -293,18 +465,16 @@ def verwerk(ronde: str) -> None:
 				gebruiker,
 				gebruiker,
 				ronde,
-				r["sleutel"],
-				json.dumps(r["element_a"]),
-				json.dumps(r["element_b"]),
-				json.dumps(r["punt"]),
-				r["afstand"],
-				r["status"],
-				r["issue"],
-				r["groep"],
+				*(
+					json.dumps(r[veld]) if veld in ("element_a", "element_b", "punt") else r[veld]
+					for veld in VELDEN
+					if veld != "ronde"
+				),
 			)
 		)
 	frappe.db.bulk_insert(BOTSING, velden, waarden)
 	doc.aantal = aantal
+	doc.samenvatting = _json(_samenvatting(list(rijen.values()), gewijzigd))
 	doc.status = "klaar"
 	doc.save(ignore_permissions=True)
 
@@ -325,6 +495,22 @@ def naar_json(botsing) -> dict:
 		"status": botsing.status,
 		"issue": botsing.issue,
 		"groep": botsing.groep,
+		"soort": botsing.soort,
+		"regel": botsing.regel,
+		"emmer": botsing.emmer or "beoordelen",
+		"emmer_reden": botsing.emmer_reden,
+		"ernst": botsing.ernst,
+		"categorie": botsing.categorie,
+		"disciplines": botsing.disciplines,
+		"verdieping": botsing.verdieping,
+		"raster": botsing.raster,
+		"ruimte": botsing.ruimte,
+		"ontwikkeling": botsing.ontwikkeling,
+		"nummer": cint(botsing.nummer) or None,
+		"reden": botsing.reden,
+		"beoordeeld_door": botsing.beoordeeld_door,
+		"beoordeeld_op": str(botsing.beoordeeld_op) if botsing.beoordeeld_op else None,
+		"issue_status_voor": botsing.issue_status_voor,
 	}
 
 
