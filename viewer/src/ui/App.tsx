@@ -213,21 +213,21 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
     };
   }, []);
 
-  // Switching tab ends a clash view: back to the normal view, with the selection marked again.
+  // Switching tab ends a clash view: back to the normal view, with the selection marked again. One step in the queue,
+  // so a clash shown right after the switch (queued behind it) is not wiped by the marking that follows the reset.
   useEffect(() => {
-    void weergave
-      .herstel()
-      .then(() => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    queueRef.current = queueRef.current
+      .then(async () => {
+        await engine.clearIsolation();
         const current = selectionRef.current;
-        const engine = engineRef.current;
-        if (!current || !engine) return;
+        if (!current) return;
         const keys = partsRef.current.get(sourceKey(current.bron)) ?? [];
-        queueRef.current = queueRef.current
-          .then(() => engine.highlight({ keys, globalid: current.globalid }))
-          .catch((e) => setError(describe(e)));
+        await engine.highlight({ keys, globalid: current.globalid });
       })
-      .catch(() => undefined);
-  }, [tab, weergave]);
+      .catch((e) => setError(describe(e)));
+  }, [tab]);
 
   // Test entry for the browser test (e2e/smoke.spec.ts); it exists only in the development build.
   useEffect(() => {
