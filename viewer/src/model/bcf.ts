@@ -170,6 +170,8 @@ export type ClashRound = {
   aantal: number;
   bron_versies: Record<string, string>;
   vorige_ronde: string | null;
+  /** A later round builds on this one: decisions made here would be lost, so it can only be read. */
+  heeft_opvolger?: boolean;
   gestart: string;
   gestart_door: string;
   fout: { error_code: string; melding: string } | null;
@@ -177,7 +179,7 @@ export type ClashRound = {
   regels?: ClashCheck[] | null;
   voorinstelling?: string | null;
   reeks?: string | null;
-  /** Progress while the round runs, 0 to 100. */
+  /** Progress while the round runs, a fraction from 0 to 1. */
   voortgang?: number | null;
   samenvatting?: ClashSummary | null;
 };

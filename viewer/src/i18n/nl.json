@@ -91,6 +91,8 @@
   "set_b": "Set B",
   "soort_hard": "Hard",
   "soort_afstand": "Afstand",
+  "soort_dubbel": "Dubbel",
+  "soort_gemengd": "Gemengd",
   "soort_hard_uitleg": "Hard: elementen die dieper dan de tolerantie in elkaar steken",
   "soort_afstand_uitleg": "Afstand: elementen die dichter dan de tolerantie bij elkaar liggen",
   "tolerantie_mm": "Tolerantie (mm)",
@@ -155,11 +157,14 @@
     "geen_installaties": "Geen model bevat installatie-elementen.",
     "geen_wanden_vloeren": "Geen model bevat wanden of vloeren.",
     "een_model": "Hiervoor zijn minstens twee modellen nodig.",
-    "geen_regels": "Er zijn nog geen regels die op deze modellen passen."
+    "geen_regels": "Er zijn nog geen regels die op deze modellen passen.",
+    "te_veel_regels": "Er zijn meer regels dan één ronde aankan (30). Zet regels uit of voeg paren samen."
   },
   "bijna_mm": "Afstand (mm)",
   "mm_ongeldig": "Vul een getal in van 0 tot 1000 millimeter.",
   "overlap_waarschuwing": "De modellen van deze keuze liggen niet bij elkaar. Controleer of ze op dezelfde plek en in hetzelfde coördinatenstelsel staan; starten kan nog steeds.",
+  "niet_gereed_one": "{{namen}} is nog niet klaar en doet niet mee. De botsingen van dit model kunnen in deze ronde als weg tellen.",
+  "niet_gereed_other": "{{namen}} zijn nog niet klaar en doen niet mee. De botsingen van deze modellen kunnen in deze ronde als weg tellen.",
   "ronde_voortgang": "{{procent}}%",
   "regels_knop": "Regels",
   "regels_titel": "Regels per disciplinepaar",
@@ -238,6 +243,7 @@
   "meer_tonen": "Meer tonen ({{aantal}} nog)",
   "reden_veld": "Reden (mag leeg)",
   "beoordelen_alleen_lezen": "Je kunt de botsingen bekijken, maar niet beoordelen.",
+  "ronde_heeft_opvolger": "Er is een nieuwere ronde: beslis daar. Deze ronde is alleen nog te bekijken.",
   "actie": {
     "bevestigen": "Bevestigen",
     "accepteren": "Accepteren",

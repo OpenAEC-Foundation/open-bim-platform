@@ -105,9 +105,11 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
   return (
     <div className="issues">
       <div className="issues__balk">
-        <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" onClick={() => setNieuw(true)} disabled={klaar.length === 0}>
-          <Icon svg={uiPlus} size={14} /> {t("ronde_nieuw")}
-        </button>
+        {instellingen?.mag_wijzigen && (
+          <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" onClick={() => setNieuw(true)} disabled={klaar.length === 0}>
+            <Icon svg={uiPlus} size={14} /> {t("ronde_nieuw")}
+          </button>
+        )}
         <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => setRegels(true)} disabled={!instellingen}>
           {t("regels_knop")}
         </button>

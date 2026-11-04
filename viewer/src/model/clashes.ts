@@ -7,6 +7,7 @@ import type {
   ClashElement,
   ClashFilter,
   ClashGroupBy,
+  ClashRound,
   ClashRule,
   ClashSetItem,
   ClashStatus,
@@ -16,6 +17,11 @@ import type {
 const KLASSEN_CONSTRUCTIE = ["IfcBeam", "IfcColumn", "IfcFooting", "IfcPile", "IfcMember", "IfcSlab", "IfcWall"];
 /** Walls and floors. */
 const KLASSEN_VLAK = ["IfcWall", "IfcSlab"];
+/**
+ * The per-class count knows concrete classes, while the kern asks for a class with its subtypes: these common subclasses
+ * of the structural classes count as the class they belong to.
+ */
+const SUBKLASSE = /(StandardCase|ElementedCase)$/;
 /** The class set B of the installation choices asks for; the kern includes its subtypes. */
 const KLASSE_INSTALLATIES = "IfcDistributionElement";
 
@@ -46,8 +52,16 @@ export type Voorinstelling = {
 
 const REDEN = "voorinstelling_reden";
 
+/** The most checks one round may have, as on the server. */
+export const MAX_CONTROLES = 30;
+
 function klaar(modellen: ModelInfo[]): ModelInfo[] {
   return modellen.filter((m) => m.status === "klaar");
+}
+
+/** The names of the models that do not take part in a quick choice because they are not ready. */
+export function nietGereed(modellen: ModelInfo[]): string[] {
+  return modellen.filter((m) => m.status !== "klaar").map((m) => m.naam);
 }
 
 function alle(modellen: ModelInfo[]): ClashSetItem[] {
@@ -56,6 +70,10 @@ function alle(modellen: ModelInfo[]): ClashSetItem[] {
 
 function metKlassen(modellen: ModelInfo[], klassen: string[]): ClashSetItem[] {
   return modellen.map((m) => ({ bestand: m.bron.sleutel, klassen }));
+}
+
+function basisKlasse(klasse: string): string {
+  return klasse.replace(SUBKLASSE, "");
 }
 
 function telKlassen(modellen: ModelInfo[], past: (klasse: string) => boolean): boolean {
@@ -107,8 +125,8 @@ export function controlesUitRegels(regels: ClashRule[], modellen: ModelInfo[]): 
 export function voorinstellingen(modellen: ModelInfo[], regels: ClashRule[] = []): Voorinstelling[] {
   const gereed = klaar(modellen);
   const set = alle(gereed);
-  const constructie = telKlassen(gereed, (k) => KLASSEN_CONSTRUCTIE.includes(k));
-  const vlak = telKlassen(gereed, (k) => KLASSEN_VLAK.includes(k));
+  const constructie = telKlassen(gereed, (k) => KLASSEN_CONSTRUCTIE.includes(basisKlasse(k)));
+  const vlak = telKlassen(gereed, (k) => KLASSEN_VLAK.includes(basisKlasse(k)));
   const installaties = telKlassen(gereed, (k) => INSTALLATIE_KLASSE.test(k));
 
   const keuze = (
@@ -141,8 +159,17 @@ export function voorinstellingen(modellen: ModelInfo[], regels: ClashRule[] = []
     keuze("tussen_modellen", [{ set_a: set, set_b: set, soort: "hard", tolerantie: 0, alleen_tussen_modellen: true }], eenModel),
     keuze("bijna", bijnaMet(50, modellen), eenModel, true),
     keuze("dubbel", [{ set_a: set, set_b: set, soort: "dubbel", tolerantie: 0 }], null),
-    keuze("regels", regelControles, regelControles.length === 0 ? `${REDEN}.geen_regels` : null),
+    keuze(
+      "regels",
+      regelControles,
+      regelControles.length === 0 ? `${REDEN}.geen_regels` : regelControles.length > MAX_CONTROLES ? `${REDEN}.te_veel_regels` : null,
+    ),
   ];
+}
+
+/** The title of a new round: the name of the choice with the date and time, in the language of the viewer. */
+export function rondeTitel(naam: string, moment: Date, taal: string): string {
+  return `${naam} ${new Intl.DateTimeFormat(taal, { dateStyle: "medium", timeStyle: "short" }).format(moment)}`;
 }
 
 /** Code-point order, like Python's `sorted` on the server. */
@@ -243,13 +270,15 @@ function inLijst<T>(lijst: T[], waarde: T | null | undefined): boolean {
 
 function past(b: Clash, f: ClashFilter, toonWeg = false): boolean {
   const ontwikkeling: ClashDevelopment | null = b.ontwikkeling;
-  if (f.emmer === "weg") {
-    if (ontwikkeling !== "weg") return false;
-  } else if (f.emmer !== null) {
-    if (!isGevonden(b) || emmerVan(b) !== f.emmer) return false;
-  } else if (f.ontwikkeling.length === 0 && !toonWeg && !isGevonden(b)) {
-    // Rows that are gone only show up through the filter on development.
-    return false;
+  const gevonden = isGevonden(b);
+  // Rows that are gone are in no bucket: they show up through the filter on development, whatever the bucket.
+  const doorFilter = !gevonden && (toonWeg || (ontwikkeling !== null && f.ontwikkeling.includes(ontwikkeling)));
+  if (!doorFilter) {
+    if (f.emmer === "weg") {
+      if (ontwikkeling !== "weg") return false;
+    } else if (!gevonden || (f.emmer !== null && emmerVan(b) !== f.emmer)) {
+      return false;
+    }
   }
   if (!inLijst(f.ontwikkeling, ontwikkeling ?? "blijft")) return false;
   if (!inLijst(f.ernst, b.ernst) || !inLijst(f.status, b.status)) return false;
@@ -308,7 +337,9 @@ export function groepeer(botsingen: Clash[], op: ClashGroupBy = "klassen"): { gr
   const groepen = new Map<string | null, Clash[]>();
   for (const b of botsingen) {
     const groep = groepWaarde(b, op);
-    groepen.set(groep, [...(groepen.get(groep) ?? []), b]);
+    const lijst = groepen.get(groep);
+    if (lijst) lijst.push(b);
+    else groepen.set(groep, [b]);
   }
   return [...groepen]
     .map(([groep, lijst]) => ({ groep, botsingen: lijst }))
@@ -332,6 +363,18 @@ export const GROEPSACTIE_MAX = 500;
 /** The rows that still wait for a decision (new or active); a group action touches only these. */
 export function teBeslissen(botsingen: Clash[]): Clash[] {
   return botsingen.filter((b) => TE_BEOORDELEN.includes(b.status));
+}
+
+/** Deciding is allowed: write permission, and no later round builds on this one. */
+export function magBeslissen(magWijzigen: boolean, ronde: Pick<ClashRound, "heeft_opvolger">): boolean {
+  return magWijzigen && !ronde.heeft_opvolger;
+}
+
+/** What can be done with a row: decide while it is open, reopen once decided; nothing on a row that was not found. */
+export function rijActies(b: Clash, mag: boolean): { beslissen: boolean; heropenen: boolean } {
+  const kan = mag && isGevonden(b);
+  const open = TE_BEOORDELEN.includes(b.status);
+  return { beslissen: kan && open, heropenen: kan && !open };
 }
 
 /** An active filter as a chip that can be clicked away. The bucket is not a chip. */
@@ -420,10 +463,14 @@ function isVeld(target: unknown): boolean {
   return tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT" || isContentEditable === true;
 }
 
-/** The action of a key press in the clash list; none in a field or with Ctrl, Alt or Meta. */
-export function sneltoets(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "metaKey"> & { target: unknown }): SneltoetsActie | null {
+/** A decision is one key press: holding the key must not decide row after row. */
+const EEN_KEER: SneltoetsActie[] = ["bevestigen", "accepteren", "afwijzen"];
+
+/** The action of a key press in the clash list; none in a field, with Ctrl, Alt or Meta, or for a held decision key. */
+export function sneltoets(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "metaKey"> & { target: unknown; repeat?: boolean }): SneltoetsActie | null {
   if (e.ctrlKey || e.altKey || e.metaKey || isVeld(e.target)) return null;
-  return SNELTOETSEN[e.key.toLowerCase()] ?? null;
+  const actie = SNELTOETSEN[e.key.toLowerCase()] ?? null;
+  return actie && e.repeat && EEN_KEER.includes(actie) ? null : actie;
 }
 
 /** The selected row can be seen in the shown list (so a keypress may act on it). */

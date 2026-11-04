@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Clash, ClashElement, ClashSeverity, ClashStatus } from "../model/bcf";
-import { REDEN_MAX, elementNaam } from "../model/clashes";
+import { REDEN_MAX, elementNaam, rijActies } from "../model/clashes";
 
 const ERNST_BADGE: Record<ClashSeverity, string> = { klein: "neutral", groot: "warning", kritiek: "danger" };
 const STATUS_BADGE: Record<ClashStatus, string> = {
@@ -70,7 +70,7 @@ export type ClashRowProps = {
 /** One clash in the list; the selected one opens with its details and buttons. */
 export function ClashRow({ b, open, mag, bezig, afwijzen, fout, onKies, onBeslis, onAfwijzen, onNaar, onAllesTonen }: ClashRowProps) {
   const { t } = useTranslation();
-  const beslist = b.status !== "nieuw" && b.status !== "actief";
+  const { beslissen, heropenen } = rijActies(b, mag);
   const detail: [string, string | null][] = [
     [t("veld.afstand"), t("botsing_afstand", { mm: Math.round(b.afstand * 1000) })],
     [t("veld.disciplines"), b.disciplines],
@@ -108,7 +108,7 @@ export function ClashRow({ b, open, mag, bezig, afwijzen, fout, onKies, onBeslis
               ))}
           </dl>
           {fout && <p className="viewer__error">{fout}</p>}
-          {mag && !beslist && !afwijzen && (
+          {beslissen && !afwijzen && (
             <div className="botsing__acties">
               <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" data-actie="bevestigen" disabled={bezig} onClick={() => onBeslis("bevestigd")}>
                 {t("actie.bevestigen")}
@@ -121,10 +121,10 @@ export function ClashRow({ b, open, mag, bezig, afwijzen, fout, onKies, onBeslis
               </button>
             </div>
           )}
-          {mag && !beslist && afwijzen && (
+          {beslissen && afwijzen && (
             <RedenVeld disabled={bezig} onBevestig={(reden) => onBeslis("genegeerd", reden)} onAnnuleer={() => onAfwijzen(false)} />
           )}
-          {mag && beslist && (
+          {heropenen && (
             <div className="botsing__acties">
               <button type="button" className="oa-btn oa-btn--secondary oa-btn--sm" data-actie="heropenen" disabled={bezig} onClick={() => onBeslis("actief")}>
                 {t("actie.heropenen")}

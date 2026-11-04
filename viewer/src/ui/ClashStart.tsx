@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
 import type { ClashCheck, ClashSettings } from "../model/bcf";
-import { bijnaMet, mmWaarde, overlapWaarschuwing, voorinstellingen } from "../model/clashes";
+import { bijnaMet, mmWaarde, nietGereed, overlapWaarschuwing, rondeTitel, voorinstellingen } from "../model/clashes";
 import { describe } from "./format";
 
 const BIJNA_STANDAARD_MM = "50";
@@ -26,8 +26,9 @@ export function ClashStart({
   instellingen: ClashSettings;
   onKlaar: (ronde: string | null) => Promise<void> | void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const klaar = modellen.filter((m) => m.status === "klaar");
+  const ontbreekt = nietGereed(modellen);
   const keuzes = voorinstellingen(modellen, instellingen.regels);
   const [gekozen, setGekozen] = useState<string>(() => keuzes.find((k) => k.beschikbaar)?.id ?? ZELF);
   const [bijnaMm, setBijnaMm] = useState(BIJNA_STANDAARD_MM);
@@ -78,7 +79,7 @@ export function ClashStart({
     setBezig(true);
     setFout(null);
     try {
-      const titel = gekozen === ZELF ? undefined : t(`voorinstelling.${gekozen}.titel`);
+      const titel = rondeTitel(t(`voorinstelling.${gekozen}.titel`), new Date(), i18n.language);
       const { ronde } = await coordinatie.botsingsrondeControles(controles, gekozen === ZELF ? null : gekozen, titel);
       await onKlaar(ronde);
     } catch (e) {
@@ -162,6 +163,11 @@ export function ClashStart({
         )}
         {mmFout && <p className="viewer__error">{t("mm_ongeldig")}</p>}
         {waarschuwing && <p className="issue__waarschuwing">{t("overlap_waarschuwing")}</p>}
+        {ontbreekt.length > 0 && (
+          <p className="issue__waarschuwing" data-melding="niet-gereed">
+            {t("niet_gereed", { count: ontbreekt.length, namen: ontbreekt.join(", ") })}
+          </p>
+        )}
         {fout && <p className="viewer__error">{fout}</p>}
         <div className="issues__balk">
           <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => void onKlaar(null)} disabled={bezig}>

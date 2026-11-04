@@ -12,6 +12,8 @@ import {
   houdVast,
   isZichtbaar,
   leegFilter,
+  magBeslissen,
+  rijActies,
   rondeTelling,
   sneltoets,
   sprongNaBesluit,
@@ -64,7 +66,7 @@ export function ClashRound({
   onTerug: () => void;
 }) {
   const { t } = useTranslation();
-  const mag = instellingen.mag_wijzigen;
+  const mag = magBeslissen(instellingen.mag_wijzigen, ronde);
   const [botsingen, setBotsingen] = useState<Clash[] | null>(null);
   const [laadFout, setLaadFout] = useState<string | null>(null);
   const [filter, setFilter] = useState<ClashFilter>(leegFilter);
@@ -207,15 +209,20 @@ export function ClashRound({
     if (!botsingen) return;
     const actie = sneltoets(e);
     if (!actie) return;
-    const beslisbaar = mag && rij !== null && teBeslissen([rij]).length === 1;
     if (actie === "volgende" || actie === "vorige") {
       e.preventDefault();
       beweeg(actie === "volgende" ? 1 : -1);
-    } else if (actie === "bevestigen" && beslisbaar) void beslis(rij, "bevestigd");
-    else if (actie === "accepteren" && beslisbaar) void beslis(rij, "geaccepteerd");
-    else if (actie === "afwijzen" && beslisbaar) setAfwijzen(rij.naam);
-    else if (actie === "hulp") setHulp((h) => !h);
-    else if (actie === "alles_tonen") {
+    } else if (actie === "bevestigen" || actie === "accepteren" || actie === "afwijzen") {
+      if (rij === null || !rijActies(rij, mag).beslissen) return;
+      // The reject field gets the focus before the browser handles the key: without this the letter ends up in it.
+      e.preventDefault();
+      if (actie === "afwijzen") setAfwijzen(rij.naam);
+      else void beslis(rij, actie === "bevestigen" ? "bevestigd" : "geaccepteerd");
+    } else if (actie === "hulp") {
+      e.preventDefault();
+      setHulp((h) => !h);
+    } else if (actie === "alles_tonen") {
+      e.preventDefault();
       if (afwijzen !== null) setAfwijzen(null);
       else if (groepsActie !== null) zetGroepsActie(null);
       else toonAlles();
@@ -308,7 +315,12 @@ export function ClashRound({
             instellingen={instellingen}
             onInstellingen={onInstellingen}
           />
-          {!mag && <p className="viewer__hint ronde__tel">{t("beoordelen_alleen_lezen")}</p>}
+          {!instellingen.mag_wijzigen && <p className="viewer__hint ronde__tel">{t("beoordelen_alleen_lezen")}</p>}
+          {instellingen.mag_wijzigen && !mag && (
+            <p className="viewer__hint ronde__tel" data-melding="heeft-opvolger">
+              {t("ronde_heeft_opvolger")}
+            </p>
+          )}
           {alle.length === 0 && <p className="viewer__hint ronde__tel">{t("ronde_leeg")}</p>}
           {alle.length > 0 && getoond.length === 0 && (
             <div className="botsing__leeg">

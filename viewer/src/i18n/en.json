@@ -91,6 +91,8 @@
   "set_b": "Set B",
   "soort_hard": "Hard",
   "soort_afstand": "Clearance",
+  "soort_dubbel": "Duplicate",
+  "soort_gemengd": "Mixed",
   "soort_hard_uitleg": "Hard: elements that penetrate each other deeper than the tolerance",
   "soort_afstand_uitleg": "Clearance: elements closer to each other than the tolerance",
   "tolerantie_mm": "Tolerance (mm)",
@@ -155,11 +157,14 @@
     "geen_installaties": "No model has installation elements.",
     "geen_wanden_vloeren": "No model has walls or floors.",
     "een_model": "This needs at least two models.",
-    "geen_regels": "There are no rules yet that fit these models."
+    "geen_regels": "There are no rules yet that fit these models.",
+    "te_veel_regels": "There are more rules than one round can handle (30). Switch rules off or merge pairs."
   },
   "bijna_mm": "Distance (mm)",
   "mm_ongeldig": "Enter a number from 0 to 1000 millimetres.",
   "overlap_waarschuwing": "The models of this choice are not near each other. Check that they are in the same place and the same coordinate system; you can still start.",
+  "niet_gereed_one": "{{namen}} is not ready yet and does not take part. The clashes of this model may count as gone in this round.",
+  "niet_gereed_other": "{{namen}} are not ready yet and do not take part. The clashes of these models may count as gone in this round.",
   "ronde_voortgang": "{{procent}}%",
   "regels_knop": "Rules",
   "regels_titel": "Rules per pair of disciplines",
@@ -238,6 +243,7 @@
   "meer_tonen": "Show more ({{aantal}} left)",
   "reden_veld": "Reason (may be empty)",
   "beoordelen_alleen_lezen": "You can view the clashes but not review them.",
+  "ronde_heeft_opvolger": "There is a newer round: decide there. This round can only be viewed.",
   "actie": {
     "bevestigen": "Confirm",
     "accepteren": "Accept",

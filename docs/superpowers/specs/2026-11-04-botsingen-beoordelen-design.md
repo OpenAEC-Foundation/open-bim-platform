@@ -214,7 +214,8 @@ Lege velden blijven dus geldig.
   De samenvatting krijgt `regels_gewijzigd` en de viewer noemt dat in één regel *(keuze)*.
 - Twee lopende rondes in één reeks zouden dezelfde voorganger krijgen, en de keten zou splitsen. `start_controles` weigert daarom
   een tweede ronde met dezelfde `reeks` zolang er een op `wacht` of `bezig` staat (`ronde_loopt`), met een melding die de viewer toont.
-- `titel` standaard: de naam van de voorinstelling met datum en tijd.
+- `titel` standaard: de naam van de voorinstelling met datum en tijd. De viewer stuurt de titel zelf mee: de naam van de keuze met
+  datum en tijd in de taal van de viewer.
 - `bijwerken` neemt `voortgang` over van de kerntaak.
 
 ### 7.3 Inlezen (`verwerk`)
@@ -333,7 +334,8 @@ Dunne laag, altijd met `_gastpagina()`:
 
 - `voorinstellingen(modellen)`: de snelle keuzes als controles, elk met `beschikbaar` en zo nodig een reden. Of klassen aanwezig
   zijn, volgt uit `aantallen_per_klasse` met een korte lijst bekende installatieklassen in de viewer, omdat die telling alleen
-  concrete klassen kent *(keuze)*.
+  concrete klassen kent *(keuze)*. Om dezelfde reden tellen de gangbare subklassen van de constructieklassen mee (`...StandardCase`
+  en `...ElementedCase`, zoals `IfcWallStandardCase`).
 - `controlesUitRegels(regels, modellen)`: de regels naar controles. Regels `uit` en paren zonder modellen vallen af.
 - `standaardRegels(disciplines)`: paren die nog niet bewaard zijn, tussen verschillende disciplines `hard`, binnen één
   discipline `uit`.
@@ -355,13 +357,14 @@ Dunne laag, altijd met `_gastpagina()`:
 | Tussen modellen | alle tegen alle, `alleen_tussen_modellen`, `hard`, 0 mm |
 | Bijna-botsingen | alle tegen alle, `alleen_tussen_modellen`, `afstand`, instelbaar, standaard 50 mm |
 | Dubbele elementen | alle tegen alle, `dubbel` |
-| Volgens de projectregels | `controlesUitRegels`; niet beschikbaar zonder regels |
+| Volgens de projectregels | `controlesUitRegels`; niet beschikbaar zonder regels, of met meer controles dan een ronde aankan (30) |
 | Zelf instellen | het bestaande formulier met sets, soort en tolerantie |
 
 Alle wanden doen hier mee; of een wand dragend is, telt alleen voor de categorie en de ernst (6.4) *(keuze)*. Een keuze is niet
 beschikbaar, met de reden erbij, als de modellen volgens `aantallen_per_klasse` de benodigde klassen niet
-hebben, of als er voor *Tussen modellen* maar één model is. Boven de knop staat de overlapwaarschuwing; starten blijft
-mogelijk.
+hebben, of als er voor *Tussen modellen* maar één model is. Boven de knop staat de overlapwaarschuwing, en een regel als modellen
+in de map niet klaar zijn: dat ze niet meedoen en dat hun botsingen als weg kunnen tellen. Starten blijft in beide gevallen mogelijk.
+*Nieuwe ronde* staat er alleen voor wie mag schrijven.
 
 ### 9.3 Regels
 
@@ -373,7 +376,8 @@ Voor wie niet mag schrijven alleen te lezen.
 Boven de lijst:
 - de **emmerbalk** met de aantallen gevonden rijen, standaard op *Te beoordelen*; de andere twee zijn een klik weg;
 - een regel met open, nieuw en weg. Een klik op *weg* toont de rijen die niet meer gevonden zijn. Die staan niet in de emmers;
-  `eerder_weg` is alleen te zien via het filter op ontwikkeling *(keuze)*;
+  `eerder_weg` is alleen te zien via het filter op ontwikkeling *(keuze)*. Staat `weg` of `eerder_weg` in dat filter, dan tellen die
+  rijen mee ongeacht de emmer, ook in de facetten;
 - een inklapbaar **verloop**: een klein staafdiagram van de laatste rondes, met een tabel als toegankelijk alternatief;
 - **filters** (ernst, status, categorie, disciplines, verdieping, ontwikkeling, tekst) met aantallen, en actieve filters als
   verwijderbare chips;
@@ -386,7 +390,8 @@ Een rij toont `#nummer`, de twee elementnamen met klasse als er geen naam is, er
 focus klapt open:
 - afstand, disciplines, raster, ruimte, de GlobalIds en een eventuele reden;
 - knoppen *Bevestigen* (maakt het issue), *Accepteren* en *Afwijzen* (vraagt een reden, die mag leeg zijn), of *Heropenen* bij een
-  afgehandelde botsing; een bestaand issue staat als badge bij de rij;
+  afgehandelde botsing; een bestaand issue staat als badge bij de rij. Rijen die niet gevonden zijn (`weg`, `eerder_weg`) hebben
+  deze knoppen niet, en een ronde met een opvolger ook niet (7.5);
 - *Naar A*, *Naar B* en *Alles tonen*.
 
 Grote lijsten: per groep de eerste 100 rijen met een knop voor meer *(keuze)*. Groepen zijn inklapbaar. Een groepskop heeft een
@@ -394,7 +399,8 @@ actie om de hele groep in één keer af te wijzen of te accepteren, met bevestig
 
 ### 9.5 Sneltoetsen
 
-Alleen als het tabblad open is, de focus niet in een veld staat en er geen Ctrl of Alt is:
+Alleen als het tabblad open is, de focus niet in een veld staat en er geen Ctrl of Alt is. Een vastgehouden `B`, `A` of `X` telt
+één keer; `J` en `K` mogen herhalen.
 
 | Toets | Actie |
 |---|---|

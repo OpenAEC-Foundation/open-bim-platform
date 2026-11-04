@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import type { ModelInfo } from "../host/BimHost";
-import type { Clash, ClashElement, ClashRule } from "./bcf";
+import type { Clash, ClashElement, ClashRule, ClashRound } from "./bcf";
 import {
   bijnaMet,
   controlesUitRegels,
@@ -18,6 +18,11 @@ import {
   standaardRegels,
   teBeslissen,
   filterChips,
+  magBeslissen,
+  MAX_CONTROLES,
+  nietGereed,
+  rijActies,
+  rondeTitel,
   zonderChip,
   rondeTelling,
   houdVast,
@@ -210,6 +215,31 @@ describe("snelle keuzes", () => {
     expect(kies([CONSTRUCTIE, bezig], "harde").controles[0].set_a).toEqual([{ bestand: "con.ifc" }]);
   });
 
+  test("de telling kent concrete klassen: gangbare subklassen tellen mee", () => {
+    const standaard = (klassen: Record<string, number>) => model({ naam: "s.ifc", klassen });
+    for (const klasse of ["IfcWallStandardCase", "IfcWallElementedCase", "IfcSlabStandardCase", "IfcSlabElementedCase"]) {
+      expect(kies([standaard({ [klasse]: 1 }), INSTALLATIE], "wanden_installaties").beschikbaar, klasse).toBe(true);
+    }
+    for (const klasse of ["IfcBeamStandardCase", "IfcColumnStandardCase", "IfcMemberStandardCase", "IfcWallStandardCase"]) {
+      expect(kies([standaard({ [klasse]: 1 }), INSTALLATIE], "constructie_installaties").beschikbaar, klasse).toBe(true);
+    }
+    // A class that merely looks alike does not count, and neither does a count of zero.
+    expect(kies([standaard({ IfcWallpaper: 1 }), INSTALLATIE], "wanden_installaties").beschikbaar).toBe(false);
+    expect(kies([standaard({ IfcWallStandardCase: 0 }), INSTALLATIE], "wanden_installaties").beschikbaar).toBe(false);
+  });
+
+  test("meer regels dan een ronde aankan: niet beschikbaar met een eigen reden", () => {
+    const disciplines = Array.from({ length: MAX_CONTROLES + 1 }, (_, i) => `d${i}`);
+    const modellen = disciplines.map((d) => model({ naam: `${d}.ifc`, discipline: d }));
+    const regels: ClashRule[] = disciplines.map((d) => ({ a: d, b: d, soort: "hard", mm: 0, ernst: null }));
+    const teVeel = voorinstellingen(modellen, regels).find((x) => x.id === "regels")!;
+    expect(teVeel.beschikbaar).toBe(false);
+    expect(teVeel.reden).toBe("voorinstelling_reden.te_veel_regels");
+    const precies = voorinstellingen(modellen, regels.slice(0, MAX_CONTROLES)).find((x) => x.id === "regels")!;
+    expect(precies.beschikbaar).toBe(true);
+    expect(precies.controles).toHaveLength(MAX_CONTROLES);
+  });
+
   test("volgens de projectregels: niet beschikbaar zonder regels", () => {
     expect(kies([CONSTRUCTIE, INSTALLATIE], "regels").beschikbaar).toBe(false);
     expect(kies([CONSTRUCTIE, INSTALLATIE], "regels").reden).toBe("voorinstelling_reden.geen_regels");
@@ -353,25 +383,36 @@ describe("filteren en tellen", () => {
 
   test("weg toont alleen ontwikkeling weg; eerder_weg alleen met het filter op ontwikkeling", () => {
     expect(namen(filter(lijst, { ...leegFilter(), emmer: "weg" }))).toEqual(["k5"]);
-    expect(namen(filter(lijst, { ...leegFilter(), emmer: null, ontwikkeling: ["eerder_weg"] }))).toEqual(["k6"]);
-    expect(namen(filter(lijst, { ...leegFilter(), emmer: null, ontwikkeling: ["weg", "nieuw"] }))).toEqual(["k1", "k2", "k3", "k4", "k5"]);
+    expect(namen(filter(lijst, { ...leegFilter(), emmer: "beoordelen", ontwikkeling: ["eerder_weg"] }))).toEqual(["k6"]);
+    expect(namen(filter(lijst, { ...leegFilter(), emmer: "weg", ontwikkeling: ["eerder_weg"] }))).toEqual(["k6"]);
     expect(isGevonden(lijst[4])).toBe(false);
     expect(isGevonden(lijst[5])).toBe(false);
   });
 
-  test("de ontwikkelingsfacet telt ook weg en eerder_weg, met het huidige filter", () => {
-    const fac = facetten(lijst, leegFilter());
-    expect(fac.ontwikkeling).toEqual({ nieuw: 3 });
-    const zonderEmmer = facetten(lijst, { ...leegFilter(), emmer: null });
-    expect(zonderEmmer.ontwikkeling).toEqual({ nieuw: 4, weg: 1, eerder_weg: 1 });
-    // The other facets keep hiding the rows that are gone.
-    expect(zonderEmmer.status).toEqual({ nieuw: 3, actief: 1 });
+  test("weg of eerder_weg in het filter toont die rijen ongeacht de emmer, en de rest binnen de emmer", () => {
+    const f = { ...leegFilter(), emmer: "beoordelen" as const };
+    expect(namen(filter(lijst, { ...f, ontwikkeling: ["weg", "nieuw"] }))).toEqual(["k1", "k2", "k3", "k5"]);
+    expect(namen(filter(lijst, { ...f, ontwikkeling: ["weg", "eerder_weg"] }))).toEqual(["k5", "k6"]);
+    // A row of another bucket that is gone counts too.
+    const inContact = botsing("k7", "G2", "opgelost", { emmer: "contact", ontwikkeling: "eerder_weg" });
+    expect(namen(filter([...lijst, inContact], { ...f, ontwikkeling: ["eerder_weg"] }))).toEqual(["k6", "k7"]);
     // The other filters still apply.
-    expect(facetten(lijst, { ...leegFilter(), emmer: null, status: ["opgelost"] }).ontwikkeling).toEqual({ weg: 1, eerder_weg: 1 });
+    expect(namen(filter(lijst, { ...f, ontwikkeling: ["weg"], tekst: "k6" }))).toEqual([]);
   });
 
-  test("het filter op eerder_weg toont die rijen", () => {
-    expect(namen(filter(lijst, { ...leegFilter(), emmer: null, ontwikkeling: ["eerder_weg"] }))).toEqual(["k6"]);
+  test("de ontwikkelingsfacet telt ook weg en eerder_weg, met het huidige filter", () => {
+    const f = { ...leegFilter(), emmer: "beoordelen" as const };
+    const fac = facetten(lijst, f);
+    expect(fac.ontwikkeling).toEqual({ nieuw: 3, weg: 1, eerder_weg: 1 });
+    // The other facets keep hiding the rows that are gone...
+    expect(fac.status).toEqual({ nieuw: 2, actief: 1 });
+    // ...until one is chosen: then they count in the other facets too.
+    expect(facetten(lijst, { ...f, ontwikkeling: ["eerder_weg"] }).status).toEqual({ opgelost: 1 });
+    expect(facetten(lijst, { ...f, ontwikkeling: ["eerder_weg"] }).ontwikkeling).toEqual({ nieuw: 3, weg: 1, eerder_weg: 1 });
+    // The other filters still apply.
+    expect(facetten(lijst, { ...f, status: ["opgelost"] }).ontwikkeling).toEqual({ weg: 1, eerder_weg: 1 });
+    // The bucket "weg" offers eerder_weg as well.
+    expect(facetten(lijst, { ...f, emmer: "weg" }).ontwikkeling).toEqual({ weg: 1, eerder_weg: 1 });
   });
 
   test("groeperen: grootste eerst, lege waarden samen", () => {
@@ -387,6 +428,16 @@ describe("filteren en tellen", () => {
       [null, 2],
       ["01", 1],
     ]);
+  });
+});
+
+describe("groeperen van veel rijen", () => {
+  test("alle rijen komen in hun groep, op volgorde", () => {
+    const veel = Array.from({ length: 5000 }, (_, i) => botsing(`b${i}`, i % 2 ? "G1" : "G2"));
+    const [g1, g2] = groepeer(veel);
+    expect(g2.botsingen.length + g1.botsingen.length).toBe(5000);
+    expect(g1.botsingen[0].naam).toBe("b1");
+    expect(g1.botsingen.at(-1)?.naam).toBe("b4999");
   });
 });
 
@@ -444,6 +495,17 @@ describe("namen en sneltoetsen", () => {
     expect(toets("Escape")).toBe("alles_tonen");
     expect(toets("?")).toBe("hulp");
     expect(toets("q")).toBeNull();
+  });
+
+  test("een vastgehouden toets beslist niet rij na rij; doorlopen mag wel herhalen", () => {
+    expect(toets("b", { repeat: true })).toBeNull();
+    expect(toets("A", { repeat: true })).toBeNull();
+    expect(toets("x", { repeat: true })).toBeNull();
+    expect(toets("b", { repeat: false })).toBe("bevestigen");
+    expect(toets("j", { repeat: true })).toBe("volgende");
+    expect(toets("k", { repeat: true })).toBe("vorige");
+    expect(toets("ArrowDown", { repeat: true })).toBe("volgende");
+    expect(toets("ArrowUp", { repeat: true })).toBe("vorige");
   });
 
   test("letters ongeacht hoofdletter; alt en meta blokkeren; ook tekstvelden en bewerkbare delen", () => {
@@ -546,3 +608,53 @@ describe("werklijst", () => {
   });
 });
 
+describe("een model dat nog niet klaar is", () => {
+  test("de modellen die niet meedoen, bij naam", () => {
+    const bezig = model({ naam: "x.ifc", status: "bezig" });
+    const wacht = model({ naam: "y.ifc", status: "wacht" });
+    const fout = model({ naam: "z.ifc", status: "fout" });
+    expect(nietGereed([CONSTRUCTIE, INSTALLATIE])).toEqual([]);
+    expect(nietGereed([CONSTRUCTIE, bezig, wacht, fout])).toEqual(["x.ifc", "y.ifc", "z.ifc"]);
+    expect(nietGereed([])).toEqual([]);
+  });
+});
+
+describe("wie mag beslissen", () => {
+  const ronde = (heeft_opvolger?: boolean) => ({ heeft_opvolger }) as Pick<ClashRound, "heeft_opvolger">;
+
+  test("schrijfrecht en geen opvolger", () => {
+    expect(magBeslissen(true, ronde(false))).toBe(true);
+    expect(magBeslissen(true, ronde(undefined))).toBe(true);
+    expect(magBeslissen(true, ronde(true))).toBe(false);
+    expect(magBeslissen(false, ronde(false))).toBe(false);
+  });
+
+  test("beslisknoppen op open rijen, heropenen op besliste; niets op rijen die niet gevonden zijn", () => {
+    expect(rijActies(b("1", "nieuw"), true)).toEqual({ beslissen: true, heropenen: false });
+    expect(rijActies(b("1", "actief"), true)).toEqual({ beslissen: true, heropenen: false });
+    for (const status of ["bevestigd", "geaccepteerd", "genegeerd", "opgelost"] as const) {
+      expect(rijActies(b("1", status), true)).toEqual({ beslissen: false, heropenen: true });
+    }
+    for (const ontwikkeling of ["weg", "eerder_weg"] as const) {
+      expect(rijActies(botsing("1", "G", "opgelost", { ontwikkeling }), true)).toEqual({ beslissen: false, heropenen: false });
+      expect(rijActies(botsing("1", "G", "actief", { ontwikkeling }), true)).toEqual({ beslissen: false, heropenen: false });
+    }
+    expect(rijActies(b("1", "nieuw"), false)).toEqual({ beslissen: false, heropenen: false });
+    expect(rijActies(b("1", "genegeerd"), false)).toEqual({ beslissen: false, heropenen: false });
+    // A row from before the review work counts as found.
+    expect(rijActies(botsing("1", "G", "nieuw", { ontwikkeling: null }), true)).toEqual({ beslissen: true, heropenen: false });
+  });
+});
+
+describe("de titel van een ronde", () => {
+  const moment = new Date(2026, 10, 4, 14, 32);
+
+  test("de naam met datum en tijd, in de taal van de viewer", () => {
+    expect(rondeTitel("Harde botsingen", moment, "nl")).toBe("Harde botsingen 4 nov 2026, 14:32");
+    expect(rondeTitel("Hard clashes", moment, "en")).toMatch(/^Hard clashes Nov 4, 2026, 2:32\sPM$/);
+  });
+
+  test("twee rondes op een ander moment heten anders", () => {
+    expect(rondeTitel("Harde botsingen", moment, "nl")).not.toBe(rondeTitel("Harde botsingen", new Date(2026, 10, 4, 14, 33), "nl"));
+  });
+});
