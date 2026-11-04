@@ -174,21 +174,24 @@ export function standaardRegels(disciplines: string[], bewaard: ClashRule[]): Cl
 const OVERLAP_MARGE = 1;
 
 /**
- * True when none of the models of set A comes near a model of set B (boxes within 1 m of each other). A model without a
- * box is unknown, so it never gives a warning.
+ * True when at least one pair of different models (by source key) was compared and none of those pairs comes near each
+ * other (boxes within 1 m). A model is never compared with itself. A model without a box is unknown, so it never gives a
+ * warning.
  */
 export function overlapWaarschuwing(a: ModelInfo[], b: ModelInfo[]): boolean {
-  if (a.length === 0 || b.length === 0) return false;
+  let vergeleken = false;
   for (const x of a) {
     for (const y of b) {
+      if (x.bron.sleutel === y.bron.sleutel) continue;
       const dx = x.index?.begrenzing;
       const dy = y.index?.begrenzing;
       if (!dx || !dy) return false;
       const raakt = [0, 1, 2].every((as) => dx.min[as] - OVERLAP_MARGE <= dy.max[as] && dy.min[as] - OVERLAP_MARGE <= dx.max[as]);
       if (raakt) return false;
+      vergeleken = true;
     }
   }
-  return true;
+  return vergeleken;
 }
 
 const BEOORDELEN: ClashBucket = "beoordelen";

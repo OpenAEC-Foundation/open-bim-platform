@@ -299,6 +299,17 @@ describe("disciplines en regels", () => {
     expect(overlapWaarschuwing([a], [ver, dichtbij])).toBe(false);
     expect(overlapWaarschuwing([], [a])).toBe(false);
   });
+
+  test("a model is never compared with itself", () => {
+    const a = model({ naam: "a.ifc", box: [0, 0, 0, 10, 10, 10] });
+    const dichtbij = model({ naam: "b.ifc", box: [10.5, 0, 0, 20, 10, 10] });
+    const ver = model({ naam: "c.ifc", box: [12, 0, 0, 20, 10, 10] });
+    expect(new Set([a, dichtbij, ver].map((m) => m.bron.sleutel)).size).toBe(3);
+    expect(overlapWaarschuwing([a, ver], [a, ver])).toBe(true);
+    expect(overlapWaarschuwing([a, dichtbij], [a, dichtbij])).toBe(false);
+    expect(overlapWaarschuwing([a], [a])).toBe(false);
+    expect(overlapWaarschuwing([a, dichtbij, ver], [a, dichtbij, ver])).toBe(false);
+  });
 });
 
 describe("filteren en tellen", () => {
