@@ -192,6 +192,11 @@ def test_variant_drops_elements_by_name_and_copies_a_class_moved(variant, ifc_sm
     assert len(kanalen) == 2 and len({k.GlobalId for k in kanalen}) == 2
     hoogtes = sorted(float(ifcopenshell.util.placement.get_local_placement(k.ObjectPlacement)[2][3]) for k in kanalen)
     assert hoogtes[1] - hoogtes[0] == pytest.approx(3.0)
+    # The copy has a shape of its own in the same geometric context, and sits in the same storey.
+    vormen = [k.Representation.Representations[0] for k in kanalen]
+    assert vormen[0] is not vormen[1] and vormen[0].Items[0] != vormen[1].Items[0]
+    assert vormen[0].ContextOfItems == vormen[1].ContextOfItems
+    assert all(k.ContainedInStructure for k in kanalen)
 
 
 def test_variant_replaces_part_of_the_globalids_and_the_link_finds_them_back(variant, ifc_small, tmp_path):

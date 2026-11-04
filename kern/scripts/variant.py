@@ -21,6 +21,7 @@ import ifcopenshell
 import ifcopenshell.api.geometry
 import ifcopenshell.api.root
 import ifcopenshell.guid
+import ifcopenshell.util.element
 import ifcopenshell.util.placement
 import numpy as np
 
@@ -58,6 +59,10 @@ def variant(
         klasse, (dx, dy, dz) = kopie
         for element in list(model.by_type(klasse)):
             nieuw = ifcopenshell.api.root.copy_class(model, product=element)
+            if element.Representation is not None and nieuw.Representation is None:
+                nieuw.Representation = ifcopenshell.util.element.copy_deep(
+                    model, element.Representation, exclude_callback=lambda e: e.is_a("IfcGeometricRepresentationContext")
+                )
             matrix = ifcopenshell.util.placement.get_local_placement(element.ObjectPlacement)
             matrix[:, 3] += np.array([dx, dy, dz, 0.0])
             ifcopenshell.api.geometry.edit_object_placement(model, product=nieuw, matrix=matrix, is_si=False)
