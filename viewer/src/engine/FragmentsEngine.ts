@@ -105,7 +105,7 @@ export class FragmentsEngine {
    * them ghosted, and the camera on the point. A previous isolation is cleared first.
    */
   async isolate(a: Target[], b: Target[], point: Vec3): Promise<void> {
-    await this.clearIsolation();
+    await this.resetMarks();
     const found = new Map<string, { model: FRAGS.FragmentsModel; id: number; material: FRAGS.MaterialDefinition }[]>();
     const boxes: THREE.Box3[] = [];
     const sides: [Target[], FRAGS.MaterialDefinition][] = [
@@ -160,13 +160,18 @@ export class FragmentsEngine {
 
   /** Back to the normal view: full opacity everywhere and no marking. */
   async clearIsolation(): Promise<void> {
+    await this.resetMarks();
+    await this.fragments.core.update(true);
+  }
+
+  /** Full opacity and no marking, without redrawing: for callers that redraw right after (isolate ends with a refresh). */
+  private async resetMarks(): Promise<void> {
     for (const key of this.ghosted) {
       const model = this.fragments.list.get(key);
       if (model) await model.resetOpacity(undefined);
     }
     this.ghosted.clear();
     for (const model of this.fragments.list.values()) await model.resetHighlight();
-    await this.fragments.core.update(true);
   }
 
   private jointSize(boxes: THREE.Box3[]): [number, number, number] {
