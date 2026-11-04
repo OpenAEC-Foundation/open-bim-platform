@@ -268,6 +268,17 @@ describe("disciplines en regels", () => {
     expect(standaardRegels(["a", "b"], []).find((r) => r.a === "a" && r.b === "b")?.soort).toBe("hard");
   });
 
+  test("een harde regel stuurt zijn mm ook als tolerantie", () => {
+    const regels: ClashRule[] = [{ a: "constructie", b: "installaties", soort: "hard", mm: 10, ernst: null }];
+    expect(controlesUitRegels(regels, [CONSTRUCTIE, INSTALLATIE])[0]).toMatchObject({ soort: "hard", tolerantie: 0.01 });
+  });
+
+  test("paren sorteren op codepunt, zoals de server", () => {
+    const regels = standaardRegels(["a", "B"], [{ a: "a", b: "B", soort: "afstand", mm: 5, ernst: null }]);
+    expect(regels).toContainEqual({ a: "B", b: "a", soort: "afstand", mm: 5, ernst: null });
+    expect(regels.map((r) => `${r.a}|${r.b}`)).toEqual(["B|B", "B|a", "a|a"]);
+  });
+
   test("standaardregels: bewaarde paren zonder model blijven bestaan, ook met omgedraaide namen", () => {
     const bewaard: ClashRule[] = [{ a: "x", b: "a", soort: "hard", mm: 5, ernst: null }];
     const regels = standaardRegels(["a"], bewaard);
@@ -337,6 +348,21 @@ describe("filteren en tellen", () => {
     expect(namen(filter(lijst, { ...leegFilter(), emmer: null, ontwikkeling: ["weg", "nieuw"] }))).toEqual(["k1", "k2", "k3", "k4", "k5"]);
     expect(isGevonden(lijst[4])).toBe(false);
     expect(isGevonden(lijst[5])).toBe(false);
+  });
+
+  test("de ontwikkelingsfacet telt ook weg en eerder_weg, met het huidige filter", () => {
+    const fac = facetten(lijst, leegFilter());
+    expect(fac.ontwikkeling).toEqual({ nieuw: 3 });
+    const zonderEmmer = facetten(lijst, { ...leegFilter(), emmer: null });
+    expect(zonderEmmer.ontwikkeling).toEqual({ nieuw: 4, weg: 1, eerder_weg: 1 });
+    // The other facets keep hiding the rows that are gone.
+    expect(zonderEmmer.status).toEqual({ nieuw: 3, actief: 1 });
+    // The other filters still apply.
+    expect(facetten(lijst, { ...leegFilter(), emmer: null, status: ["opgelost"] }).ontwikkeling).toEqual({ weg: 1, eerder_weg: 1 });
+  });
+
+  test("het filter op eerder_weg toont die rijen", () => {
+    expect(namen(filter(lijst, { ...leegFilter(), emmer: null, ontwikkeling: ["eerder_weg"] }))).toEqual(["k6"]);
   });
 
   test("groeperen: grootste eerst, lege waarden samen", () => {

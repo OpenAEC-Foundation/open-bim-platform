@@ -133,8 +133,13 @@ export function voorinstellingen(modellen: ModelInfo[], regels: ClashRule[] = []
   ];
 }
 
+/** Code-point order, like Python's `sorted` on the server. */
+function codepunt(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 function sorteerPaar(a: string, b: string): [string, string] {
-  return a.localeCompare(b) <= 0 ? [a, b] : [b, a];
+  return codepunt(a, b) <= 0 ? [a, b] : [b, a];
 }
 
 /**
@@ -148,13 +153,13 @@ export function standaardRegels(disciplines: string[], bewaard: ClashRule[]): Cl
     const [a, b] = sorteerPaar(regel.a, regel.b);
     regels.set(sleutel(a, b), { ...regel, a, b });
   }
-  const uniek = [...new Set(disciplines)].sort((x, y) => x.localeCompare(y));
+  const uniek = [...new Set(disciplines)].sort(codepunt);
   uniek.forEach((a, i) => {
     for (const b of uniek.slice(i)) {
       if (!regels.has(sleutel(a, b))) regels.set(sleutel(a, b), { a, b, soort: a === b ? "uit" : "hard", mm: 0, ernst: null });
     }
   });
-  return [...regels.values()].sort((x, y) => x.a.localeCompare(y.a) || x.b.localeCompare(y.b));
+  return [...regels.values()].sort((x, y) => codepunt(x.a, y.a) || codepunt(x.b, y.b));
 }
 
 /** Metres that two boxes may be apart and still count as touching. */
@@ -221,13 +226,13 @@ function inLijst<T>(lijst: T[], waarde: T | null | undefined): boolean {
   return lijst.length === 0 || (waarde != null && lijst.includes(waarde));
 }
 
-function past(b: Clash, f: ClashFilter): boolean {
+function past(b: Clash, f: ClashFilter, toonWeg = false): boolean {
   const ontwikkeling: ClashDevelopment | null = b.ontwikkeling;
   if (f.emmer === "weg") {
     if (ontwikkeling !== "weg") return false;
   } else if (f.emmer !== null) {
     if (!isGevonden(b) || emmerVan(b) !== f.emmer) return false;
-  } else if (f.ontwikkeling.length === 0 && !isGevonden(b)) {
+  } else if (f.ontwikkeling.length === 0 && !toonWeg && !isGevonden(b)) {
     // Rows that are gone only show up through the filter on development.
     return false;
   }
@@ -257,7 +262,9 @@ export function facetten(botsingen: Clash[], f: ClashFilter): Record<keyof Facet
   const uit = {} as Record<keyof Facetten, Record<string, number>>;
   for (const veld of FACET_VELDEN) {
     const tel: Record<string, number> = {};
-    for (const b of filter(botsingen, { ...f, [veld]: [] })) {
+    // The development facet also counts rows that are gone, so their chips can be offered.
+    const toonWeg = veld === "ontwikkeling";
+    for (const b of botsingen.filter((x) => past(x, { ...f, [veld]: [] }, toonWeg))) {
       const waarde = waardeVan(b, veld);
       if (waarde !== null) tel[waarde] = (tel[waarde] ?? 0) + 1;
     }
