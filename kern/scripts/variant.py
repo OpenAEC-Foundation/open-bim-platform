@@ -61,7 +61,9 @@ def variant(
             nieuw = ifcopenshell.api.root.copy_class(model, product=element)
             if element.Representation is not None and nieuw.Representation is None:
                 nieuw.Representation = ifcopenshell.util.element.copy_deep(
-                    model, element.Representation, exclude_callback=lambda e: e.is_a("IfcGeometricRepresentationContext")
+                    model,
+                    element.Representation,
+                    exclude_callback=lambda e: e.is_a("IfcGeometricRepresentationContext"),
                 )
             matrix = ifcopenshell.util.placement.get_local_placement(element.ObjectPlacement)
             matrix[:, 3] += np.array([dx, dy, dz, 0.0])
