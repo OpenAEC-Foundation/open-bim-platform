@@ -220,6 +220,10 @@ Lege velden blijven dus geldig.
 Velden uit de kern worden tolerant gelezen: zonder `emmer` is het `beoordelen`, zonder `soort` die van de ronde, zonder `regel`
 leeg, zonder `ernst` leeg.
 
+Namen uit een model kunnen langer zijn dan de kolom. `bulk_insert` valideert niet, dus `verwerk` kort elk tekstveld af op de
+veldlengte uit de meta van het doctype; de volledige namen blijven staan in `element_a` en `element_b`. Een fout bij het bijwerken
+van een ronde blijft bij die ronde: ze krijgt status `fout` met de melding, en de andere rondes en de lijst gaan door.
+
 **Status en ontwikkeling ten opzichte van de vorige ronde:**
 
 | Vorige rij | Nu gevonden | Nieuwe status | `ontwikkeling` |
@@ -271,7 +275,8 @@ heropenen kan wel:
     enige weg naar een issue; `botsing_naar_issue` blijft in de API bestaan *(keuze)*.
 - `zet_status_veel(botsingen, status, reden=None)`: tot 500 tegelijk, voor de groepsactie; één rechtencontrole per ronde. Een
   bevestiging maakt per botsing één issue.
-- `naar_issue` blijft en gebruikt de elementnamen in titel en omschrijving.
+- `naar_issue` blijft en gebruikt de elementnamen in titel en omschrijving. Past de titel niet in het veld, dan wordt ze gekort met
+  een weglatingsteken; de volledige namen staan in de omschrijving.
 
 ### 7.6 Regels en weergaven
 

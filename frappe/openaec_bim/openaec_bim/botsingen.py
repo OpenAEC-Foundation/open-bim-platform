@@ -232,9 +232,23 @@ def bijwerken(doc) -> None:
 	doc.save(ignore_permissions=True)
 
 
+def _werk_bij(doc) -> None:
+	"""Eén ronde bijwerken. Een fout blijft bij die ronde: ze krijgt status `fout` met de melding, en de rest gaat door."""
+	frappe.db.savepoint("openaec_bim_ronde")
+	try:
+		afgeleid.zonder_botsing(bijwerken, doc)
+	except Exception as fout:
+		frappe.db.rollback(save_point="openaec_bim_ronde")
+		frappe.log_error(title=f"Botsingsronde {doc.name}")
+		doc.reload()
+		doc.status = "fout"
+		doc.fout = json.dumps({"error_code": "inlezen_mislukt", "melding": str(fout)})
+		doc.save(ignore_permissions=True)
+
+
 def volg_lopende() -> None:
 	for naam in frappe.get_all(RONDE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(RONDE, naam))
+		_werk_bij(frappe.get_doc(RONDE, naam))
 		frappe.db.commit()
 
 
@@ -386,6 +400,23 @@ def _samenvatting(rijen: list[dict], gewijzigd: bool) -> dict:
 	}
 
 
+def _kolomlengtes(doctype: str) -> dict[str, int]:
+	"""Per veld dat als varchar bewaard wordt de lengte van de kolom, uit de meta van het doctype."""
+	lengtes = {}
+	for df in frappe.get_meta(doctype).fields:
+		kolom = frappe.db.type_map.get(df.fieldtype)
+		if kolom and kolom[0] == "varchar":
+			lengtes[df.fieldname] = cint(df.length) or cint(kolom[1])
+	return lengtes
+
+
+def _kort_op_kolom(rij: dict, lengtes: dict[str, int]) -> None:
+	"""`bulk_insert` valideert niet en de database weigert wat te lang is: namen uit een model zijn soms langer."""
+	for veld, lengte in lengtes.items():
+		if isinstance(rij.get(veld), str):
+			rij[veld] = rij[veld][:lengte]
+
+
 def verwerk(ronde: str) -> None:
 	"""Lees de botsingen van de kern in en volg ze ten opzichte van de vorige ronde in dezelfde reeks."""
 	doc = frappe.get_doc(RONDE, ronde)
@@ -463,8 +494,10 @@ def verwerk(ronde: str) -> None:
 		frappe.flags.bim_bron = bron
 	nu, gebruiker = now_datetime(), frappe.session.user
 	velden = ["name", "creation", "modified", "owner", "modified_by", *VELDEN]
+	lengtes = _kolomlengtes(BOTSING)
 	waarden = []
 	for r in rijen.values():
+		_kort_op_kolom(r, lengtes)
 		waarden.append(
 			(
 				frappe.generate_hash(length=10),
@@ -592,13 +625,19 @@ def naar_issue(botsing: str) -> dict:
 	soorten = issues._regels(project.soorten)
 	klassen = [k.strip() for k in (doc.groep or "").split("×")] + ["", ""]
 	naam_a, naam_b = a.get("naam") or klassen[0] or a["globalid"], b.get("naam") or klassen[1] or b["globalid"]
-	omschrijving = _("{0} en {1}, afstand {2} m.").format(a["globalid"], b["globalid"], flt(doc.afstand))
+	omschrijving = _("{0} ({1}) en {2} ({3}), afstand {4} m.").format(
+		naam_a, a["globalid"], naam_b, b["globalid"], flt(doc.afstand)
+	)
 	if doc.verdieping:
 		omschrijving = _("Verdieping {0}. {1}").format(doc.verdieping, omschrijving)
+	titel = _("Botsing {0} / {1}").format(naam_a, naam_b)
+	lengte = _kolomlengtes(issues.ISSUE)["titel"]
+	# De volledige namen staan in de omschrijving.
+	titel = titel if len(titel) <= lengte else titel[: lengte - 1].rstrip() + "…"
 	t = issues.topic_maak(
 		project,
 		{
-			"title": _("Botsing {0} / {1}").format(naam_a, naam_b),
+			"title": titel,
 			"topic_type": "Botsing" if not soorten or "Botsing" in soorten else None,
 			"description": omschrijving,
 		},
@@ -649,7 +688,7 @@ def rondes(project) -> list[dict]:
 	uit = []
 	for naam in frappe.get_all(RONDE, {"project": project.name}, pluck="name", order_by="creation desc"):
 		doc = frappe.get_doc(RONDE, naam)
-		afgeleid.zonder_botsing(bijwerken, doc)
+		_werk_bij(doc)
 		uit.append(ronde_naar_json(doc))
 	return uit
 

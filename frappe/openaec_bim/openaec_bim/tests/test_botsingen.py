@@ -21,7 +21,7 @@ class TestBotsingen(ProjectTest):
 	def start(self):
 		return botsingen.start(self.project, [{"bestand": self.constructie}], [{"bestand": self.installaties}], "hard", 0.01)
 
-	def lever(self, ronde, paren, velden=None, a_bestand=None, b_bestand=None, namen=None):
+	def lever(self, ronde, paren, velden=None, a_bestand=None, b_bestand=None, namen=None, bijwerken=True):
 		"""De kern is klaar: het resultaat voor de versies van de ronde staat in de bucket. Een paar is (a, b) of
 		(a, b, velden); `velden` zijn de velden van de kern per botsing, `verdieping` hoort bij element a."""
 		doc = frappe.get_doc("BIM Botsingsronde", ronde)
@@ -50,7 +50,8 @@ class TestBotsingen(ProjectTest):
 			)
 		s3.zet(doc.resultaat, json.dumps(resultaat).encode())
 		self.kern.taken[doc.kern_taak] = {"status": "klaar", "voortgang": 1.0, "uitkomst": {"aantal": len(paren)}}
-		botsingen.bijwerken(doc)
+		if bijwerken:
+			botsingen.bijwerken(doc)
 		return ronde
 
 	def ronde_met(self, paren, velden=None, namen=None):
@@ -632,3 +633,81 @@ class TestBotsingen(ProjectTest):
 		frappe.set_user(self.buiten)
 		with self.assertRaises(frappe.PermissionError):
 			botsingen.trends(vorige)
+
+	# Namen langer dan de kolom
+
+	def test_lange_namen_gaan_gekort_door_het_inlezen(self):
+		lang = "n" * 300
+		velden = {
+			"regel": lang,
+			"categorie": lang,
+			"emmer_reden": lang,
+			"raster": lang,
+			"ruimte": lang,
+			"verdieping": lang,
+		}
+		ronde = self.ronde_met([("w1", "k1")], velden=velden, namen={"w1": lang})
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "klaar")
+		doc = self.rij(ronde, "w1")
+		for veld in velden:
+			self.assertEqual(doc.get(veld), "n" * 140, veld)
+		# In het element blijven de volledige namen staan, en bevestigen en de lijst werken gewoon.
+		[rij] = botsingen.lijst(ronde)
+		self.assertEqual((rij["element_a"]["naam"], rij["element_a"]["verdieping"]), (lang, lang))
+		self.assertTrue(botsingen.zet_status(rij["naam"], "bevestigd")["issue"])
+		self.assertEqual(botsingen.rondes(self.project)[0]["status"], "klaar")
+
+	def test_lange_disciplines_gaan_gekort_door_het_inlezen(self):
+		frappe.set_user(self.lid)
+		a = opslag.maak_map(ruimte=self.ruimte, naam="a" * 100, bovenliggende=self.map)["map"]
+		b = opslag.maak_map(ruimte=self.ruimte, naam="b" * 100, bovenliggende=self.map)["map"]
+		wand = upload(self.ruimte, "wand.ifc", b"ISO-10303-21; w", map_naam=a)["bestand"]
+		kanaal = upload(self.ruimte, "kanaal.ifc", b"ISO-10303-21; k", map_naam=b)["bestand"]
+		self.model_klaar(wand)
+		self.model_klaar(kanaal)
+		ronde = botsingen.start(self.project, [{"bestand": wand}], [{"bestand": kanaal}], "hard", 0.0)
+		self.lever(ronde, [("w1", "k1")], a_bestand=wand, b_bestand=kanaal)
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "klaar")
+		self.assertEqual(self.rij(ronde, "w1").disciplines, ("a" * 100 + " × " + "b" * 100)[:140])
+
+	def test_de_kolomlengte_komt_uit_de_meta(self):
+		lengtes = botsingen._kolomlengtes("BIM Botsing")
+		self.assertEqual((lengtes["sleutel"], lengtes["verdieping"]), (300, 140))
+		self.assertNotIn("reden", lengtes)
+		self.assertNotIn("element_a", lengtes)
+
+	def test_een_fout_in_een_ronde_houdt_de_andere_niet_tegen(self):
+		namen = {}
+		for naam in ("eerste", "kapot", "laatste"):
+			namen[naam] = botsingen.start_controles(self.project, [self.controle()], voorinstelling=naam)
+			self.lever(namen[naam], [("w1", "k1")], bijwerken=False)
+		s3.zet(frappe.db.get_value("BIM Botsingsronde", namen["kapot"], "resultaat"), b"geen json")
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", namen["eerste"], "status"), "klaar")
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", namen["laatste"], "status"), "klaar")
+		kapot = frappe.get_doc("BIM Botsingsronde", namen["kapot"])
+		self.assertEqual(kapot.status, "fout")
+		fout = json.loads(kapot.fout)
+		self.assertEqual(fout["error_code"], "inlezen_mislukt")
+		self.assertTrue(fout["melding"])
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": kapot.name}), 0)
+
+	def test_een_fout_bij_het_inlezen_breekt_de_lijst_van_rondes_niet(self):
+		goed = botsingen.start_controles(self.project, [self.controle()], voorinstelling="goed")
+		self.lever(goed, [("w1", "k1")], bijwerken=False)
+		kapot = botsingen.start_controles(self.project, [self.controle()], voorinstelling="kapot")
+		self.lever(kapot, [("w1", "k1")], bijwerken=False)
+		s3.zet(frappe.db.get_value("BIM Botsingsronde", kapot, "resultaat"), b"geen json")
+		standen = {r["naam"]: r["status"] for r in botsingen.rondes(self.project)}
+		self.assertEqual(standen, {goed: "klaar", kapot: "fout"})
+
+	def test_bevestigen_met_lange_namen_kort_de_titel(self):
+		a, b = "a" * 100, "b" * 100
+		ronde = self.ronde_met([("w1", "k1")], namen={"w1": a, "k1": b})
+		uit = botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")
+		issue = frappe.get_doc("BIM Issue", uit["issue"])
+		self.assertEqual(len(issue.titel), 140)
+		self.assertTrue(issue.titel.startswith(f"Botsing {a} / b") and issue.titel.endswith("…"))
+		self.assertIn(a, issue.beschrijving)
+		self.assertIn(b, issue.beschrijving)
+		self.assertIn("w1", issue.beschrijving)
