@@ -4,7 +4,7 @@ import * as FRAGS from "@thatopen/fragments";
 import workerUrl from "@thatopen/fragments/worker?url";
 import * as THREE from "three";
 import { fromBcfCamera, ifcToThree, toBcfCamera, type BcfCamera, type Vec3 } from "../model/bcf";
-import { isolateRadius } from "./isolate";
+import { isolateRadius, type IsolateResult, type Size } from "./isolate";
 
 /** Ghost everything but the two elements of a clash; false only marks them and moves the camera. */
 export const ISOLATE_GHOST = true;
@@ -102,31 +102,37 @@ export class FragmentsEngine {
 
   /**
    * Show a clash: both elements marked (A in the accent colour, B in the info colour), the rest of the models that hold
-   * them ghosted, and the camera on the point. A previous isolation is cleared first.
+   * them ghosted, and the camera on the point, without a flight. A previous isolation is cleared first. Says which elements
+   * it found; an element with an empty box counts as not found. With nothing found nothing goes transparent, and the camera
+   * still goes to the point.
    */
-  async isolate(a: Target[], b: Target[], point: Vec3): Promise<void> {
+  async isolate(a: Target[], b: Target[], point: Vec3): Promise<IsolateResult> {
     await this.resetMarks();
     const found = new Map<string, { model: FRAGS.FragmentsModel; id: number; material: FRAGS.MaterialDefinition }[]>();
-    const boxes: THREE.Box3[] = [];
     const sides: [Target[], FRAGS.MaterialDefinition][] = [
       [a, this.markMaterial("--theme-accent")],
       [b, this.markMaterial("--color-semantic-info")],
     ];
+    const sizes: (Size | null)[] = [];
     for (const [targets, material] of sides) {
+      const boxes: THREE.Box3[] = [];
       for (const target of targets) {
         for (const key of target.keys) {
           const model = this.fragments.list.get(key);
           if (!model) continue;
           const [id] = (await model.getLocalIdsByGuids([target.globalid])) ?? [];
           if (id == null) continue;
+          const box = await model.getMergedBox([id]);
+          if (box.isEmpty()) continue;
           found.set(key, [...(found.get(key) ?? []), { model, id, material }]);
-          boxes.push((await model.getMergedBox([id])).applyMatrix4(model.object.matrixWorld));
+          boxes.push(box);
         }
       }
+      sizes.push(boxes.length ? this.jointSize(boxes) : null);
     }
     // Every model goes transparent (an element of a third model could hide the pair); only the models that hold
     // one of the elements get them back at full opacity and marked.
-    if (ISOLATE_GHOST) {
+    if (ISOLATE_GHOST && found.size > 0) {
       for (const [key, model] of this.fragments.list) {
         this.ghosted.add(key);
         await model.setOpacity(undefined, GHOST_OPACITY);
@@ -137,8 +143,8 @@ export class FragmentsEngine {
       if (ISOLATE_GHOST) await model.resetOpacity(entries.map((entry) => entry.id));
       for (const { id, material } of entries) await model.highlight([id], material);
     }
-    const size = boxes.length ? this.jointSize(boxes) : null;
-    await this.focus(point, isolateRadius(size));
+    await this.jump(new THREE.Vector3(...ifcToThree(point, this.basis())), isolateRadius(sizes));
+    return { a: sizes[0] !== null, b: sizes[1] !== null };
   }
 
   /** Look at elements (the joint box of all of them) and mark them; when none is found nothing moves. */
@@ -150,12 +156,12 @@ export class FragmentsEngine {
       for (const key of target.keys) {
         const model = this.fragments.list.get(key);
         const [id] = (await model?.getLocalIdsByGuids([target.globalid])) ?? [];
-        if (model && id != null) boxes.push((await model.getMergedBox([id])).applyMatrix4(model.object.matrixWorld));
+        if (model && id != null) boxes.push(await model.getMergedBox([id]));
       }
     }
     if (!boxes.length) return;
     const joint = boxes.reduce((all, box) => all.union(box), new THREE.Box3());
-    await this.focusThree(joint.getCenter(new THREE.Vector3()), isolateRadius(this.jointSize(boxes)));
+    await this.focusThree(joint.getCenter(new THREE.Vector3()), isolateRadius([this.jointSize(boxes)]));
   }
 
   /** Back to the normal view: full opacity everywhere and no marking. */
@@ -174,7 +180,7 @@ export class FragmentsEngine {
     for (const model of this.fragments.list.values()) await model.resetHighlight();
   }
 
-  private jointSize(boxes: THREE.Box3[]): [number, number, number] {
+  private jointSize(boxes: THREE.Box3[]): Size {
     const size = boxes.reduce((all, box) => all.union(box), new THREE.Box3()).getSize(new THREE.Vector3());
     return [size.x, size.y, size.z];
   }
@@ -208,6 +214,18 @@ export class FragmentsEngine {
 
   private async focusThree(center: THREE.Vector3, radius: number): Promise<void> {
     await this.world.camera.controls.fitToSphere(new THREE.Sphere(center, Math.max(radius, 0.5)), true);
+    await this.fragments.core.update(true);
+  }
+
+  /**
+   * Put the camera around a point at once. Without a transition the controls only move the camera on their next update,
+   * and no "rest" follows, while the refresh below reads the camera now: without this update the tiles of the new view
+   * would stay behind until the next movement.
+   */
+  private async jump(center: THREE.Vector3, radius: number): Promise<void> {
+    const controls = this.world.camera.controls;
+    await controls.fitToSphere(new THREE.Sphere(center, Math.max(radius, 0.5)), false);
+    controls.update(0);
     await this.fragments.core.update(true);
   }
 

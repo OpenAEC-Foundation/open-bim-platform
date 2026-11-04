@@ -1,3 +1,4 @@
+import type { IsolateResult } from "../engine/isolate";
 import type { BcfCamera, Vec3, Viewpoint } from "../model/bcf";
 
 /** An element to mark: its file (null when unknown: then every loaded model is searched) and GlobalId. */
@@ -15,8 +16,8 @@ export interface Weergave {
   toon(standpunt: Viewpoint | null, elementen: ElementRef[]): Promise<void>;
   /** Look at a point in IFC world coordinates and mark the elements. */
   focus(punt: Vec3, elementen: ElementRef[]): Promise<void>;
-  /** Show a clash: element A and B marked, the rest ghosted, the camera on the point. */
-  isoleer(a: ElementRef, b: ElementRef, punt: Vec3): Promise<void>;
+  /** Show a clash: element A and B marked, the rest ghosted, the camera on the point. Says which elements it found. */
+  isoleer(a: ElementRef, b: ElementRef, punt: Vec3): Promise<IsolateResult>;
   /** Look at one element and mark it. */
   naarElement(e: ElementRef): Promise<void>;
   /** Back to the normal view. */

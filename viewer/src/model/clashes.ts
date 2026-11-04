@@ -1,3 +1,4 @@
+import type { IsolateResult } from "../engine/isolate";
 import type { ModelInfo } from "../host/BimHost";
 import type {
   Clash,
@@ -476,6 +477,12 @@ export function vorige(lijst: Clash[], huidige: string | null): string | null {
 /** The name of an element, or its class when it has no name, or its GlobalId. */
 export function elementNaam(e: ClashElement): string {
   return !leeg(e.naam) ? (e.naam as string) : !leeg(e.klasse) ? (e.klasse as string) : e.globalid;
+}
+
+/** The elements of a clash that an isolation could not find in the view, by name. */
+export function nietInBeeld(b: Clash, uit: IsolateResult | null): string[] {
+  if (!uit) return [];
+  return [...(uit.a ? [] : [elementNaam(b.element_a)]), ...(uit.b ? [] : [elementNaam(b.element_b)])];
 }
 
 export type SneltoetsActie = "volgende" | "vorige" | "bevestigen" | "accepteren" | "afwijzen" | "alles_tonen" | "hulp";

@@ -245,6 +245,7 @@
   "reden_veld": "Reason (may be empty)",
   "beoordelen_alleen_lezen": "You can view the clashes but not review them.",
   "ronde_heeft_opvolger": "There is a newer round: decide there. This round can only be viewed.",
+  "niet_in_beeld": "Not found in the view: {{namen}}. Is the model switched on?",
   "actie": {
     "bevestigen": "Confirm",
     "accepteren": "Accept",

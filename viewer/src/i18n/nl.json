@@ -245,6 +245,7 @@
   "reden_veld": "Reden (mag leeg)",
   "beoordelen_alleen_lezen": "Je kunt de botsingen bekijken, maar niet beoordelen.",
   "ronde_heeft_opvolger": "Er is een nieuwere ronde: beslis daar. Deze ronde is alleen nog te bekijken.",
+  "niet_in_beeld": "Niet in beeld te vinden: {{namen}}. Staat het model aan?",
   "actie": {
     "bevestigen": "Bevestigen",
     "accepteren": "Accepteren",

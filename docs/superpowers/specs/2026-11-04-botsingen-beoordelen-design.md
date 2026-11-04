@@ -419,9 +419,18 @@ Na een beslissing springt de selectie met `volgende` door. De rij blijft staan t
 
 `Weergave` krijgt `isoleer(paar, punt)`, `naarElement(element)` en `herstel()`.
 
-- `isoleer`: alle andere elementen doorzichtig (`setOpacity`), het paar in twee kleuren, de camera op het botspunt met een
-  straal naar de grootte van de elementen. Twee klassen voor A en B *(keuze: A de accentkleur van het stijlboek, B de
-  informatiekleur)*.
+- `isoleer`: alle andere elementen doorzichtig (`setOpacity`), het paar in twee kleuren, de camera op het botspunt. Twee klassen
+  voor A en B *(keuze: A de accentkleur van het stijlboek, B de informatiekleur)*.
+- De straal van de camera volgt het kleinste niet-lege element: de halve diagonaal van zijn doos, tussen 0,5 en 10 m. Eén leeg
+  element: het andere. Bij een baluster tegen een plafondafwerking van een hele verdieping zoomt de camera zo niet uit naar de
+  afwerking, en een onderdeel van 40 mm op meer dan 5 m tekent de bibliotheek alleen als draadmodel.
+- Isoleren zet de camera zonder overgang: een vlucht duurt 0,6 tot 1,5 s per klik, en met `J` lopen die stappen achter elkaar op in
+  de wachtrij. De sprong wordt meteen op de camera toegepast, zodat het verversen erna de nieuwe camera ziet. *Naar A* en *Naar B*
+  vliegen wel.
+- `isoleer` zoekt de elementen pas in de wachtrij, op het moment van uitvoeren: een model dat nog laadt telt dan niet als ontbrekend.
+  Het geeft terug wat gevonden is, `{a, b}`; een lege doos telt als niet gevonden. Is niets gevonden, dan wordt niets doorzichtig en
+  gaat alleen de camera naar het botspunt. De opengeklapte rij noemt in één regel welk element niet in beeld te vinden is, en toont
+  ook een fout bij het isoleren.
 - `herstel` zet alles terug. De keuze *Alles tonen* en het verlaten van de ronde of het tabblad roepen `herstel` aan.
 - Doorzichtig maken moet ook op een federatie van 288 MB vlot blijven. Is het te traag, dan alleen het paar markeren met de
   camera erop, en dat noteren in de meting.

@@ -24,6 +24,7 @@ import {
   magBeslissen,
   MAX_CONTROLES,
   nietGereed,
+  nietInBeeld,
   rijActies,
   rondeTitel,
   schoneWeergaven,
@@ -702,5 +703,16 @@ describe("weergaven", () => {
   test("bewaren herstelt oude foute weergaven, zodat de server ze aanneemt", () => {
     const fout = { naam: "Oud", filter: { ernst: null }, groep: null } as unknown as ClashView;
     expect(schoneWeergaven([fout, v()])).toEqual([{ naam: "Oud", filter: leegFilter(), groep: "klassen" }, v()]);
+  });
+});
+
+describe("wat niet in beeld te vinden is", () => {
+  const rij = botsing("r", "G");
+  test("noemt de elementen die niet gevonden zijn, bij naam", () => {
+    expect(nietInBeeld(rij, null)).toEqual([]);
+    expect(nietInBeeld(rij, { a: true, b: true })).toEqual([]);
+    expect(nietInBeeld(rij, { a: false, b: true })).toEqual(["r A"]);
+    expect(nietInBeeld(rij, { a: true, b: false })).toEqual(["r B"]);
+    expect(nietInBeeld(rij, { a: false, b: false })).toEqual(["r A", "r B"]);
   });
 });

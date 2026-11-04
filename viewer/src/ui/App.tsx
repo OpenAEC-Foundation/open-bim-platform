@@ -184,11 +184,14 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           .filter(([key]) => !bestand || key.startsWith(`bestand:${bestand}@`))
           .flatMap(([, parts]) => parts),
       }));
-    const later = (stap: (engine: FragmentsEngine) => Promise<void>) => {
+    const later = <T,>(stap: (engine: FragmentsEngine) => Promise<T>, zonderEngine: T): Promise<T> => {
       const engine = engineRef.current;
-      if (!engine) return Promise.resolve();
+      if (!engine) return Promise.resolve(zonderEngine);
       const klaar = queueRef.current.then(() => stap(engine));
-      queueRef.current = klaar.catch((e) => setError(describe(e)));
+      queueRef.current = klaar.then(
+        () => undefined,
+        (e) => setError(describe(e)),
+      );
       return klaar;
     };
     return {
@@ -200,16 +203,17 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           if (standpunt?.perspective_camera) await engine.setCamera({ perspective_camera: standpunt.perspective_camera });
           const selectie = (standpunt?.components?.selection ?? []).map((c) => ({ bestand: null, globalid: c.ifc_guid }));
           await engine.highlightMany(targets(elementen.length ? elementen : selectie));
-        }),
+        }, undefined),
       focus: (punt: Vec3, elementen: ElementRef[]) =>
         later(async (engine) => {
           await engine.focus(punt, 2);
           await engine.highlightMany(targets(elementen));
-        }),
+        }, undefined),
+      // The elements are looked up in the queue, when it is their turn: a model that is still loading then counts.
       isoleer: (a: ElementRef, b: ElementRef, punt: Vec3) =>
-        later((engine) => engine.isolate(targets([a]), targets([b]), punt)),
-      naarElement: (e: ElementRef) => later((engine) => engine.focusElements(targets([e]))),
-      herstel: () => later((engine) => engine.clearIsolation()),
+        later((engine) => engine.isolate(targets([a]), targets([b]), punt), { a: false, b: false }),
+      naarElement: (e: ElementRef) => later((engine) => engine.focusElements(targets([e])), undefined),
+      herstel: () => later((engine) => engine.clearIsolation(), undefined),
     };
   }, []);
 

@@ -60,6 +60,8 @@ export type ClashRowProps = {
   /** The reject input is open on this row. */
   afwijzen: boolean;
   fout: string | null;
+  /** The names of the elements that could not be found in the view. */
+  nietInBeeld: string[];
   onKies: () => void;
   onBeslis: (status: ClashStatus, reden?: string) => void;
   onAfwijzen: (open: boolean) => void;
@@ -68,7 +70,7 @@ export type ClashRowProps = {
 };
 
 /** One clash in the list; the selected one opens with its details and buttons. */
-export function ClashRow({ b, open, mag, bezig, afwijzen, fout, onKies, onBeslis, onAfwijzen, onNaar, onAllesTonen }: ClashRowProps) {
+export function ClashRow({ b, open, mag, bezig, afwijzen, fout, nietInBeeld, onKies, onBeslis, onAfwijzen, onNaar, onAllesTonen }: ClashRowProps) {
   const { t } = useTranslation();
   const { beslissen, heropenen } = rijActies(b, mag);
   const detail: [string, string | null][] = [
@@ -108,6 +110,11 @@ export function ClashRow({ b, open, mag, bezig, afwijzen, fout, onKies, onBeslis
               ))}
           </dl>
           {fout && <p className="viewer__error">{fout}</p>}
+          {nietInBeeld.length > 0 && (
+            <p className="viewer__hint" data-melding="niet-in-beeld">
+              {t("niet_in_beeld", { namen: nietInBeeld.join(", ") })}
+            </p>
+          )}
           {beslissen && !afwijzen && (
             <div className="botsing__acties">
               <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" data-actie="bevestigen" disabled={bezig} onClick={() => onBeslis("bevestigd")}>

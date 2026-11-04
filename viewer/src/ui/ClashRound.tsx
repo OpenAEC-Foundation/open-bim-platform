@@ -1,6 +1,7 @@
 import { Icon, uiChevronDown, uiChevronLeft, uiChevronRight, uiHelp } from "@openaec/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { IsolateResult } from "../engine/isolate";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
 import type { Clash, ClashBucket, ClashElement, ClashFilter, ClashGroupBy, ClashRound as RondeGegevens, ClashSettings, ClashStatus } from "../model/bcf";
 import {
@@ -13,6 +14,7 @@ import {
   isZichtbaar,
   leegFilter,
   magBeslissen,
+  nietInBeeld,
   rijActies,
   rondeTelling,
   sneltoets,
@@ -75,6 +77,7 @@ export function ClashRound({
   const [vast, setVast] = useState<string | null>(null);
   const [afwijzen, setAfwijzen] = useState<string | null>(null);
   const [rijFout, setRijFout] = useState<{ naam: string; melding: string } | null>(null);
+  const [inBeeld, setInBeeld] = useState<{ naam: string; uit: IsolateResult } | null>(null);
   const [bezig, setBezig] = useState(false);
   const [ingeklapt, setIngeklapt] = useState<Set<string>>(new Set());
   const [limieten, setLimieten] = useState<Record<string, number>>({});
@@ -150,7 +153,13 @@ export function ClashRound({
     setGekozen(b.naam);
     setAfwijzen(null);
     setRijFout(null);
-    wis(weergave.isoleer({ bestand: b.element_a.bestand, globalid: b.element_a.globalid }, { bestand: b.element_b.bestand, globalid: b.element_b.globalid }, b.punt));
+    setInBeeld(null);
+    weergave
+      .isoleer({ bestand: b.element_a.bestand, globalid: b.element_a.globalid }, { bestand: b.element_b.bestand, globalid: b.element_b.globalid }, b.punt)
+      .then(
+        (uit) => setInBeeld({ naam: b.naam, uit }),
+        (e: unknown) => setRijFout({ naam: b.naam, melding: describe(e) }),
+      );
   };
   const toonAlles = () => {
     isoleerd.current = false;
@@ -407,6 +416,7 @@ export function ClashRound({
                           bezig={bezig}
                           afwijzen={afwijzen === b.naam}
                           fout={rijFout?.naam === b.naam ? rijFout.melding : null}
+                          nietInBeeld={inBeeld?.naam === b.naam ? nietInBeeld(b, inBeeld.uit) : []}
                           onKies={() => (gekozen === b.naam ? toonAlles() : kies(b))}
                           onBeslis={(status, reden) => void beslis(b, status, reden)}
                           onAfwijzen={(aan) => setAfwijzen(aan ? b.naam : null)}
