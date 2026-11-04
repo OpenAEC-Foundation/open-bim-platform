@@ -3,11 +3,21 @@ import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie } from "../host/BimHost";
 import type { Clash, ClashFilter, ClashGroupBy, ClashSettings } from "../model/bcf";
-import { type FilterChip, type Facetten, facetten, filterChips, leegFilter, zonderChip } from "../model/clashes";
+import {
+  type FilterChip,
+  type Facetten,
+  GROEPERINGEN,
+  actieveWeergave,
+  facetten,
+  filterChips,
+  filterUitWeergave,
+  groepUitWeergave,
+  schoneWeergaven,
+  zonderChip,
+} from "../model/clashes";
 import { describe } from "./format";
 
 const VELDEN: (keyof Facetten)[] = ["ernst", "status", "categorie", "disciplines", "verdieping", "ontwikkeling"];
-const GROEPEN: ClashGroupBy[] = ["klassen", "verdieping", "disciplines", "ernst", "categorie", "raster", "ruimte", "ontwikkeling"];
 const VERTAALD: Partial<Record<keyof Facetten, string>> = { ernst: "ernst", status: "botsing_status", ontwikkeling: "ontwikkeling" };
 
 /** Filters with counts, removable chips, saved views and the grouping of the clash list. */
@@ -33,11 +43,14 @@ export function ClashFilters({
   const { t } = useTranslation();
   const aantallen = useMemo(() => facetten(botsingen, filter), [botsingen, filter]);
   const [naam, setNaam] = useState<string | null>(null);
+  const [gekozen, setGekozen] = useState<string | null>(null);
   const [fout, setFout] = useState<string | null>(null);
   const loopt = useRef(false);
 
   const waardeNaam = (veld: keyof Facetten, waarde: string) => (VERTAALD[veld] ? t(`${VERTAALD[veld]}.${waarde}`) : waarde);
   const chipNaam = (chip: FilterChip) => (chip.veld === "tekst" ? `"${chip.waarde}"` : `${t(`filter_veld.${chip.veld}`)}: ${waardeNaam(chip.veld, chip.waarde)}`);
+
+  const actief = actieveWeergave(instellingen.weergaven, gekozen, filter, groep);
 
   const bewaar = async () => {
     const schoon = (naam ?? "").trim();
@@ -45,9 +58,25 @@ export function ClashFilters({
     loopt.current = true;
     setFout(null);
     try {
-      const weergaven = [...instellingen.weergaven.filter((v) => v.naam !== schoon), { naam: schoon, filter, groep }];
+      const weergaven = [...schoneWeergaven(instellingen.weergaven).filter((v) => v.naam !== schoon), { naam: schoon, filter, groep }];
       onInstellingen(await coordinatie.botsingInstellingenBewaar({ weergaven }));
       setNaam(null);
+      setGekozen(schoon);
+    } catch (e) {
+      setFout(describe(e));
+    } finally {
+      loopt.current = false;
+    }
+  };
+
+  const verwijder = async () => {
+    if (!actief || loopt.current) return;
+    loopt.current = true;
+    setFout(null);
+    try {
+      const weergaven = schoneWeergaven(instellingen.weergaven).filter((v) => v.naam !== actief.naam);
+      onInstellingen(await coordinatie.botsingInstellingenBewaar({ weergaven }));
+      setGekozen(null);
     } catch (e) {
       setFout(describe(e));
     } finally {
@@ -112,7 +141,7 @@ export function ClashFilters({
       )}
       <div className="issues__filter">
         <select className="oa-input" data-filter="groep" aria-label={t("groeperen_op")} value={groep} onChange={(e) => onGroep(e.target.value as ClashGroupBy)}>
-          {GROEPEN.map((g) => (
+          {GROEPERINGEN.map((g) => (
             <option key={g} value={g}>
               {t("groeperen_op")}: {t(`groep_door.${g}`)}
             </option>
@@ -122,13 +151,14 @@ export function ClashFilters({
           className="oa-input"
           data-filter="weergave"
           aria-label={t("weergave_kies")}
-          value=""
+          value={actief?.naam ?? ""}
           disabled={instellingen.weergaven.length === 0}
           onChange={(e) => {
-            const gekozen = instellingen.weergaven.find((v) => v.naam === e.target.value);
-            if (!gekozen) return;
-            onFilter({ ...leegFilter(), ...gekozen.filter });
-            onGroep(gekozen.groep);
+            const weergave = instellingen.weergaven.find((v) => v.naam === e.target.value);
+            setGekozen(weergave?.naam ?? null);
+            if (!weergave) return;
+            onFilter(filterUitWeergave(weergave.filter));
+            onGroep(groepUitWeergave(weergave.groep));
           }}
         >
           <option value="">{t("weergave_kies")}</option>
@@ -141,6 +171,11 @@ export function ClashFilters({
         {instellingen.mag_wijzigen && naam === null && (
           <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="weergave-bewaren" onClick={() => setNaam("")}>
             {t("weergave_bewaren")}
+          </button>
+        )}
+        {instellingen.mag_wijzigen && actief && (
+          <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="weergave-verwijderen" onClick={() => void verwijder()}>
+            {t("weergave_verwijderen")}
           </button>
         )}
       </div>

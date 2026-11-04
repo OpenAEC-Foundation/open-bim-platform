@@ -11,6 +11,7 @@ import type {
   ClashRule,
   ClashSetItem,
   ClashStatus,
+  ClashView,
 } from "./bcf";
 
 /** Structural classes of the quick choice "construction against installations". */
@@ -390,6 +391,40 @@ export function filterChips(f: ClashFilter): FilterChip[] {
 export function zonderChip(f: ClashFilter, chip: FilterChip): ClashFilter {
   if (chip.veld === "tekst") return { ...f, tekst: "" };
   return { ...f, [chip.veld]: (f[chip.veld] as string[]).filter((w) => w !== chip.waarde) };
+}
+
+export const GROEPERINGEN: ClashGroupBy[] = ["klassen", "verdieping", "disciplines", "ernst", "categorie", "raster", "ruimte", "ontwikkeling"];
+const EMMER_KEUZES: unknown[] = [BEOORDELEN, "contact", "aangrenzend", "weg", null];
+
+/** The filter of a saved view, filled in from the empty filter; whatever has the wrong shape is ignored. */
+export function filterUitWeergave(bewaard: unknown): ClashFilter {
+  const uit = leegFilter();
+  if (typeof bewaard !== "object" || bewaard === null) return uit;
+  const v = bewaard as Record<string, unknown>;
+  for (const veld of FACET_VELDEN) {
+    const lijst = v[veld];
+    if (Array.isArray(lijst)) (uit[veld] as unknown[]) = lijst.filter((w) => typeof w === "string");
+  }
+  if (typeof v.tekst === "string") uit.tekst = v.tekst;
+  if (EMMER_KEUZES.includes(v.emmer)) uit.emmer = v.emmer as ClashFilter["emmer"];
+  return uit;
+}
+
+/** The grouping of a saved view; an unknown one becomes the default. */
+export function groepUitWeergave(bewaard: unknown): ClashGroupBy {
+  return GROEPERINGEN.includes(bewaard as ClashGroupBy) ? (bewaard as ClashGroupBy) : "klassen";
+}
+
+/** The views as the server accepts them: an old view of the wrong shape must not block saving the others. */
+export function schoneWeergaven(weergaven: ClashView[]): ClashView[] {
+  return weergaven.map((v) => ({ naam: v.naam, filter: filterUitWeergave(v.filter), groep: groepUitWeergave(v.groep) }));
+}
+
+/** The chosen view, as long as the list still shows what it says. */
+export function actieveWeergave(weergaven: ClashView[], naam: string | null, f: ClashFilter, groep: ClashGroupBy): ClashView | null {
+  const v = weergaven.find((x) => x.naam === naam);
+  if (!v || groepUitWeergave(v.groep) !== groep) return null;
+  return JSON.stringify(filterUitWeergave(v.filter)) === JSON.stringify(filterUitWeergave(f)) ? v : null;
 }
 
 /** Open, new and gone rows of a round, from the rows as they are now. */

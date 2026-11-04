@@ -381,7 +381,8 @@ Boven de lijst:
 - een inklapbaar **verloop**: een klein staafdiagram van de laatste rondes, met een tabel als toegankelijk alternatief;
 - **filters** (ernst, status, categorie, disciplines, verdieping, ontwikkeling, tekst) met aantallen, en actieve filters als
   verwijderbare chips;
-- **weergaven**: kiezen en, met schrijfrecht, bewaren;
+- **weergaven**: kiezen en, met schrijfrecht, bewaren en de gekozen weergave verwijderen. Een oude weergave met een fout filter laat
+  de lijst niet crashen: de viewer vult aan vanuit het lege filter en negeert wat de verkeerde vorm heeft;
 - **groeperen op**: een keuzelijst.
 
 De voortgang van een lopende ronde staat als percentage.

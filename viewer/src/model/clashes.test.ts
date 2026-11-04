@@ -1,7 +1,8 @@
 import { describe, expect, test } from "vitest";
 import type { ModelInfo } from "../host/BimHost";
-import type { Clash, ClashElement, ClashRule, ClashRound } from "./bcf";
+import type { Clash, ClashElement, ClashRule, ClashRound, ClashView } from "./bcf";
 import {
+  actieveWeergave,
   bijnaMet,
   controlesUitRegels,
   disciplineVan,
@@ -18,11 +19,14 @@ import {
   standaardRegels,
   teBeslissen,
   filterChips,
+  filterUitWeergave,
+  groepUitWeergave,
   magBeslissen,
   MAX_CONTROLES,
   nietGereed,
   rijActies,
   rondeTitel,
+  schoneWeergaven,
   zonderChip,
   rondeTelling,
   houdVast,
@@ -415,6 +419,11 @@ describe("filteren en tellen", () => {
     expect(facetten(lijst, { ...f, emmer: "weg" }).ontwikkeling).toEqual({ weg: 1, eerder_weg: 1 });
   });
 
+  test("een rij zonder lijst in een filter laat niets crashen", () => {
+    const f = filterUitWeergave({ ernst: null, status: "nieuw", tekst: 3 });
+    expect(namen(filter(lijst, f))).toEqual(["k1", "k2", "k3"]);
+  });
+
   test("groeperen: grootste eerst, lege waarden samen", () => {
     const l = [
       botsing("a", "G", "nieuw", { verdieping: "01" }),
@@ -656,5 +665,42 @@ describe("de titel van een ronde", () => {
 
   test("twee rondes op een ander moment heten anders", () => {
     expect(rondeTitel("Harde botsingen", moment, "nl")).not.toBe(rondeTitel("Harde botsingen", new Date(2026, 10, 4, 14, 33), "nl"));
+  });
+});
+
+describe("weergaven", () => {
+  const v = (rest: Partial<ClashView> = {}): ClashView => ({ naam: "N", filter: { ...leegFilter(), ernst: ["kritiek"] }, groep: "verdieping", ...rest });
+
+  test("een oude, foute weergave wordt aangevuld vanuit het lege filter", () => {
+    expect(filterUitWeergave({ ernst: null, status: "nieuw", categorie: ["a", 3], tekst: 7, emmer: "onzin", vreemd: [] })).toEqual({
+      ...leegFilter(),
+      categorie: ["a"],
+    });
+    expect(filterUitWeergave({ ernst: ["groot"], tekst: "wand", emmer: "weg" })).toEqual({ ...leegFilter(), ernst: ["groot"], tekst: "wand", emmer: "weg" });
+    expect(filterUitWeergave({ emmer: null }).emmer).toBeNull();
+    for (const geen of [null, undefined, "tekst", 3, []]) expect(filterUitWeergave(geen)).toEqual(leegFilter());
+  });
+
+  test("een onbekende groepering wordt klassen", () => {
+    expect(groepUitWeergave("verdieping")).toBe("verdieping");
+    for (const geen of [null, undefined, "onzin", 3]) expect(groepUitWeergave(geen)).toBe("klassen");
+  });
+
+  test("de gekozen weergave telt zolang filter en groepering kloppen", () => {
+    const lijst = [v(), v({ naam: "Ander" })];
+    const f = lijst[0].filter;
+    expect(actieveWeergave(lijst, "N", f, "verdieping")?.naam).toBe("N");
+    expect(actieveWeergave(lijst, "N", { ...f, ernst: [] }, "verdieping")).toBeNull();
+    expect(actieveWeergave(lijst, "N", f, "klassen")).toBeNull();
+    expect(actieveWeergave(lijst, null, f, "verdieping")).toBeNull();
+    expect(actieveWeergave(lijst, "Weg", f, "verdieping")).toBeNull();
+    // A partial saved filter counts as the same filled-in filter.
+    const deels = { naam: "D", filter: { ernst: ["kritiek"] }, groep: "verdieping" } as unknown as ClashView;
+    expect(actieveWeergave([deels], "D", f, "verdieping")?.naam).toBe("D");
+  });
+
+  test("bewaren herstelt oude foute weergaven, zodat de server ze aanneemt", () => {
+    const fout = { naam: "Oud", filter: { ernst: null }, groep: null } as unknown as ClashView;
+    expect(schoneWeergaven([fout, v()])).toEqual([{ naam: "Oud", filter: leegFilter(), groep: "klassen" }, v()]);
   });
 });
