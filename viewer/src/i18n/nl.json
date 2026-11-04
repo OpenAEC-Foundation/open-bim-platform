@@ -105,17 +105,15 @@
   "botsing_status": {
     "nieuw": "Nieuw",
     "actief": "Actief",
-    "opgelost": "Opgelost",
-    "genegeerd": "Genegeerd"
+    "bevestigd": "Bevestigd",
+    "geaccepteerd": "Geaccepteerd",
+    "genegeerd": "Genegeerd",
+    "opgelost": "Opgelost"
   },
   "aantal_botsingen_one": "{{count}} botsing",
   "aantal_botsingen_other": "{{count}} botsingen",
-  "verberg_afgehandeld": "Opgeloste en genegeerde verbergen",
-  "geen_botsingen": "Geen botsingen te tonen.",
   "botsing_afstand": "{{mm}} mm",
-  "naar_issue": "Issue maken",
   "heeft_issue": "Issue",
-  "issue_gemaakt": "Issue „{{titel}}” gemaakt.",
   "koppeling": "Gekoppeld aan versie {{vorige}}: {{procent}}% van de elementen teruggevonden",
   "start_uitleg": "Kies wat je wilt controleren, of stel het zelf in.",
   "voorinstelling": {
@@ -181,5 +179,110 @@
     "klein": "Klein",
     "groot": "Groot",
     "kritiek": "Kritiek"
+  },
+  "emmer": {
+    "beoordelen": "Te beoordelen",
+    "contact": "Contact",
+    "aangrenzend": "Aangrenzend"
+  },
+  "emmers_label": "Botsingen per emmer",
+  "emmer_uitleg": {
+    "beoordelen": "Echte botsingen die jij beoordeelt",
+    "contact": "Elementen die elkaar bedoeld raken",
+    "aangrenzend": "Elementen die naast elkaar liggen"
+  },
+  "tel_open": "{{count}} open",
+  "tel_nieuw": "{{count}} nieuw",
+  "tel_weg": "{{count}} weg",
+  "regels_gewijzigd_uitleg": "De regels zijn veranderd sinds de vorige ronde, dus verschillen kunnen daaraan liggen.",
+  "ontwikkeling": {
+    "nieuw": "Nieuw",
+    "blijft": "Blijft",
+    "terug": "Terug",
+    "weg": "Weg",
+    "eerder_weg": "Eerder weg"
+  },
+  "filter_veld": {
+    "ernst": "Ernst",
+    "status": "Status",
+    "categorie": "Categorie",
+    "disciplines": "Disciplines",
+    "verdieping": "Verdieping",
+    "ontwikkeling": "Ontwikkeling"
+  },
+  "filter_optie": "{{waarde}} ({{aantal}})",
+  "filter_zoek": "Zoek op naam, klasse of GlobalId",
+  "filter_chip_weg": "{{label}} wissen",
+  "filters_wissen": "Filters wissen",
+  "weergave_kies": "Weergave kiezen",
+  "weergave_bewaren": "Weergave bewaren",
+  "weergave_naam": "Naam van de weergave",
+  "groeperen_op": "Groeperen op",
+  "groep_door": {
+    "klassen": "Klassen",
+    "verdieping": "Verdieping",
+    "disciplines": "Disciplines",
+    "ernst": "Ernst",
+    "categorie": "Categorie",
+    "raster": "Raster",
+    "ruimte": "Ruimte",
+    "ontwikkeling": "Ontwikkeling"
+  },
+  "groep_onbekend": "Onbekend",
+  "groep_alles_afwijzen": "Alles afwijzen",
+  "groep_alles_accepteren": "Alles accepteren",
+  "groep_vraag_afwijzen_one": "{{count}} botsing afwijzen?",
+  "groep_vraag_afwijzen_other": "{{count}} botsingen afwijzen?",
+  "groep_vraag_accepteren_one": "{{count}} botsing accepteren?",
+  "groep_vraag_accepteren_other": "{{count}} botsingen accepteren?",
+  "groep_te_veel": "Een groepsactie behandelt hoogstens {{max}} botsingen en deze groep heeft er {{count}} die nog beoordeeld moeten worden. Met de filters maak je de groep kleiner.",
+  "meer_tonen": "Meer tonen ({{aantal}} nog)",
+  "reden_veld": "Reden (mag leeg)",
+  "beoordelen_alleen_lezen": "Je kunt de botsingen bekijken, maar niet beoordelen.",
+  "actie": {
+    "bevestigen": "Bevestigen",
+    "accepteren": "Accepteren",
+    "afwijzen": "Afwijzen",
+    "heropenen": "Heropenen",
+    "naar_a": "Naar A",
+    "naar_b": "Naar B",
+    "alles_tonen": "Alles tonen"
+  },
+  "veld": {
+    "afstand": "Afstand",
+    "disciplines": "Disciplines",
+    "raster": "Raster",
+    "ruimte": "Ruimte",
+    "globalid_a": "GlobalId A",
+    "globalid_b": "GlobalId B",
+    "reden": "Reden",
+    "beoordeeld": "Beoordeeld door"
+  },
+  "botsing_lijst": "Botsingen",
+  "ronde_leeg": "Deze ronde heeft geen botsingen gevonden.",
+  "leeg_emmer": "Geen botsingen in deze emmer.",
+  "trend_titel": "Verloop",
+  "trend_laden": "Verloop laden…",
+  "trend_fout": "Het verloop kon niet worden geladen: {{melding}}",
+  "trend_opnieuw": "Opnieuw proberen",
+  "trend_leeg": "Er zijn geen eerdere rondes om mee te vergelijken.",
+  "trend_grafiek": "Aantal botsingen per ronde, de open botsingen donker",
+  "trend_kolom": {
+    "ronde": "Ronde",
+    "totaal": "Totaal",
+    "open": "Open",
+    "nieuw": "Nieuw",
+    "weg": "Weg"
+  },
+  "sneltoetsen_knop": "Sneltoetsen",
+  "sneltoetsen_titel": "Sneltoetsen in de lijst",
+  "sneltoets": {
+    "volgende": "Volgende botsing",
+    "vorige": "Vorige botsing",
+    "bevestigen": "Bevestigen (maakt een issue)",
+    "accepteren": "Accepteren",
+    "afwijzen": "Afwijzen, reden invullen en Enter",
+    "alles_tonen": "Alles tonen en de rij sluiten",
+    "hulp": "Deze lijst tonen"
   }
 }

@@ -1,9 +1,10 @@
-import { Icon, uiChevronLeft, uiPlus } from "@openaec/icons";
+import { Icon, uiPlus } from "@openaec/icons";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
-import type { Clash, ClashRound, ClashSettings, ClashStatus } from "../model/bcf";
-import { STATUSSEN, groepeer, telStatussen, voortgangProcent } from "../model/clashes";
+import type { ClashRound as RondeGegevens, ClashSettings } from "../model/bcf";
+import { voortgangProcent } from "../model/clashes";
+import { ClashRound } from "./ClashRound";
 import { ClashRules } from "./ClashRules";
 import { ClashStart } from "./ClashStart";
 import { describe } from "./format";
@@ -16,7 +17,7 @@ const GEEN_INSTELLINGEN: ClashSettings = { regels: [], weergaven: [], mag_wijzig
 /** Clash rounds of the project: start one between two sets of models, follow it, and work through the results. */
 export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: Coordinatie; weergave: Weergave; modellen: ModelInfo[] }) {
   const { t } = useTranslation();
-  const [rondes, setRondes] = useState<ClashRound[] | null>(null);
+  const [rondes, setRondes] = useState<RondeGegevens[] | null>(null);
   const [open, setOpen] = useState<string | null>(null);
   const [nieuw, setNieuw] = useState(false);
   const [regels, setRegels] = useState(false);
@@ -86,7 +87,19 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
       />
     );
   }
-  if (ronde) return <Ronde coordinatie={coordinatie} weergave={weergave} ronde={ronde} modellen={modellen} onTerug={() => setOpen(null)} />;
+  if (ronde) {
+    return (
+      <ClashRound
+        coordinatie={coordinatie}
+        weergave={weergave}
+        ronde={ronde}
+        modellen={modellen}
+        instellingen={instellingen ?? GEEN_INSTELLINGEN}
+        onInstellingen={setInstellingen}
+        onTerug={() => setOpen(null)}
+      />
+    );
+  }
 
   const klaar = modellen.filter((m) => m.status === "klaar");
   return (
@@ -121,150 +134,6 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
           </li>
         ))}
       </ul>
-    </div>
-  );
-}
-
-function Ronde({
-  coordinatie,
-  weergave,
-  ronde,
-  modellen,
-  onTerug,
-}: {
-  coordinatie: Coordinatie;
-  weergave: Weergave;
-  ronde: ClashRound;
-  modellen: ModelInfo[];
-  onTerug: () => void;
-}) {
-  const { t } = useTranslation();
-  const [botsingen, setBotsingen] = useState<Clash[] | null>(null);
-  const [actief, setActief] = useState<string | null>(null);
-  const [verberg, setVerberg] = useState(true);
-  const [melding, setMelding] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (ronde.status !== "klaar") return;
-    let cancelled = false;
-    coordinatie
-      .botsingen(ronde.naam)
-      .then((lijst) => {
-        if (!cancelled) setBotsingen(lijst);
-      })
-      .catch((e: unknown) => {
-        if (!cancelled) setMelding(describe(e));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [coordinatie, ronde.naam, ronde.status]);
-
-  const vervang = (b: Clash) => setBotsingen((lijst) => (lijst ?? []).map((x) => (x.naam === b.naam ? b : x)));
-  const toon = (b: Clash) => {
-    setActief(b.naam);
-    void weergave.isoleer(
-      { bestand: b.element_a.bestand, globalid: b.element_a.globalid },
-      { bestand: b.element_b.bestand, globalid: b.element_b.globalid },
-      b.punt,
-    );
-  };
-  const zetStatus = async (b: Clash, status: ClashStatus) => {
-    try {
-      vervang(await coordinatie.botsingStatus(b.naam, status));
-    } catch (e) {
-      setMelding(describe(e));
-    }
-  };
-  const naarIssue = async (b: Clash) => {
-    try {
-      const topic = await coordinatie.botsingNaarIssue(b.naam);
-      vervang({ ...b, issue: topic.guid });
-      setMelding(t("issue_gemaakt", { titel: topic.title }));
-    } catch (e) {
-      setMelding(describe(e));
-    }
-  };
-
-  const naam = (sleutel: string) => modellen.find((m) => m.bron.sleutel === sleutel)?.naam ?? sleutel;
-  const zichtbaar = (botsingen ?? []).filter((b) => !verberg || (b.status !== "opgelost" && b.status !== "genegeerd"));
-  const tel = telStatussen(botsingen ?? []);
-
-  return (
-    <div className="issue">
-      <div className="issue__kop">
-        <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={onTerug}>
-          <Icon svg={uiChevronLeft} size={14} /> {t("terug")}
-        </button>
-      </div>
-      <div className="inspector__title">
-        <strong>{ronde.titel}</strong>
-        <span>
-          {t(`soort_${ronde.soort}`)} · {t("tolerantie_waarde", { mm: Math.round(ronde.tolerantie * 1000) })} ·{" "}
-          {Object.entries(ronde.bron_versies)
-            .map(([bestand, versie]) => `${naam(bestand)} v${versie}`)
-            .join(", ")}
-        </span>
-      </div>
-      {ronde.status !== "klaar" && (
-        <p className={ronde.status === "fout" ? "viewer__error" : "viewer__hint"}>
-          {ronde.status === "fout" ? (ronde.fout?.melding ?? t("ronde_status.fout")) : t(`ronde_status.${ronde.status}`)}
-        </p>
-      )}
-      {melding && <p className="viewer__hint">{melding}</p>}
-      {botsingen && (
-        <>
-          <p className="issues__meta ronde__tel">
-            {STATUSSEN.map((s) => (
-              <span key={s}>{t(`botsing_status.${s}`)}: {tel[s]}</span>
-            ))}
-          </p>
-          <label className="model-list__toggle ronde__verberg">
-            <input type="checkbox" checked={verberg} onChange={(e) => setVerberg(e.target.checked)} />
-            <span>{t("verberg_afgehandeld")}</span>
-          </label>
-          {zichtbaar.length === 0 && <p className="viewer__hint">{t("geen_botsingen")}</p>}
-          {groepeer(zichtbaar).map(({ groep, botsingen: lijst }) => (
-            <section key={groep ?? ""} className="inspector__section">
-              <h3 className="inspector__section-title">
-                {groep ?? ""} ({lijst.length})
-              </h3>
-              <ul className="issue__lijst">
-                {lijst.map((b) => (
-                  <li key={b.naam} className="botsing" aria-current={actief === b.naam}>
-                    <button type="button" className="botsing__toon" onClick={() => toon(b)}>
-                      {t("botsing_afstand", { mm: Math.round(b.afstand * 1000) })}
-                      <code className="oa-code">{b.element_a.globalid}</code>
-                      <code className="oa-code">{b.element_b.globalid}</code>
-                    </button>
-                    <div className="botsing__acties">
-                      <select
-                        className="oa-input"
-                        value={b.status}
-                        onChange={(e) => void zetStatus(b, e.target.value as ClashStatus)}
-                        aria-label={t("status_veld")}
-                      >
-                        {STATUSSEN.map((s) => (
-                          <option key={s} value={s}>
-                            {t(`botsing_status.${s}`)}
-                          </option>
-                        ))}
-                      </select>
-                      {b.issue ? (
-                        <span className="oa-badge oa-badge--info">{t("heeft_issue")}</span>
-                      ) : (
-                        <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => void naarIssue(b)}>
-                          {t("naar_issue")}
-                        </button>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ))}
-        </>
-      )}
     </div>
   );
 }

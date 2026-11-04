@@ -322,13 +322,53 @@ export function groepeer(botsingen: Clash[], op: ClashGroupBy = "klassen"): { gr
     );
 }
 
-export function telStatussen(botsingen: Clash[]): Record<ClashStatus, number> {
-  const tel = Object.fromEntries(STATUSSEN.map((s) => [s, 0])) as Record<ClashStatus, number>;
-  for (const b of botsingen) tel[b.status] += 1;
+const TE_BEOORDELEN: ClashStatus[] = ["nieuw", "actief"];
+/** Statuses that still count as open work in the summary of a round. */
+const OPEN_STATUSSEN: ClashStatus[] = ["nieuw", "actief", "bevestigd"];
+
+/** The longest reason the server accepts. */
+export const REDEN_MAX = 200;
+/** The most rows one group action may handle. */
+export const GROEPSACTIE_MAX = 500;
+
+/** The rows that still wait for a decision (new or active); a group action touches only these. */
+export function teBeslissen(botsingen: Clash[]): Clash[] {
+  return botsingen.filter((b) => TE_BEOORDELEN.includes(b.status));
+}
+
+/** An active filter as a chip that can be clicked away. The bucket is not a chip. */
+export type FilterChip = { veld: keyof Facetten | "tekst"; waarde: string };
+
+export function filterChips(f: ClashFilter): FilterChip[] {
+  const chips: FilterChip[] = [];
+  for (const veld of FACET_VELDEN) for (const waarde of f[veld]) chips.push({ veld, waarde });
+  if (f.tekst.trim() !== "") chips.push({ veld: "tekst", waarde: f.tekst.trim() });
+  return chips;
+}
+
+export function zonderChip(f: ClashFilter, chip: FilterChip): ClashFilter {
+  if (chip.veld === "tekst") return { ...f, tekst: "" };
+  return { ...f, [chip.veld]: (f[chip.veld] as string[]).filter((w) => w !== chip.waarde) };
+}
+
+/** Open, new and gone rows of a round, from the rows as they are now. */
+export function rondeTelling(botsingen: Clash[]): { open: number; nieuw: number; weg: number } {
+  const tel = { open: 0, nieuw: 0, weg: 0 };
+  for (const b of botsingen) {
+    if (b.ontwikkeling === "weg") tel.weg += 1;
+    if (!isGevonden(b)) continue;
+    if (b.ontwikkeling === "nieuw") tel.nieuw += 1;
+    if (emmerVan(b) === BEOORDELEN && OPEN_STATUSSEN.includes(b.status)) tel.open += 1;
+  }
   return tel;
 }
 
-const TE_BEOORDELEN: ClashStatus[] = ["nieuw", "actief"];
+/** The shown list, plus the pinned row (one just decided) when the filters would hide it now. */
+export function houdVast(getoond: Clash[], alle: Clash[], naam: string | null): Clash[] {
+  if (naam === null || getoond.some((b) => b.naam === naam)) return getoond;
+  const rij = alle.find((b) => b.naam === naam);
+  return rij ? [...getoond, rij] : getoond;
+}
 
 /** Moves through the shown list: to the next one still to judge (round, not onto itself), else the neighbour. */
 function sprong(lijst: Clash[], huidige: string | null, richting: 1 | -1): string | null {

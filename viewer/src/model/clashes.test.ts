@@ -18,7 +18,13 @@ import {
   overlapWaarschuwing,
   sneltoets,
   standaardRegels,
-  telStatussen,
+  teBeslissen,
+  filterChips,
+  zonderChip,
+  rondeTelling,
+  houdVast,
+  GROEPSACTIE_MAX,
+  REDEN_MAX,
   vorige,
   voortgangProcent,
   volgende,
@@ -110,8 +116,7 @@ describe("clashes", () => {
     expect(groepeer([botsing("x", "B × C"), botsing("y", "A × C")]).map((g) => g.groep)).toEqual(["A × C", "B × C"]);
   });
 
-  test("statussen tellen", () => {
-    expect(telStatussen(BOTSINGEN)).toEqual({ nieuw: 2, actief: 0, bevestigd: 0, geaccepteerd: 0, genegeerd: 1, opgelost: 1 });
+  test("de statussen", () => {
     expect(STATUSSEN).toEqual(["nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost"]);
   });
 
@@ -482,5 +487,55 @@ describe("voortgangProcent", () => {
     expect(voortgangProcent(1.2)).toBe(100);
     expect(voortgangProcent(-0.1)).toBe(0);
     expect(voortgangProcent(Number.NaN)).toBe(0);
+  });
+});
+
+describe("werklijst", () => {
+  test("alleen nieuw en actief moet nog beslist worden", () => {
+    const rijen = [b("1", "nieuw"), b("2", "actief"), b("3", "bevestigd"), b("4", "geaccepteerd"), b("5", "genegeerd"), b("6", "opgelost")];
+    expect(teBeslissen(rijen).map((x) => x.naam)).toEqual(["1", "2"]);
+  });
+
+  test("de grenzen van de server", () => {
+    expect(REDEN_MAX).toBe(200);
+    expect(GROEPSACTIE_MAX).toBe(500);
+  });
+
+  test("chips uit een filter, zonder de emmer", () => {
+    const f = { ...leegFilter(), ernst: ["groot" as const, "kritiek" as const], verdieping: ["00"], tekst: " muur " };
+    expect(filterChips(f)).toEqual([
+      { veld: "ernst", waarde: "groot" },
+      { veld: "ernst", waarde: "kritiek" },
+      { veld: "verdieping", waarde: "00" },
+      { veld: "tekst", waarde: "muur" },
+    ]);
+    expect(filterChips(leegFilter())).toEqual([]);
+  });
+
+  test("een chip weghalen laat de rest en de emmer staan", () => {
+    const f = { ...leegFilter(), emmer: "contact" as const, ernst: ["groot" as const, "kritiek" as const], tekst: "muur" };
+    expect(zonderChip(f, { veld: "ernst", waarde: "groot" })).toEqual({ ...f, ernst: ["kritiek"] });
+    expect(zonderChip(f, { veld: "tekst", waarde: "muur" })).toEqual({ ...f, tekst: "" });
+  });
+
+  test("open, nieuw en weg van een ronde", () => {
+    const rijen = [
+      botsing("1", "G", "nieuw", { ontwikkeling: "nieuw" }),
+      botsing("2", "G", "bevestigd", { ontwikkeling: "blijft" }),
+      botsing("3", "G", "geaccepteerd", { ontwikkeling: "blijft" }),
+      botsing("4", "G", "nieuw", { ontwikkeling: "blijft", emmer: "contact" }),
+      botsing("5", "G", "actief", { ontwikkeling: "weg" }),
+      botsing("6", "G", "nieuw", { ontwikkeling: null, emmer: null }),
+    ];
+    expect(rondeTelling(rijen)).toEqual({ open: 3, nieuw: 1, weg: 1 });
+  });
+
+  test("een zojuist besliste rij blijft in de lijst staan", () => {
+    const alle = [b("1", "nieuw"), b("2", "nieuw"), b("3", "genegeerd")];
+    const getoond = [alle[0], alle[1]];
+    expect(houdVast(getoond, alle, "3").map((x) => x.naam)).toEqual(["1", "2", "3"]);
+    expect(houdVast(getoond, alle, "2")).toBe(getoond);
+    expect(houdVast(getoond, alle, null)).toBe(getoond);
+    expect(houdVast(getoond, alle, "onbekend")).toBe(getoond);
   });
 });

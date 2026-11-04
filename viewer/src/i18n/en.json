@@ -105,17 +105,15 @@
   "botsing_status": {
     "nieuw": "New",
     "actief": "Active",
-    "opgelost": "Resolved",
-    "genegeerd": "Ignored"
+    "bevestigd": "Confirmed",
+    "geaccepteerd": "Accepted",
+    "genegeerd": "Ignored",
+    "opgelost": "Resolved"
   },
   "aantal_botsingen_one": "{{count}} clash",
   "aantal_botsingen_other": "{{count}} clashes",
-  "verberg_afgehandeld": "Hide resolved and ignored",
-  "geen_botsingen": "No clashes to show.",
   "botsing_afstand": "{{mm}} mm",
-  "naar_issue": "Create issue",
   "heeft_issue": "Issue",
-  "issue_gemaakt": "Issue “{{titel}}” created.",
   "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again",
   "start_uitleg": "Choose what to check, or set it up yourself.",
   "voorinstelling": {
@@ -181,5 +179,110 @@
     "klein": "Small",
     "groot": "Large",
     "kritiek": "Critical"
+  },
+  "emmer": {
+    "beoordelen": "To review",
+    "contact": "Contact",
+    "aangrenzend": "Adjacent"
+  },
+  "emmers_label": "Clashes per bucket",
+  "emmer_uitleg": {
+    "beoordelen": "Real clashes for you to review",
+    "contact": "Elements that are meant to touch",
+    "aangrenzend": "Elements that lie next to each other"
+  },
+  "tel_open": "{{count}} open",
+  "tel_nieuw": "{{count}} new",
+  "tel_weg": "{{count}} gone",
+  "regels_gewijzigd_uitleg": "The rules changed since the previous round, so differences may be caused by that.",
+  "ontwikkeling": {
+    "nieuw": "New",
+    "blijft": "Remains",
+    "terug": "Back",
+    "weg": "Gone",
+    "eerder_weg": "Gone earlier"
+  },
+  "filter_veld": {
+    "ernst": "Severity",
+    "status": "Status",
+    "categorie": "Category",
+    "disciplines": "Disciplines",
+    "verdieping": "Storey",
+    "ontwikkeling": "Development"
+  },
+  "filter_optie": "{{waarde}} ({{aantal}})",
+  "filter_zoek": "Search by name, class or GlobalId",
+  "filter_chip_weg": "Remove {{label}}",
+  "filters_wissen": "Clear filters",
+  "weergave_kies": "Choose a view",
+  "weergave_bewaren": "Save view",
+  "weergave_naam": "Name of the view",
+  "groeperen_op": "Group by",
+  "groep_door": {
+    "klassen": "Classes",
+    "verdieping": "Storey",
+    "disciplines": "Disciplines",
+    "ernst": "Severity",
+    "categorie": "Category",
+    "raster": "Grid",
+    "ruimte": "Space",
+    "ontwikkeling": "Development"
+  },
+  "groep_onbekend": "Unknown",
+  "groep_alles_afwijzen": "Reject all",
+  "groep_alles_accepteren": "Accept all",
+  "groep_vraag_afwijzen_one": "Reject {{count}} clash?",
+  "groep_vraag_afwijzen_other": "Reject {{count}} clashes?",
+  "groep_vraag_accepteren_one": "Accept {{count}} clash?",
+  "groep_vraag_accepteren_other": "Accept {{count}} clashes?",
+  "groep_te_veel": "A group action handles at most {{max}} clashes and this group has {{count}} still to review. Filtering makes the group smaller.",
+  "meer_tonen": "Show more ({{aantal}} left)",
+  "reden_veld": "Reason (may be empty)",
+  "beoordelen_alleen_lezen": "You can view the clashes but not review them.",
+  "actie": {
+    "bevestigen": "Confirm",
+    "accepteren": "Accept",
+    "afwijzen": "Reject",
+    "heropenen": "Reopen",
+    "naar_a": "To A",
+    "naar_b": "To B",
+    "alles_tonen": "Show all"
+  },
+  "veld": {
+    "afstand": "Distance",
+    "disciplines": "Disciplines",
+    "raster": "Grid",
+    "ruimte": "Space",
+    "globalid_a": "GlobalId A",
+    "globalid_b": "GlobalId B",
+    "reden": "Reason",
+    "beoordeeld": "Reviewed by"
+  },
+  "botsing_lijst": "Clashes",
+  "ronde_leeg": "This round found no clashes.",
+  "leeg_emmer": "No clashes in this bucket.",
+  "trend_titel": "Trend",
+  "trend_laden": "Loading the trend…",
+  "trend_fout": "The trend could not be loaded: {{melding}}",
+  "trend_opnieuw": "Try again",
+  "trend_leeg": "There are no earlier rounds to compare with.",
+  "trend_grafiek": "Number of clashes per round, the open ones dark",
+  "trend_kolom": {
+    "ronde": "Round",
+    "totaal": "Total",
+    "open": "Open",
+    "nieuw": "New",
+    "weg": "Gone"
+  },
+  "sneltoetsen_knop": "Shortcuts",
+  "sneltoetsen_titel": "Shortcuts in the list",
+  "sneltoets": {
+    "volgende": "Next clash",
+    "vorige": "Previous clash",
+    "bevestigen": "Confirm (creates an issue)",
+    "accepteren": "Accept",
+    "afwijzen": "Reject, type a reason and press Enter",
+    "alles_tonen": "Show all and close the row",
+    "hulp": "Show this list"
   }
 }
