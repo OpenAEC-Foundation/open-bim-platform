@@ -12,7 +12,7 @@ import math
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import cint, flt, now_datetime, time_diff_in_seconds
 
 from openaec_bim import afgeleid, api, issues, kern, koppeling
 
@@ -24,6 +24,9 @@ MAX_CONTROLES = 30
 STATUSSEN = ("nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost")
 # De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
 GELDIG = 24 * 3600
+LOPEND = ("wacht", "bezig")
+# Verandert er zo lang (seconden) niets aan de status of de voortgang, dan komt de ronde niet meer klaar.
+MAX_STIL = 2 * 3600
 VELDEN = (
 	"ronde",
 	"sleutel",
@@ -152,7 +155,7 @@ def start_controles(
 	voorinstelling = (voorinstelling or "").strip() or None
 	reeks = voorinstelling or "sets:" + hashlib.sha1(_json([set_a, set_b, soort]).encode()).hexdigest()
 	# De vorige ronde wordt hier bepaald: twee lopende rondes zouden dezelfde voorganger delen en de keten splitsen.
-	if frappe.db.exists(RONDE, {"project": project.name, "reeks": reeks, "status": ("in", ("wacht", "bezig"))}):
+	if frappe.db.exists(RONDE, {"project": project.name, "reeks": reeks, "status": ("in", LOPEND)}):
 		_weiger(_("Deze controle loopt al. Wacht tot die ronde klaar is en start dan een nieuwe."), "ronde_loopt")
 	vorige = frappe.db.get_value(
 		RONDE, {"project": project.name, "status": "klaar", "reeks": reeks}, "name", order_by="creation desc"
@@ -208,8 +211,9 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 
 
 def bijwerken(doc) -> None:
-	"""De stand van een lopende ronde bij de kern ophalen; bij klaar de botsingen inlezen."""
-	if doc.status not in ("wacht", "bezig") or not doc.kern_taak:
+	"""De stand van een lopende ronde bij de kern ophalen; bij klaar de botsingen inlezen. Alleen wat echt verandert, wordt
+	opgeslagen: `_verloop_als_stil` leest aan `modified` hoe lang er niets gebeurd is."""
+	if doc.status not in LOPEND or not doc.kern_taak:
 		return
 	try:
 		taak = kern.taak(doc.kern_taak)
@@ -228,8 +232,9 @@ def bijwerken(doc) -> None:
 		verwerk(doc.name)
 		doc.reload()
 		return
-	if status in ("wacht", "bezig"):
-		voortgang = flt(taak.get("voortgang"))
+	if status in LOPEND:
+		# Afgerond zoals de kolom het bewaart: anders is bijvoorbeeld 0,6333... bij elke vraag weer een verandering.
+		voortgang = flt(taak.get("voortgang"), doc.precision("voortgang"))
 		if doc.status == status and flt(doc.voortgang) == voortgang:
 			return
 		doc.status = status
@@ -240,22 +245,27 @@ def bijwerken(doc) -> None:
 	doc.save(ignore_permissions=True)
 
 
-def _werk_bij(doc) -> None:
-	"""Eén ronde bijwerken. Een fout blijft bij die ronde: ze krijgt status `fout` met de melding, en de rest gaat door."""
-	frappe.db.savepoint("openaec_bim_ronde")
-	try:
-		afgeleid.zonder_botsing(bijwerken, doc)
-	except Exception as fout:
-		frappe.db.rollback(save_point="openaec_bim_ronde")
-		frappe.log_error(title=f"Botsingsronde {doc.name}")
-		doc.reload()
+def _verloop_als_stil(doc) -> None:
+	"""Een lopende ronde houdt haar reeks bezet: er kan niets starten en haar voorganger niet beslist worden. Verandert er te
+	lang niets (de kern is weg, de koppeling komt niet, de opslag blijft storen), dan eindigt ze en start de gebruiker opnieuw."""
+	if doc.status in LOPEND and time_diff_in_seconds(now_datetime(), doc.modified) >= MAX_STIL:
 		doc.status = "fout"
-		doc.fout = json.dumps({"error_code": "inlezen_mislukt", "melding": str(fout)})
+		melding = _("Deze ronde is gestopt: er is twee uur lang niets veranderd. Start een nieuwe ronde.")
+		doc.fout = json.dumps({"error_code": "ronde_verlopen", "melding": melding})
 		doc.save(ignore_permissions=True)
 
 
+def _werk_bij(doc) -> None:
+	"""Eén lopende ronde bijwerken; wat er misgaat, blijft bij die ronde (`afgeleid.per_stuk`). De tijdgrens staat hier en niet
+	in `bijwerken`, omdat een tijdelijke fout `bijwerken` halverwege afbreekt: die grens stopt ook het opnieuw proberen."""
+	if doc.status not in LOPEND:
+		return
+	afgeleid.per_stuk(bijwerken, doc, _("De uitkomst van deze ronde kon niet worden ingelezen. Start een nieuwe ronde."))
+	afgeleid.zonder_botsing(_verloop_als_stil, doc)
+
+
 def volg_lopende() -> None:
-	for naam in frappe.get_all(RONDE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
+	for naam in frappe.get_all(RONDE, filters={"status": ("in", LOPEND)}, pluck="name"):
 		_werk_bij(frappe.get_doc(RONDE, naam))
 		frappe.db.commit()
 
@@ -651,6 +661,7 @@ def naar_issue(botsing: str) -> dict:
 	issues._vereis_meedoen(project)
 	if doc.issue and frappe.db.exists(issues.ISSUE, doc.issue):
 		return issues.topic(doc.issue)
+	_vereis_geen_opvolger(doc.ronde)
 	a, b = json.loads(doc.element_a), json.loads(doc.element_b)
 	soorten = issues._regels(project.soorten)
 	klassen = [k.strip() for k in (doc.groep or "").split("×")] + ["", ""]

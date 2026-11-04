@@ -2,12 +2,21 @@ import json
 from unittest.mock import patch
 
 import frappe
+from botocore.exceptions import (
+	ClientError,
+	ConnectTimeoutError,
+	EndpointConnectionError,
+	IncompleteReadError,
+	ReadTimeoutError,
+)
+from frappe.utils import add_to_date, now_datetime, time_diff_in_seconds
 from openaec_storage import api as opslag
 from openaec_storage import s3
 from openaec_storage.tests.hulp import upload
 
-from openaec_bim import audit, botsingen, issues
+from openaec_bim import afgeleid, audit, botsingen, issues
 from openaec_bim import koppeling as koppeling_mod
+from openaec_bim.kern import KernFout
 from openaec_bim.tests.hulp import ProjectTest
 from openaec_bim.tests.test_koppeling import uitkomst
 
@@ -880,3 +889,250 @@ class TestBotsingen(ProjectTest):
 		self.assertEqual(uit["weergaven"][0]["filter"], goed)
 		for ook_goed in ({"emmer": None}, {}):
 			botsingen.instellingen_bewaar(self.project, weergaven=[{"naam": "N", "filter": ook_goed, "groep": None}])
+
+	# Tijdelijke en blijvende fouten
+
+	def te_lezen(self, paren=(("w1", "k1"),), **extra):
+		"""Een ronde waarvan de kern klaar is en die de planner nog moet inlezen."""
+		return self.lever(botsingen.start_controles(self.project, [self.controle()], **extra), list(paren), bijwerken=False)
+
+	def foutlog(self, ronde):
+		return frappe.get_all("Error Log", {"method": f"BIM Botsingsronde {ronde}"}, pluck="error")
+
+	def test_een_tijdelijke_fout_maakt_een_gezonde_ronde_niet_definitief_fout(self):
+		adres = "http://opslag.intern:9000/geheim"
+		fouten = {
+			"traag": ClientError({"Error": {"Code": "SlowDown", "Message": adres}}, "GetObject"),
+			"storing": ClientError({"Error": {"Code": "InternalError", "Message": adres}}, "GetObject"),
+			"weg": EndpointConnectionError(endpoint_url=adres),
+			"time-out": ReadTimeoutError(endpoint_url=adres),
+			"verbinding": ConnectTimeoutError(endpoint_url=adres),
+			"half": IncompleteReadError(actual_bytes=1, expected_bytes=2),
+		}
+		echt = afgeleid.lees_object
+		for naam, fout in fouten.items():
+			with self.subTest(naam):
+				ronde = self.te_lezen(voorinstelling=naam)
+				with patch.object(afgeleid, "lees_object", side_effect=fout):
+					botsingen.volg_lopende()
+				doc = frappe.get_doc("BIM Botsingsronde", ronde)
+				self.assertIn(doc.status, ("wacht", "bezig"))
+				self.assertFalse(doc.fout)
+				self.assertEqual(len(self.foutlog(ronde)), 1)
+				# De volgende tik lukt het wel.
+				with patch.object(afgeleid, "lees_object", side_effect=echt):
+					botsingen.volg_lopende()
+				doc.reload()
+				self.assertEqual((doc.status, doc.aantal), ("klaar", 1))
+
+	def test_een_lock_wait_draait_het_inlezen_terug_en_de_volgende_tik_lukt_het(self):
+		ronde = self.te_lezen()
+		with patch.object(botsingen, "_samenvatting", side_effect=frappe.QueryTimeoutError("1205")):
+			botsingen.volg_lopende()
+		self.assertIn(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), ("wacht", "bezig"))
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": ronde}), 0)
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "klaar")
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": ronde}), 1)
+
+	def test_wat_zich_herhaalt_is_definitief_fout_met_een_vaste_tekst(self):
+		geheim = "http://opslag.intern:9000/geheim SELECT 1"
+
+		def validatie(_doc):
+			frappe.throw(geheim)
+
+		gevallen = {
+			"json": lambda r: s3.zet(frappe.db.get_value("BIM Botsingsronde", r, "resultaat"), b"geen json"),
+			"sleutel": lambda r: s3.zet(frappe.db.get_value("BIM Botsingsronde", r, "resultaat"), b'[{"a": {}}]'),
+			"weg": lambda r: s3._client().delete_object(
+				Bucket=s3.bucket(), Key=frappe.db.get_value("BIM Botsingsronde", r, "resultaat")
+			),
+		}
+		meldingen = set()
+		for naam, maak_kapot in gevallen.items():
+			with self.subTest(naam):
+				ronde = self.te_lezen(voorinstelling=naam)
+				maak_kapot(ronde)
+				botsingen.volg_lopende()
+				doc = frappe.get_doc("BIM Botsingsronde", ronde)
+				self.assertEqual(doc.status, "fout")
+				fout = json.loads(doc.fout)
+				self.assertEqual(fout["error_code"], "inlezen_mislukt")
+				meldingen.add(fout["melding"])
+				self.assertEqual(len(self.foutlog(ronde)), 1)
+		ronde = self.te_lezen(voorinstelling="validatie")
+		frappe.clear_messages()
+		with patch.object(botsingen, "bijwerken", side_effect=validatie):
+			botsingen.volg_lopende()
+		doc = frappe.get_doc("BIM Botsingsronde", ronde)
+		self.assertEqual(doc.status, "fout")
+		meldingen.add(json.loads(doc.fout)["melding"])
+		# Eén tekst voor elke oorzaak; de details staan alleen in het foutenlog, en ook niet in het antwoord aan de viewer.
+		self.assertEqual(len(meldingen), 1)
+		self.assertNotIn("geheim", meldingen.pop())
+		self.assertIn(geheim, self.foutlog(ronde)[0])
+		self.assertEqual(frappe.get_message_log(), [])
+
+	def test_een_melding_van_de_kern_blijft_staan(self):
+		ronde = self.start()
+		doc = frappe.get_doc("BIM Botsingsronde", ronde)
+		self.kern.taken[doc.kern_taak] = {"status": "fout", "fout": {"error_code": "taak_gestopt", "melding": "De taak stopte."}}
+		botsingen.volg_lopende()
+		doc.reload()
+		self.assertEqual(json.loads(doc.fout), {"error_code": "taak_gestopt", "melding": "De taak stopte."})
+
+	def test_twee_gelijktijdige_fouten_vallen_niet_uit_de_lijst(self):
+		ronde = self.te_lezen()
+		klasse = type(frappe.get_doc("BIM Botsingsronde", ronde))
+		with (
+			patch.object(botsingen, "bijwerken", side_effect=ValueError("kapot")),
+			patch.object(klasse, "save", side_effect=frappe.TimestampMismatchError("ouder")),
+		):
+			botsingen.volg_lopende()
+		# Het opslaan van de fout botste: de ronde loopt nog, en de volgende tik zet de fout alsnog.
+		self.assertIn(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), ("wacht", "bezig"))
+		with patch.object(botsingen, "bijwerken", side_effect=ValueError("kapot")):
+			botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "fout")
+
+	def test_een_savepoint_dat_weg_is_stopt_de_foutafhandeling_niet(self):
+		ronde = self.te_lezen()
+		echt = frappe.db.rollback
+
+		def terugdraaien(save_point=None):
+			if save_point == "openaec_bim_stuk":
+				raise frappe.db.OperationalError(1305, "savepoint bestaat niet")
+			if save_point:
+				echt(save_point=save_point)
+
+		with (
+			patch.object(botsingen, "bijwerken", side_effect=ValueError("kapot")),
+			patch.object(frappe.db, "rollback", side_effect=terugdraaien) as terug,
+		):
+			botsingen.volg_lopende()
+		self.assertIn({"save_point": "openaec_bim_stuk"}, [c.kwargs for c in terug.call_args_list])
+		self.assertIn({}, [c.kwargs for c in terug.call_args_list])
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "fout")
+
+	# Een ronde die vastloopt
+
+	def stil_sinds(self, ronde, seconden):
+		frappe.db.set_value(
+			"BIM Botsingsronde",
+			ronde,
+			"modified",
+			add_to_date(now_datetime(), seconds=-seconden),
+			update_modified=False,
+		)
+
+	def lopende_ronde(self, **taak):
+		ronde = self.start()
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.kern.taken[kern_taak] = {"status": "bezig", "voortgang": 0.4, **taak}
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "bezig")
+		return ronde
+
+	def assertVerlopen(self, ronde):
+		doc = frappe.get_doc("BIM Botsingsronde", ronde)
+		self.assertEqual(doc.status, "fout")
+		fout = json.loads(doc.fout)
+		self.assertEqual(fout["error_code"], "ronde_verlopen")
+		self.assertTrue(fout["melding"])
+
+	def test_een_ronde_zonder_verandering_verloopt_na_de_grens(self):
+		ronde = self.lopende_ronde()
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		botsingen.volg_lopende()
+		self.assertVerlopen(ronde)
+		# De weigeringen zijn voorbij: starten kan weer, en de vorige ronde is geen voorganger van de vastgelopen ronde.
+		nieuw = self.start()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", nieuw, "status"), "wacht")
+
+	def test_een_ronde_verloopt_ook_in_de_lijst_van_rondes(self):
+		ronde = self.lopende_ronde()
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		[uit] = botsingen.rondes(self.project)
+		self.assertEqual((uit["status"], uit["fout"]["error_code"]), ("fout", "ronde_verlopen"))
+
+	def test_een_ronde_net_voor_de_grens_loopt_door(self):
+		ronde = self.lopende_ronde()
+		self.stil_sinds(ronde, botsingen.MAX_STIL - 60)
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "bezig")
+
+	def test_een_ronde_met_voortgang_die_verandert_verloopt_niet(self):
+		ronde = self.lopende_ronde()
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.kern.taken[kern_taak] = {"status": "bezig", "voortgang": 0.5}
+		botsingen.volg_lopende()
+		doc = frappe.get_doc("BIM Botsingsronde", ronde)
+		self.assertEqual((doc.status, doc.voortgang), ("bezig", 0.5))
+		# De klok begint opnieuw.
+		self.assertLess(time_diff_in_seconds(now_datetime(), doc.modified), 60)
+
+	def test_een_voortgang_met_meer_decimalen_dan_de_kolom_is_geen_verandering(self):
+		# Bij drie controles geeft de kern 0,6333...; in de kolom staat 0,6333. Dat mag niet bij elke vraag als nieuw tellen.
+		ronde = self.lopende_ronde(voortgang=1.9 / 3)
+		self.stil_sinds(ronde, 3600)
+		voor = frappe.db.get_value("BIM Botsingsronde", ronde, "modified")
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "modified"), voor)
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		botsingen.volg_lopende()
+		self.assertVerlopen(ronde)
+
+	def test_een_kern_die_twee_uur_weg_is_verloopt_de_ronde(self):
+		ronde = self.lopende_ronde()
+		weg = KernFout("kern_onbereikbaar", "weg")
+		with patch("openaec_bim.kern.roep", side_effect=weg):
+			botsingen.volg_lopende()
+			self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "bezig")
+			self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+			botsingen.volg_lopende()
+		self.assertVerlopen(ronde)
+
+	def test_een_ronde_die_op_een_koppeling_wacht_verloopt_ook(self):
+		eerste = self.ronde_met([("w1", "k1")])
+		self.nieuwe_versie_installaties(klaar=False)
+		tweede = self.lever(self.start(), [("w1", "k2")], bijwerken=False)
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", tweede, "status"), "bezig")
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", tweede, "status"), "bezig")
+		self.stil_sinds(tweede, botsingen.MAX_STIL + 60)
+		botsingen.volg_lopende()
+		self.assertVerlopen(tweede)
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": tweede}), 0)
+		self.assertFalse(botsingen._heeft_opvolger(eerste))
+
+	def test_de_grens_stopt_ook_het_opnieuw_proberen_na_een_tijdelijke_fout(self):
+		ronde = self.te_lezen()
+		fout = EndpointConnectionError(endpoint_url="http://opslag.intern:9000")
+		with patch.object(afgeleid, "lees_object", side_effect=fout):
+			botsingen.volg_lopende()
+			self.assertIn(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), ("wacht", "bezig"))
+			self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+			botsingen.volg_lopende()
+		self.assertVerlopen(ronde)
+
+	def test_na_de_grens_gaat_een_resultaat_dat_wel_te_lezen_is_gewoon_voor(self):
+		ronde = self.te_lezen()
+		self.stil_sinds(ronde, botsingen.MAX_STIL + 60)
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "status"), "klaar")
+
+	def test_naar_issue_weigert_op_een_ronde_met_een_opvolger(self):
+		eerste = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		rij = self.rij(eerste, "w1")
+		met_issue = self.rij(eerste, "w2")
+		botsingen.naar_issue(met_issue.name)
+		self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		frappe.local.response.pop("foutcode", None)
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.naar_issue(rij.name)
+		self.assertEqual(frappe.local.response.pop("foutcode", None), "ronde_heeft_opvolger")
+		self.assertFalse(frappe.db.get_value("BIM Botsing", rij.name, "issue"))
+		# Een issue dat er al is, blijft te openen.
+		self.assertEqual(botsingen.naar_issue(met_issue.name)["guid"], frappe.db.get_value("BIM Botsing", met_issue.name, "issue"))

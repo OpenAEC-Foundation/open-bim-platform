@@ -3,11 +3,13 @@ import json
 from unittest.mock import patch
 
 import frappe
+from botocore.exceptions import EndpointConnectionError
+from openaec_storage import s3
 from openaec_storage.tests.hulp import upload
 
-from openaec_bim import afgeleid, api, issues
+from openaec_bim import afgeleid, api, botsingen, issues
 from openaec_bim import koppeling as koppeling_mod
-from openaec_bim.tests.hulp import ProjectTest
+from openaec_bim.tests.hulp import ProjectTest, maak_klaar
 
 
 def uitkomst(terugval=(), niet_gevonden=(), matchrate=1.0):
@@ -148,3 +150,118 @@ class TestKoppeling(ProjectTest):
 				{"ifc_guid": "onbekend", "bestand": None, "versie": None, "teruggevonden": False},
 			],
 		)
+
+	# Een fout blijft bij het stuk waar ze hoort
+
+	def lopende_ronde(self):
+		self.model_klaar(self.installaties)
+		self.model_klaar(self.constructie)
+		return botsingen.start(self.project, [{"bestand": self.constructie}], [{"bestand": self.installaties}], "hard", 0.0)
+
+	def test_een_blijvende_fout_in_een_omzetting_houdt_de_tik_niet_tegen(self):
+		ronde = self.lopende_ronde()
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.kern.taken[kern_taak] = {"status": "bezig", "voortgang": 0.5}
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		doc = maak_klaar(self.kern, self.constructie, 2)
+		s3.zet(f"{doc.prefix}/index.json", b"geen json")
+		afgeleid.volg_lopende()
+		doc.reload()
+		self.assertEqual(doc.status, "fout")
+		fout = json.loads(doc.fout)
+		self.assertEqual(fout["error_code"], "inlezen_mislukt")
+		self.assertNotIn("Expecting", fout["melding"])
+		self.assertTrue(frappe.get_all("Error Log", {"method": f"BIM Afgeleid {doc.name}"}, pluck="name"))
+		# De botsingsronde kwam nog aan de beurt.
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "voortgang"), 0.5)
+
+	def test_een_tijdelijke_fout_in_een_omzetting_probeert_het_opnieuw(self):
+		self.model_klaar(self.constructie)
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		doc = maak_klaar(self.kern, self.constructie, 2)
+		fout = EndpointConnectionError(endpoint_url="http://opslag.intern:9000")
+		with patch.object(afgeleid, "lees_object", side_effect=fout):
+			afgeleid.volg_lopende()
+		doc.reload()
+		self.assertIn(doc.status, ("wacht", "bezig"))
+		self.assertFalse(doc.fout)
+		afgeleid.volg_lopende()
+		doc.reload()
+		self.assertEqual(doc.status, "klaar")
+
+	def test_een_fout_bij_het_starten_van_de_koppeling_maakt_de_omzetting_niet_stuk(self):
+		eerste = self.model_klaar(self.constructie)
+		s3._client().delete_object(Bucket=s3.bucket(), Key=f"{eerste.prefix}/eigenschappen.sqlite")
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		doc = maak_klaar(self.kern, self.constructie, 2)
+		afgeleid.volg_lopende()
+		doc.reload()
+		self.assertEqual(doc.status, "klaar")
+		pogingen = frappe.get_all(koppeling_mod.DOCTYPE, {"bestand": self.constructie}, ["status", "fout"], order_by="creation asc")
+		self.assertEqual({p.status for p in pogingen}, {"fout"})
+		self.assertEqual(json.loads(pogingen[0].fout)["error_code"], "koppeling_mislukt")
+		self.assertNotIn("NoSuchKey", pogingen[0].fout)
+		# Dit herhaalt zich: na MAX_POGINGEN houdt het op, en de ronde wacht er niet meer op.
+		for _ in range(koppeling_mod.MAX_POGINGEN + 1):
+			koppeling_mod.herstel(self.constructie)
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.constructie}), koppeling_mod.MAX_POGINGEN)
+		self.assertFalse(koppeling_mod.keten_loopt(self.constructie, 1, 2))
+
+	def test_een_tijdelijke_fout_bij_het_starten_van_de_koppeling_probeert_het_opnieuw(self):
+		self.model_klaar(self.constructie)
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		doc = maak_klaar(self.kern, self.constructie, 2)
+		fout = EndpointConnectionError(endpoint_url="http://opslag.intern:9000")
+		with patch.object(afgeleid, "eigenschappen_sha256", side_effect=fout):
+			afgeleid.volg_lopende()
+		doc.reload()
+		self.assertIn(doc.status, ("wacht", "bezig"))
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.constructie}), 0)
+		afgeleid.volg_lopende()
+		doc.reload()
+		self.assertEqual(doc.status, "klaar")
+		self.assertEqual(frappe.db.get_value(koppeling_mod.DOCTYPE, {"bestand": self.constructie}, "status"), "wacht")
+
+	def test_een_blijvende_fout_in_een_koppeling_houdt_de_rest_niet_tegen(self):
+		ronde = self.lopende_ronde()
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.kern.taken[kern_taak] = {"status": "bezig", "voortgang": 0.5}
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		self.model_klaar(self.constructie, 2)
+		k = frappe.get_last_doc(koppeling_mod.DOCTYPE, {"bestand": self.constructie})
+		with patch.object(koppeling_mod, "bijwerken", side_effect=ValueError("kapot")):
+			afgeleid.volg_lopende()
+		k.reload()
+		self.assertEqual((k.status, json.loads(k.fout)["error_code"]), ("fout", "inlezen_mislukt"))
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "voortgang"), 0.5)
+
+	def test_een_fout_bij_het_herstel_houdt_de_rest_niet_tegen(self):
+		ronde = self.lopende_ronde()
+		kern_taak = frappe.db.get_value("BIM Botsingsronde", ronde, "kern_taak")
+		self.kern.taken[kern_taak] = {"status": "bezig", "voortgang": 0.5}
+		frappe.set_user(self.lid)
+		upload(self.ruimte, "constructie.ifc", b"ISO-10303-21; c2", map_naam=self.map, basis_versie=1)
+		upload(self.ruimte, "installaties.ifc", b"ISO-10303-21; i2", map_naam=self.map, basis_versie=1)
+		self.model_klaar(self.constructie, 2)
+		self.model_klaar(self.installaties, 2)
+		for bestand in (self.constructie, self.installaties):
+			k = frappe.get_last_doc(koppeling_mod.DOCTYPE, {"bestand": bestand})
+			self.kern.taken[k.kern_taak] = {"status": "fout", "fout": {"error_code": "interne_fout", "melding": "kapot"}}
+			koppeling_mod.bijwerken(k)
+		echt = koppeling_mod.start
+
+		def alleen_constructie_faalt(bestand, *args):
+			if bestand == self.constructie:
+				raise ValueError("kapot")
+			return echt(bestand, *args)
+
+		with patch.object(koppeling_mod, "start", side_effect=alleen_constructie_faalt):
+			afgeleid.volg_lopende()
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.constructie}), 1)
+		self.assertEqual(frappe.db.count(koppeling_mod.DOCTYPE, {"bestand": self.installaties}), 2)
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "voortgang"), 0.5)

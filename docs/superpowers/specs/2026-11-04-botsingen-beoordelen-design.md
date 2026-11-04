@@ -222,6 +222,12 @@ Lege velden blijven dus geldig.
   De samenvatting krijgt `regels_gewijzigd` en de viewer noemt dat in één regel *(keuze)*.
 - Twee lopende rondes in één reeks zouden dezelfde voorganger krijgen, en de keten zou splitsen. `start_controles` weigert daarom
   een tweede ronde met dezelfde `reeks` zolang er een op `wacht` of `bezig` staat (`ronde_loopt`), met een melding die de viewer toont.
+- Een ronde die vastloopt, blokkeert daardoor niet voorgoed. Is er 2 uur lang geen verandering in `voortgang` of status geweest
+  (`MAX_STIL`, op één plek), dan gaat de ronde naar `fout` met de code `ronde_verlopen`, en de gebruiker start opnieuw. Dit geldt ook
+  voor een kern die zo lang weg is, een ronde die zo lang op de versiekoppeling wacht, en het opnieuw proberen na een tijdelijke
+  fout (7.3). Het moment is `modified`: een ronde wordt alleen opgeslagen als status of voortgang echt verandert, gemeten in de
+  precisie van de kolom. Is het resultaat na de grens wel te lezen, dan gaat dat voor: eerst wordt bijgewerkt, daarna de grens.
+  De taak bij de kern loopt door; wat die daarna aflevert, wordt niet meer gelezen.
 - `titel` standaard: de naam van de voorinstelling met datum en tijd. De viewer stuurt de titel zelf mee: de naam van de keuze met
   datum en tijd in de taal van de viewer.
 - `bijwerken` neemt `voortgang` over van de kerntaak.
@@ -232,8 +238,19 @@ Velden uit de kern worden tolerant gelezen: zonder `emmer` is het `beoordelen`, 
 leeg, zonder `ernst` leeg.
 
 Namen uit een model kunnen langer zijn dan de kolom. `bulk_insert` valideert niet, dus `verwerk` kort elk tekstveld af op de
-veldlengte uit de meta van het doctype; de volledige namen blijven staan in `element_a` en `element_b`. Een fout bij het bijwerken
-van een ronde blijft bij die ronde: ze krijgt status `fout` met de melding, en de andere rondes en de lijst gaan door.
+veldlengte uit de meta van het doctype; de volledige namen blijven staan in `element_a` en `element_b`.
+
+Een fout bij het bijwerken van een ronde, omzetting of koppeling blijft bij dat stuk; de andere en de lijst gaan door
+(`afgeleid.per_stuk`). Wat er gebeurt, hangt van de fout af:
+
+- **Tijdelijk** (`frappe.QueryTimeoutError`, de verbindingsfouten van botocore, en `ClientError` behalve `NoSuchKey`): terugdraaien,
+  loggen en bij de volgende tik opnieuw. Voor een ronde begrenst `MAX_STIL` dit (7.2).
+- **Blijvend** (wat zich herhaalt: kapotte JSON, een ontbrekende sleutel, `NoSuchKey`, een validatiefout): status `fout` met de code
+  `inlezen_mislukt` en een vaste tekst. De details staan in het foutenlog, want `str(fout)` kan een opslagadres of SQL bevatten en
+  komt bij elke lezer in beeld. Meldingen die uit de kern komen als `error_code` plus `melding` zijn wel voor de gebruiker bedoeld
+  en blijven staan.
+- Lukt het starten van een koppeling blijvend niet, dan mislukt de koppeling als poging (`koppeling_mislukt`) en niet de omzetting
+  die haar startte; het opnieuw proberen stopt na drie pogingen.
 
 **Status en ontwikkeling ten opzichte van de vorige ronde:**
 
