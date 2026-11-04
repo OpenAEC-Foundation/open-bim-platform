@@ -189,11 +189,11 @@ def test_virtual_elements_do_not_clash(tmp_path):
     assert found and not any("IfcVirtualElement" in (c.a.klasse, c.b.klasse) for c in found)
 
 
-def test_progress_runs_up_to_ninety_percent(ifc_small):
+def test_progress_runs_up_to_one(ifc_small):
     seen = []
     check = ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard")
     run_checks([check, check], progress=seen.append)
-    assert seen == sorted(seen) and seen[-1] == pytest.approx(0.9)
+    assert seen == sorted(seen) and seen[-1] == pytest.approx(1.0)
     assert seen.index(pytest.approx(0.5)) < seen.index(
         pytest.approx(0.7)
     )  # loading ends at 50%, then one step per check

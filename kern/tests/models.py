@@ -174,8 +174,8 @@ def ifc_clash_context(path: Path) -> Path:
     """IFC4 model with one pair for every classification rule of a clash round (all on the ground floor).
 
     Each group sits in its own strip along Y, so the groups do not touch each other:
-    - y 0: a load-bearing wall with an opening and a door in it, and a duct crossing the wall 200 mm (in the space
-      "Gang 1");
+    - y 0: a load-bearing wall with an opening and a door slightly larger than the opening (so it overlaps the wall
+      at the jambs), and a duct crossing the wall 200 mm (in the space "Gang 1");
     - y 3: an assembly of two overlapping members;
     - y 6: two walls joined by a path connection, overlapping 100 mm, and a virtual element across one of them;
     - y 12: two pipes in one distribution system, overlapping 30 mm;
@@ -224,7 +224,9 @@ def ifc_clash_context(path: Path) -> Path:
     bearing = make("IfcWall", "Dragende wand", 0.0, 0.0, 0.0, 5.0, WALL_THICKNESS, WALL_HEIGHT)
     pset = api.run("pset.add_pset", f, product=bearing, name="Pset_WallCommon")
     api.run("pset.edit_pset", f, pset=pset, properties={"LoadBearing": True})
-    opening = make("IfcOpeningElement", "Opening deur", 2.0, -0.1, 0.0, 1.0, WALL_THICKNESS + 0.2, 2.1, container=False)
+    opening = make(
+        "IfcOpeningElement", "Opening deur", 2.05, -0.1, 0.0, 0.9, WALL_THICKNESS + 0.2, 2.0, container=False
+    )
     api.run("feature.add_feature", f, feature=opening, element=bearing)
     door = make("IfcDoor", "Deur", 2.0, 0.0, 0.0, 1.0, WALL_THICKNESS, 2.1)
     api.run("feature.add_filling", f, opening=opening, element=door)

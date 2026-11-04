@@ -16,11 +16,10 @@ from typing import Literal
 
 import ifcopenshell
 import ifcopenshell.geom
-import ifcopenshell.util.element as element_util
 import numpy as np
 from pydantic import BaseModel
 
-from .index.properties import _storey
+from .clash_context import ModelContext, classify
 
 Vec3 = tuple[float, float, float]
 
@@ -31,10 +30,19 @@ SOORT_ORDER = {"dubbel": 0, "hard": 1, "afstand": 2}
 # Shares of the progress: loading the files, then the checks.
 LOAD_SHARE = 0.5
 CHECK_SHARE = 0.4
+CONTEXT_SHARE = 0.1
 
 
 def _no_progress(_: float) -> None:
     pass
+
+
+def _safe(function, *args):
+    """The answer of a context question, or None when it fails: context never fails a round."""
+    try:
+        return function(*args)
+    except Exception:
+        return None
 
 
 class ClashModel(BaseModel):
@@ -87,17 +95,6 @@ def _elements(model: ifcopenshell.file, klassen: list[str] | None) -> list[ifcop
     return [e for e in elements if any(e.is_a(k) for k in klassen)] if klassen else elements
 
 
-def _storey_name(element: ifcopenshell.entity_instance) -> str | None:
-    """Name of the storey of an element, or of the assembly it is a part of."""
-    node: ifcopenshell.entity_instance | None = element
-    while node is not None:
-        storey = _storey(node)
-        if storey is not None:
-            return storey.Name
-        node = element_util.get_aggregate(node)
-    return None
-
-
 def _same_box(a: tuple[Vec3, Vec3], b: tuple[Vec3, Vec3]) -> bool:
     return all(abs(p - q) <= DUPLICATE_BOX_M for corner in range(2) for p, q in zip(a[corner], b[corner], strict=True))
 
@@ -106,16 +103,18 @@ class ClashScene:
     """The geometry tree, the opened files and the bounding box of every triangulated element."""
 
     def __init__(self, paths: list[Path], progress: Callable[[float], None] = _no_progress) -> None:
-        settings = ifcopenshell.geom.settings()
+        settings = self.settings = ifcopenshell.geom.settings()
         settings.set("use-world-coords", True)
         self.tree = ifcopenshell.geom.tree()
         self.files: dict[Path, ifcopenshell.file] = {}
         self.boxes: dict[str, tuple[Vec3, Vec3]] = {}
+        self.contexts: dict[Path, ModelContext] = {}
         unique = list(dict.fromkeys(paths))
         sizes = {p: max(1, p.stat().st_size) for p in unique}
         total, done = sum(sizes.values()), 0
         for path in unique:
             self.files[path] = model = ifcopenshell.open(str(path))
+            self.contexts[path] = ModelContext(model, settings)
             iterator = ifcopenshell.geom.iterator(settings, model)
             if iterator.initialize():
                 last = -1
@@ -145,15 +144,16 @@ class ClashScene:
                 owners[e.GlobalId] = (e, m)
         return elements, owners
 
-    @staticmethod
-    def _ref(entity: ifcopenshell.entity_instance, model: ClashModel) -> ElementRef:
+    def _ref(self, entity: ifcopenshell.entity_instance, model: ClashModel) -> ElementRef:
+        context = self.contexts[model.pad]
+        gid = entity.GlobalId
         return ElementRef(
             sleutel=model.sleutel,
             versie=model.versie,
-            globalid=entity.GlobalId,
+            globalid=gid,
             klasse=entity.is_a(),
-            naam=entity.Name,
-            verdieping=_storey_name(entity),
+            naam=_safe(context.naam, gid),
+            verdieping=_safe(context.verdieping, gid),
         )
 
     def _duplicates(
@@ -245,10 +245,40 @@ class ClashScene:
         return found
 
 
+def _enrich(clash: Botsing, check: ClashCheck, scene: ClashScene, paths: dict[tuple[str, str], Path]) -> None:
+    """Fill the bucket, severity, category, grid cell and room of a clash; failures leave the field empty."""
+    ctx_a = scene.contexts.get(paths.get((clash.a.sleutel, clash.a.versie)))
+    ctx_b = scene.contexts.get(paths.get((clash.b.sleutel, clash.b.versie)))
+    if ctx_a is None or ctx_b is None:
+        return
+    gid_a, gid_b = clash.a.globalid, clash.b.globalid
+    same_model = ctx_a is ctx_b
+    relation = _safe(ctx_a.relatie, gid_a, gid_b) if same_model else None
+    same_system = bool(_safe(ctx_a.zelfde_systeem, gid_a, gid_b)) if same_model else False
+    result = classify(
+        clash.soort,
+        clash.afstand,
+        relation,
+        same_system,
+        _safe(ctx_a.familie, gid_a) or "afwerking",
+        _safe(ctx_b.familie, gid_b) or "afwerking",
+        check.ernst,
+    )
+    clash.emmer, clash.emmer_reden, clash.ernst, clash.categorie = result
+    clash.raster = _safe(ctx_a.raster, clash.punt) or (None if same_model else _safe(ctx_b.raster, clash.punt))
+    rooms = [r for r in (_safe(c.ruimte, clash.punt) for c in scene.contexts.values()) if r]
+    clash.ruimte = min(rooms)[1] if rooms else None
+
+
 def run_checks(checks: list[ClashCheck], progress: Callable[[float], None] = _no_progress) -> list[Botsing]:
-    """Run the checks on one scene: files read once, `dubbel` first, then `hard`, then `afstand`; a pair once."""
-    scene = ClashScene([m.pad for c in checks for m in (*c.set_a, *c.set_b)], progress)
-    found: list[Botsing] = []
+    """Run the checks on one scene: files read once, `dubbel` first, then `hard`, then `afstand`; a pair once.
+
+    Every clash then gets its bucket, severity, category, grid cell and room (`clash_context`).
+    """
+    models = [m for c in checks for m in (*c.set_a, *c.set_b)]
+    scene = ClashScene([m.pad for m in models], progress)
+    paths = {(m.sleutel, m.versie): m.pad for m in models}
+    found: list[tuple[Botsing, ClashCheck]] = []
     seen: set[frozenset[str]] = set()
     ordered = sorted(checks, key=lambda c: SOORT_ORDER[c.soort])
     for number, check in enumerate(ordered, start=1):
@@ -256,9 +286,13 @@ def run_checks(checks: list[ClashCheck], progress: Callable[[float], None] = _no
             pair = frozenset((clash.a.globalid, clash.b.globalid))
             if pair not in seen:
                 seen.add(pair)
-                found.append(clash)
+                found.append((clash, check))
         progress(LOAD_SHARE + CHECK_SHARE * number / len(ordered))
-    return found
+    for number, (clash, check) in enumerate(found, start=1):
+        _enrich(clash, check, scene, paths)
+        progress(LOAD_SHARE + CHECK_SHARE + CONTEXT_SHARE * number / len(found))
+    progress(1.0)
+    return [clash for clash, _ in found]
 
 
 def find_clashes(
