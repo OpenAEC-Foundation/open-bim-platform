@@ -184,7 +184,7 @@ Fouten in de context mogen een ronde nooit laten mislukken: het veld blijft dan 
 
 **BIM Botsing** krijgt erbij: `soort`, `regel`, `emmer`, `emmer_reden`, `ernst`, `categorie`, `disciplines` (*Constructie ×
 Installaties*, uit de submappen van de modellen), `verdieping`, `raster`, `ruimte`, `ontwikkeling`, `nummer` (Int), `reden`
-(Small Text), `beoordeeld_door`, `beoordeeld_op`, `issue_status_voor`.
+(Small Text), `beoordeeld_door`, `beoordeeld_op`, `issue_status_voor`, `status_voor`.
 
 De keuzelijst `status` wordt `nieuw`, `actief`, `bevestigd`, `geaccepteerd`, `genegeerd`, `opgelost`. De waarde `genegeerd`
 blijft, zodat bestaande rijen geldig zijn; de viewer noemt hem *Afgewezen* *(keuze)*. `verdieping` en `naam` staan ook in
@@ -231,7 +231,8 @@ van een ronde blijft bij die ronde: ze krijgt status `fout` met de melding, en d
 | geen | ja | `nieuw` | `nieuw` |
 | `nieuw`, `actief` | ja | `actief` | `blijft` |
 | `bevestigd`, `geaccepteerd`, `genegeerd` | ja | gelijk | `blijft` |
-| `opgelost` | ja | `actief` | `terug` |
+| `opgelost`, met `status_voor` `bevestigd`, `geaccepteerd` of `genegeerd` | ja | `status_voor` | `terug` |
+| `opgelost`, zonder zo'n `status_voor` | ja | `actief` | `terug` |
 | niet `opgelost` | nee | `opgelost` | `weg` |
 | `opgelost` | nee | `opgelost` | `eerder_weg` |
 
@@ -241,6 +242,11 @@ van een ronde blijft bij die ronde: ze krijgt status `fout` met de melding, en d
 Rijen die niet meer gevonden zijn (`weg`, `eerder_weg`) nemen alle velden over van de vorige rij, ook `emmer`, `ernst`,
 `categorie`, `disciplines`, `verdieping`, `raster` en `ruimte`. Rijen met `eerder_weg` blijven meegaan, omdat een paar dat
 terugkomt zijn beslissing en issue terug moet krijgen *(keuze)*.
+
+Een paar dat terugkomt krijgt zijn beslissing terug. Dit gebeurt dagelijks: een model dat nog wordt omgezet valt uit de snelle
+keuze, alle rijen zijn dan weg, en een ronde later komen ze terug. Daarom bewaart een rij die `weg` wordt haar status in
+`status_voor`; `eerder_weg` neemt die over, en bij `terug` is `status_voor` weer leeg. De `reden` hoort bij een afwijzing: hij
+blijft alleen als de status `genegeerd` is (bij rijen die weg zijn: als `status_voor` dat is) en is anders leeg, ook bij `terug`.
 
 **Gevonden** betekent hier: `ontwikkeling` is `nieuw`, `blijft` of `terug`.
 

@@ -2,8 +2,8 @@
 
 Een ronde legt bij de start de versies vast die ze gebruikt (de versie die het project toont), zodat een nieuwe versie
 tijdens de ronde niets verandert. Een volgende ronde met dezelfde sets volgt de botsingen van de vorige via de
-versiekoppeling: een paar dat terugkomt houdt zijn status (genegeerd blijft genegeerd, opgelost wordt weer actief) en
-zijn issue; een paar dat niet meer voorkomt, komt als opgelost in de nieuwe ronde.
+versiekoppeling: een paar dat blijft houdt zijn status en zijn issue; een paar dat niet meer voorkomt, komt als opgelost in
+de nieuwe ronde en onthoudt zijn beslissing, zodat het die terugkrijgt als het terugkomt.
 """
 
 import hashlib
@@ -50,10 +50,12 @@ VELDEN = (
 	"beoordeeld_door",
 	"beoordeeld_op",
 	"issue_status_voor",
+	"status_voor",
 )
 EMMERS = ("beoordelen", "contact", "aangrenzend")
 GEVONDEN = ("nieuw", "blijft", "terug")
 OPEN_STATUSSEN = ("nieuw", "actief", "bevestigd")
+BESLUITEN = ("bevestigd", "geaccepteerd", "genegeerd")
 # Wat een rij van de vorige ronde aan haar opvolger meegeeft.
 BESLISSING = ("reden", "beoordeeld_door", "beoordeeld_op", "issue", "issue_status_voor", "nummer")
 DICHTE_STATUSSEN = ("Opgelost", "Gesloten")
@@ -334,8 +336,8 @@ def _ontwikkeling(eerder, gevonden: bool) -> tuple[str, str]:
 		return "nieuw", "nieuw"
 	if gevonden:
 		if eerder.status == "opgelost":
-			return "actief", "terug"
-		if eerder.status in ("bevestigd", "geaccepteerd", "genegeerd"):
+			return (eerder.status_voor if eerder.status_voor in BESLUITEN else "actief"), "terug"
+		if eerder.status in BESLUITEN:
 			return eerder.status, "blijft"
 		return "actief", "blijft"
 	return "opgelost", "eerder_weg" if eerder.status == "opgelost" else "weg"
@@ -459,13 +461,18 @@ def verwerk(ronde: str) -> None:
 			"beoordeeld_door": None,
 			"beoordeeld_op": None,
 			"issue_status_voor": None,
+			"status_voor": None,
 		}
 		if eerder:
 			for veld in BESLISSING:
 				rijen[sleutel][veld] = eerder.get(veld)
+			if status != "genegeerd":
+				rijen[sleutel]["reden"] = None
 	for sleutel, (rij, a, b) in vorige.items():
 		if sleutel not in rijen:
 			status, ontwikkeling = _ontwikkeling(rij, False)
+			# De beslissing blijft bewaard: rijen die weg zijn gaan mee, en een paar dat terugkomt krijgt haar terug.
+			status_voor = rij.status_voor if rij.status == "opgelost" else rij.status
 			rijen[sleutel] = {
 				**{veld: rij.get(veld) for veld in VELDEN if veld != "ronde"},
 				"sleutel": _sleutel(a, b),
@@ -473,6 +480,8 @@ def verwerk(ronde: str) -> None:
 				"element_b": b,
 				"punt": json.loads(rij.punt or "[]"),
 				"status": status,
+				"status_voor": status_voor,
+				"reden": rij.reden if status_voor == "genegeerd" else None,
 				"ontwikkeling": ontwikkeling,
 				"emmer": rij.emmer or "beoordelen",
 			}
@@ -552,6 +561,7 @@ def naar_json(botsing) -> dict:
 		"beoordeeld_door": botsing.beoordeeld_door,
 		"beoordeeld_op": str(botsing.beoordeeld_op) if botsing.beoordeeld_op else None,
 		"issue_status_voor": botsing.issue_status_voor,
+		"status_voor": botsing.status_voor,
 	}
 
 

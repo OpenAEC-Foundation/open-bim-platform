@@ -734,3 +734,51 @@ class TestBotsingen(ProjectTest):
 		[later] = botsingen.lijst(self.ronde_met([]))
 		self.assertEqual((later["ontwikkeling"], later["element_b"]["naam"]), ("eerder_weg", "Kanaal"))
 		self.assertTrue(eerste)
+
+	# Beslissingen die terugkomen
+
+	def test_een_paar_dat_terugkomt_krijgt_zijn_beslissing_terug(self):
+		for i, (status, reden) in enumerate((("bevestigd", None), ("geaccepteerd", None), ("genegeerd", "Bedoeld zo"))):
+			paar = (f"w{i}", f"k{i}")
+			ronde = self.ronde_met([paar])
+			uit = botsingen.zet_status(self.rij(ronde, paar[0]).name, status, reden)
+			weg = self.rij(self.ronde_met([]), paar[0])
+			self.assertEqual((weg.status, weg.ontwikkeling, weg.status_voor, weg.reden), ("opgelost", "weg", status, reden))
+			# Ook na een ronde waarin het paar er al niet meer was.
+			later = self.rij(self.ronde_met([]), paar[0])
+			self.assertEqual((later.ontwikkeling, later.status_voor, later.reden), ("eerder_weg", status, reden))
+			terug = self.rij(self.ronde_met([paar]), paar[0])
+			self.assertEqual((terug.status, terug.ontwikkeling, terug.status_voor, terug.reden), (status, "terug", None, reden))
+			self.assertEqual(terug.issue, uit["issue"])
+
+	def test_een_paar_zonder_beslissing_komt_terug_als_actief(self):
+		ronde = self.ronde_met([("w1", "k1")])
+		self.assertIsNone(self.rij(ronde, "w1").status_voor)
+		weg = self.rij(self.ronde_met([]), "w1")
+		self.assertEqual(weg.status_voor, "nieuw")
+		terug = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		self.assertEqual((terug.status, terug.ontwikkeling, terug.status_voor), ("actief", "terug", None))
+
+	def test_een_rij_zonder_status_voor_komt_terug_als_actief_zonder_reden(self):
+		self.ronde_met([("w1", "k1")])
+		weg = self.rij(self.ronde_met([]), "w1")
+		frappe.db.set_value("BIM Botsing", weg.name, {"status_voor": None, "reden": "Oude reden"})
+		terug = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		self.assertEqual((terug.status, terug.ontwikkeling, terug.reden), ("actief", "terug", None))
+
+	def test_een_reden_blijft_alleen_bij_een_afwijzing(self):
+		ronde = self.ronde_met([("w1", "k1")])
+		frappe.db.set_value("BIM Botsing", self.rij(ronde, "w1").name, {"status": "geaccepteerd", "reden": "Oude reden"})
+		self.assertIsNone(self.rij(self.ronde_met([("w1", "k1")]), "w1").reden)
+		ronde = self.ronde_met([("w2", "k2")])
+		frappe.db.set_value("BIM Botsing", self.rij(ronde, "w2").name, {"status": "geaccepteerd", "reden": "Oude reden"})
+		self.assertIsNone(self.rij(self.ronde_met([]), "w2").reden)
+
+	def test_een_bevestigd_paar_krijgt_ook_zijn_issue_terug(self):
+		ronde = self.ronde_met([("w1", "k1")])
+		issue = botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")["issue"]
+		self.ronde_met([])
+		self.assertEqual(frappe.db.get_value("BIM Issue", issue, "status"), "Opgelost")
+		terug = self.rij(self.ronde_met([("w1", "k1")]), "w1")
+		self.assertEqual((terug.status, terug.issue), ("bevestigd", issue))
+		self.assertNotEqual(frappe.db.get_value("BIM Issue", issue, "status"), "Opgelost")
