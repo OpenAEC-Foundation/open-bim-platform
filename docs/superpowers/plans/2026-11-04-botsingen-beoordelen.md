@@ -84,10 +84,19 @@ def test_hard_wins_from_distance_for_the_same_pair(ifc_small):
 
 
 def test_only_between_models_skips_pairs_in_one_model(ifc_small, tmp_path):
-    copy = tmp_path / "kopie.ifc"; copy.write_bytes(ifc_small.read_bytes())
-    # Dezelfde GlobalIds in twee bestanden geven geen paar met zichzelf en geen fout.
     found = run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard", alleen_tussen_modellen=True)])
     assert found == []
+    # Twee bouwsels van hetzelfde model hebben eigen GlobalIds en botsen wel met elkaar.
+    other = models.ifc_small(tmp_path / "ander.ifc")
+    found = run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(other)], soort="hard", alleen_tussen_modellen=True)])
+    assert found and all(c.a.sleutel != c.b.sleutel for c in found)
+
+
+def test_the_same_global_ids_in_two_files_give_no_pair_with_itself(ifc_small, tmp_path):
+    copy = tmp_path / "kopie.ifc"
+    copy.write_bytes(ifc_small.read_bytes())
+    found = run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(copy)], soort="hard")])
+    assert all(c.a.globalid != c.b.globalid for c in found)
 
 
 def test_duplicate_needs_the_same_class_and_box(tmp_path):
@@ -277,7 +286,7 @@ Breid `lever` uit met een optioneel `velden`-argument per paar. Tests, één per
 def test_besluit_reden_en_nummer_gaan_mee(self):
     ronde = self.ronde_met([("w1", "k1"), ("w2", "k2")])
     rij = self.rij(ronde, "w1")
-    botsingen.zet_status(rij.name, "genegeerd", "Is bedoeld")
+    frappe.db.set_value("BIM Botsing", rij.name, {"status": "genegeerd", "reden": "Is bedoeld"})
     volgende = self.ronde_met([("w1", "k1"), ("w3", "k3")])
     nu = self.rij(volgende, "w1")
     assert (nu.status, nu.reden, nu.nummer, nu.ontwikkeling) == ("genegeerd", "Is bedoeld", rij.nummer, "blijft")
@@ -508,11 +517,11 @@ Plus in `WerkplekHost.test.ts`: elke nieuwe methode stuurt het bericht uit taak 
 
 - [ ] **Step 1: Implement** met `model.setOpacity(undefined, 0.12)`, `model.resetOpacity([id])` en `model.highlight([id], material)`, per model in `fragments.list`. Twee materialen: A uit `--theme-accent`, B uit de informatiekleur van het stijlboek (`--color-semantic-info`, of de token die er is). De camera: `focus` op het punt, straal uit `model.getMergedBox`, hoogstens 10 m. Elke stap via de bestaande wachtrij `later`, zodat snel doorklikken in volgorde loopt.
 
-- [ ] **Step 2: Verify** op de bench met de demomodellen, na een bouw zoals in taak 11: paar in twee kleuren, de rest doorzichtig, *Alles tonen* zet terug. Meet de tijd van `isolate` op beide modellen samen (288 MB). Blijft die boven de seconde, val dan terug op alleen markeren plus camera, en noteer dat voor de meting.
+Laat de bestaande rij in `ClashPanel.tsx` bij een klik `weergave.isoleer` aanroepen, zodat het in de echte schermen zit. Het vergrendelen van de werkwijze bij traagheid, en het meten op de bench, gebeurt in taak 11, met de constante `ISOLATE_GHOST = true` in `FragmentsEngine.ts` als schakelaar: op `false` alleen markeren plus camera.
 
-- [ ] **Step 3: Run** `npx tsc --noEmit && npx vitest run`. Expected: PASS.
+- [ ] **Step 2: Run** `npx tsc --noEmit && npx vitest run && npm run build`. Expected: PASS.
 
-- [ ] **Step 4: Commit** `feat(viewer): een botsing isoleert het paar in beeld`
+- [ ] **Step 3: Commit** `feat(viewer): een botsing isoleert het paar in beeld`
 
 ---
 
@@ -601,7 +610,7 @@ Commando: `WP_BASIS=http://klant0.cloud.open-aec.localhost:8001 node bim-coordin
 
 - [ ] **Step 3: Meet op de demomodellen**
 
-In de ruimte *Demo Open BIM* een ronde *Tussen modellen* en een *Harde botsingen*. Noteer in `docs/metingen/2026-botsingen-beoordelen.md`: duur, aantallen per emmer en ernst, drie steekproeven per emmer of de indeling klopt, de tijd van isoleren, en eventueel bijgestelde drempels met reden. Beschrijf echte tekortkomingen; niets mooier maken. Noem geen andere programma's.
+In de ruimte *Demo Open BIM* een ronde *Tussen modellen* en een *Harde botsingen*. Bekijk ook het isoleren met beide modellen geladen (288 MB): paar in twee kleuren, de rest doorzichtig, *Alles tonen* zet terug. Duurt een klik langer dan een seconde, zet dan `ISOLATE_GHOST` op `false` en leg dat vast. Noteer in `docs/metingen/2026-botsingen-beoordelen.md`: duur, aantallen per emmer en ernst, drie steekproeven per emmer of de indeling klopt, de tijd van isoleren, en eventueel bijgestelde drempels met reden. Beschrijf echte tekortkomingen; niets mooier maken. Noem geen andere programma's.
 
 - [ ] **Step 4: Werk `README.md` bij** met een korte alinea onder *Coördinatie*, en een verwijzing in het hoofdontwerp naar dit ontwerp.
 
