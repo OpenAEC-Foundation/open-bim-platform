@@ -85,7 +85,6 @@
   "reactie_plaatsen": "Post",
   "botsingen_fout": "The clash rounds could not be loaded: {{melding}}",
   "ronde_nieuw": "New round",
-  "ronde_uitleg": "Find clashes between the models of set A and set B, in the versions now in view.",
   "ronde_starten": "Start",
   "geen_rondes": "No clash rounds yet.",
   "set_a": "Set A",

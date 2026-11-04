@@ -2,12 +2,10 @@ import { describe, expect, test } from "vitest";
 import type { ModelInfo } from "../host/BimHost";
 import type { Clash, ClashElement, ClashRule } from "./bcf";
 import {
-  STATUSSEN,
   bijnaMet,
   controlesUitRegels,
   disciplineVan,
   elementNaam,
-  elementenVan,
   emmerTelling,
   mmWaarde,
   facetten,
@@ -23,6 +21,8 @@ import {
   zonderChip,
   rondeTelling,
   houdVast,
+  isZichtbaar,
+  sprongNaBesluit,
   GROEPSACTIE_MAX,
   REDEN_MAX,
   vorige,
@@ -116,16 +116,7 @@ describe("clashes", () => {
     expect(groepeer([botsing("x", "B × C"), botsing("y", "A × C")]).map((g) => g.groep)).toEqual(["A × C", "B × C"]);
   });
 
-  test("de statussen", () => {
-    expect(STATUSSEN).toEqual(["nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost"]);
-  });
 
-  test("beide elementen van een botsing, met hun bestand", () => {
-    expect(elementenVan(BOTSINGEN[0])).toEqual([
-      { bestand: "c", globalid: "b1-a" },
-      { bestand: "i", globalid: "b1-b" },
-    ]);
-  });
 });
 
 describe("snelle keuzes", () => {
@@ -538,4 +529,20 @@ describe("werklijst", () => {
     expect(houdVast(getoond, alle, null)).toBe(getoond);
     expect(houdVast(getoond, alle, "onbekend")).toBe(getoond);
   });
+
+  test("een rij is zichtbaar als ze in de getoonde lijst staat", () => {
+    const lijst = [b("1", "nieuw"), b("2", "nieuw")];
+    expect(isZichtbaar(lijst, "2")).toBe(true);
+    expect(isZichtbaar(lijst, "3")).toBe(false);
+    expect(isZichtbaar(lijst, null)).toBe(false);
+  });
+
+  test("na een besluit springt alleen door wie nog op die rij staat", () => {
+    const lijst = [b("1", "nieuw"), b("2", "nieuw"), b("3", "nieuw")];
+    expect(sprongNaBesluit(lijst, "1", "1")).toBe("2");
+    expect(sprongNaBesluit(lijst, "1", "3")).toBeNull();
+    expect(sprongNaBesluit(lijst, "1", null)).toBeNull();
+    expect(sprongNaBesluit([lijst[0]], "1", "1")).toBeNull();
+  });
 });
+

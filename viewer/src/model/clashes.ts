@@ -12,8 +12,6 @@ import type {
   ClashStatus,
 } from "./bcf";
 
-export const STATUSSEN: ClashStatus[] = ["nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost"];
-
 /** Structural classes of the quick choice "construction against installations". */
 const KLASSEN_CONSTRUCTIE = ["IfcBeam", "IfcColumn", "IfcFooting", "IfcPile", "IfcMember", "IfcSlab", "IfcWall"];
 /** Walls and floors. */
@@ -402,11 +400,6 @@ export function elementNaam(e: ClashElement): string {
   return !leeg(e.naam) ? (e.naam as string) : !leeg(e.klasse) ? (e.klasse as string) : e.globalid;
 }
 
-/** Both elements of a clash, to mark in the view. */
-export function elementenVan(botsing: Clash): { bestand: string; globalid: string }[] {
-  return [botsing.element_a, botsing.element_b].map(({ bestand, globalid }) => ({ bestand, globalid }));
-}
-
 export type SneltoetsActie = "volgende" | "vorige" | "bevestigen" | "accepteren" | "afwijzen" | "alles_tonen" | "hulp";
 
 const SNELTOETSEN: Record<string, SneltoetsActie> = {
@@ -431,4 +424,16 @@ function isVeld(target: unknown): boolean {
 export function sneltoets(e: Pick<KeyboardEvent, "key" | "ctrlKey" | "altKey" | "metaKey"> & { target: unknown }): SneltoetsActie | null {
   if (e.ctrlKey || e.altKey || e.metaKey || isVeld(e.target)) return null;
   return SNELTOETSEN[e.key.toLowerCase()] ?? null;
+}
+
+/** The selected row can be seen in the shown list (so a keypress may act on it). */
+export function isZichtbaar(zichtbaar: Clash[], naam: string | null): boolean {
+  return naam !== null && zichtbaar.some((b) => b.naam === naam);
+}
+
+/** Where to jump after a decision on `besloten`: nowhere when the selection has moved on meanwhile. */
+export function sprongNaBesluit(zichtbaar: Clash[], besloten: string, huidige: string | null): string | null {
+  if (huidige !== besloten) return null;
+  const naam = volgende(zichtbaar, besloten);
+  return naam === besloten ? null : naam;
 }

@@ -10,9 +10,11 @@ import {
   filter as filterRijen,
   groepeer,
   houdVast,
+  isZichtbaar,
   leegFilter,
   rondeTelling,
   sneltoets,
+  sprongNaBesluit,
   teBeslissen,
   volgende,
   vorige,
@@ -127,7 +129,14 @@ export function ClashRound({
   const groepen = useMemo(() => groepeer(getoond, groep), [getoond, groep]);
   const sleutelVan = (g: string | null) => g ?? "";
   const zichtbaar = groepen.flatMap((g) => (ingeklapt.has(sleutelVan(g.groep)) ? [] : g.botsingen.slice(0, limieten[sleutelVan(g.groep)] ?? PER_KEER)));
-  const rij = alle.find((b) => b.naam === gekozen) ?? null;
+  const zichtbaarGekozen = isZichtbaar(zichtbaar, gekozen);
+  const rij = zichtbaarGekozen ? (zichtbaar.find((b) => b.naam === gekozen) ?? null) : null;
+  const gekozenRef = useRef<string | null>(null);
+  gekozenRef.current = gekozen;
+  const zetGroepsActie = (actie: GroepsActie | null) => {
+    setGroepFout(null);
+    setGroepsActie(actie);
+  };
 
   const vervang = (nieuw: Clash[]) =>
     setBotsingen((lijst) => (lijst ?? []).map((x) => nieuw.find((n) => n.naam === x.naam) ?? x));
@@ -147,6 +156,10 @@ export function ClashRound({
     setAfwijzen(null);
     wis(weergave.herstel());
   };
+  // A selected row that leaves the shown list (filter, collapsed group) ends the selection.
+  useEffect(() => {
+    if (gekozen !== null && !zichtbaarGekozen) toonAlles();
+  }, [gekozen, zichtbaarGekozen]);
   const beweeg = (richting: 1 | -1) => {
     const naam = (richting === 1 ? volgende : vorige)(zichtbaar, gekozen);
     const b = zichtbaar.find((x) => x.naam === naam);
@@ -162,8 +175,9 @@ export function ClashRound({
       vervang([await coordinatie.botsingStatus(b.naam, status, reden)]);
       setAfwijzen(null);
       setVast(b.naam);
-      const volgt = status === "actief" ? null : zichtbaar.find((x) => x.naam === volgende(zichtbaar, b.naam));
-      if (volgt && volgt.naam !== b.naam) kies(volgt, { auto: true, scroll: true });
+      const naam = status === "actief" ? null : sprongNaBesluit(zichtbaar, b.naam, gekozenRef.current);
+      const volgt = zichtbaar.find((x) => x.naam === naam);
+      if (volgt) kies(volgt, { auto: true, scroll: true });
     } catch (e) {
       setRijFout({ naam: b.naam, melding: describe(e) });
     } finally {
@@ -180,7 +194,7 @@ export function ClashRound({
     setGroepFout(null);
     try {
       vervang(await coordinatie.botsingStatusVeel(namen, status, reden || undefined));
-      setGroepsActie(null);
+      zetGroepsActie(null);
     } catch (e) {
       setGroepFout(describe(e));
     } finally {
@@ -203,7 +217,7 @@ export function ClashRound({
     else if (actie === "hulp") setHulp((h) => !h);
     else if (actie === "alles_tonen") {
       if (afwijzen !== null) setAfwijzen(null);
-      else if (groepsActie !== null) setGroepsActie(null);
+      else if (groepsActie !== null) zetGroepsActie(null);
       else toonAlles();
     }
   };
@@ -336,7 +350,7 @@ export function ClashRound({
                         className="oa-btn oa-btn--secondary oa-btn--sm"
                         data-actie="groep-afwijzen"
                         disabled={bezig || open > GROEPSACTIE_MAX}
-                        onClick={() => setGroepsActie({ sleutel, status: "genegeerd" })}
+                        onClick={() => zetGroepsActie({ sleutel, status: "genegeerd" })}
                       >
                         {t("groep_alles_afwijzen")}
                       </button>
@@ -345,7 +359,7 @@ export function ClashRound({
                         className="oa-btn oa-btn--secondary oa-btn--sm"
                         data-actie="groep-accepteren"
                         disabled={bezig || open > GROEPSACTIE_MAX}
-                        onClick={() => setGroepsActie({ sleutel, status: "geaccepteerd" })}
+                        onClick={() => zetGroepsActie({ sleutel, status: "geaccepteerd" })}
                       >
                         {t("groep_alles_accepteren")}
                       </button>
@@ -356,13 +370,13 @@ export function ClashRound({
                     <div className="botsing__bevestig" data-sectie="groepsactie">
                       <p>{t(actie.status === "genegeerd" ? "groep_vraag_afwijzen" : "groep_vraag_accepteren", { count: open })}</p>
                       {actie.status === "genegeerd" ? (
-                        <RedenVeld disabled={bezig} onBevestig={(reden) => void beslisGroep(rijen, actie.status, reden)} onAnnuleer={() => setGroepsActie(null)} />
+                        <RedenVeld disabled={bezig} onBevestig={(reden) => void beslisGroep(rijen, actie.status, reden)} onAnnuleer={() => zetGroepsActie(null)} />
                       ) : (
                         <div className="botsing__acties">
                           <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" data-actie="groep-bevestig" disabled={bezig} onClick={() => void beslisGroep(rijen, actie.status, "")}>
                             {t("actie.accepteren")}
                           </button>
-                          <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="groep-annuleer" disabled={bezig} onClick={() => setGroepsActie(null)}>
+                          <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="groep-annuleer" disabled={bezig} onClick={() => zetGroepsActie(null)}>
                             {t("annuleren")}
                           </button>
                         </div>
