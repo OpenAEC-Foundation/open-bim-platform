@@ -200,6 +200,7 @@ BOXES = [
     ("long window 2 mm in a reveal, tolerance 50 mm", *WINDOW_IN_REVEAL, 0.05, None, None, None),
     ("duct 15 mm into a beam, tolerance 20 mm", *DUCT_15_MM_IN_BEAM, 0.02, None, None, None),
     ("duct 15 mm into a beam, tolerance 10 mm", *DUCT_15_MM_IN_BEAM, 0.01, 0.015, "beoordelen", "klein"),
+    ("duct 15 mm into a beam, tolerance 15 mm", *DUCT_15_MM_IN_BEAM, 0.015, 0.015, "beoordelen", "klein"),
 ]
 
 

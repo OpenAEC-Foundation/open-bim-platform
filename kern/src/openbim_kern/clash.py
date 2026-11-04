@@ -272,8 +272,9 @@ class ClashScene:
             depth, point = float(clash.distance), tuple((p + q) / 2 for p, q in zip(clash.p1, clash.p2, strict=True))
             if check.soort == "hard":
                 depth, point = self._penetration(a, b, depth, point)
-                # The tree filtered on its own ray, which can be much longer than the depth.
-                if abs(depth) < check.tolerantie:
+                # The tree filtered on its own ray, which can be much longer than the depth. Rounded as it is reported,
+                # so 15 mm of overlap is not dropped at a tolerance of 15 mm because the mesh says 14.9999.
+                if round(abs(depth), 4) < check.tolerantie:
                     continue
             found.append(
                 Botsing(

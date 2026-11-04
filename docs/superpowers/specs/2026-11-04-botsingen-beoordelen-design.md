@@ -227,7 +227,7 @@ Lege velden blijven dus geldig.
   voor een kern die zo lang weg is, een ronde die zo lang op de versiekoppeling wacht, en het opnieuw proberen na een tijdelijke
   fout (7.3). Het moment is `modified`: een ronde wordt alleen opgeslagen als status of voortgang echt verandert, gemeten in de
   precisie van de kolom. Is het resultaat na de grens wel te lezen, dan gaat dat voor: eerst wordt bijgewerkt, daarna de grens.
-  De taak bij de kern loopt door; wat die daarna aflevert, wordt niet meer gelezen.
+  De taak bij de kern wordt gestopt; lukt dat niet, dan loopt ze door en wordt wat ze aflevert niet meer gelezen.
 - `titel` standaard: de naam van de voorinstelling met datum en tijd. De viewer stuurt de titel zelf mee: de naam van de keuze met
   datum en tijd in de taal van de viewer.
 - `bijwerken` neemt `voortgang` over van de kerntaak.
