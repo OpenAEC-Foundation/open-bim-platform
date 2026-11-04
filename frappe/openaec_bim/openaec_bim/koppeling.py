@@ -39,8 +39,8 @@ def start(bestand: str, van_versie: int, naar_versie: int):
 		doc.fout = json.dumps({"error_code": fout.code, "melding": str(fout)})
 	except Exception as fout:
 		# Niet de omzetting die dit startte is stuk, maar deze koppeling. Mislukt ze als poging, dan stopt het opnieuw
-		# proberen na MAX_POGINGEN.
-		if afgeleid.tijdelijk(fout):
+		# proberen na MAX_POGINGEN. Een botsing met een ander verzoek gaat naar `zonder_botsing`: de transactie is dan al weg.
+		if afgeleid.tijdelijk(fout) or isinstance(fout, (frappe.QueryDeadlockError, frappe.TimestampMismatchError)):
 			raise
 		frappe.log_error(title=f"{DOCTYPE} {doc.name}")
 		doc.status = "fout"

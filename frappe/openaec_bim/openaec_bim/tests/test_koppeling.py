@@ -77,6 +77,12 @@ class TestKoppeling(ProjectTest):
 		koppeling_mod.bijwerken(k)
 		self.assertEqual((k.status, json.loads(k.fout)["error_code"]), ("fout", "index_ongeldig"))
 
+	def test_een_botsing_bij_het_starten_is_geen_mislukte_koppeling(self):
+		self.tweede_versie()
+		for fout in (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
+			with patch("openaec_bim.kern.start_koppelen", side_effect=fout), self.assertRaises(fout):
+				koppeling_mod.start(self.constructie, 1, 2)
+
 	def test_een_koppeling_na_een_storing_van_de_kern_wordt_hersteld(self):
 		from openaec_bim.kern import KernFout
 
