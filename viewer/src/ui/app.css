@@ -369,6 +369,17 @@ body {
   font-size: var(--font-size-xs);
 }
 
+/* Names from a model can be long and without spaces: they wrap inside the narrow column. */
+.issues__meta > *,
+.issue__meta > *,
+.issues__item,
+.inspector__title,
+.botsing__groepknop,
+.botsing__chip {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .issue__lijst li {
   display: flex;
   flex-direction: column;
