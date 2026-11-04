@@ -374,10 +374,20 @@ body {
 .issue__meta > *,
 .issues__item,
 .inspector__title,
+.issue__tekst,
 .botsing__groepknop,
 .botsing__chip {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.botsing__groepknop,
+.botsing__chip {
+  text-align: left;
+}
+
+.botsing__chip {
+  white-space: normal;
 }
 
 .issue__lijst li {
@@ -585,7 +595,7 @@ body {
 }
 
 .botsing__chips > * {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
 }
 
 .botsing__chip {
