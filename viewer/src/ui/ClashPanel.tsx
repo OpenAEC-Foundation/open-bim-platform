@@ -118,7 +118,7 @@ function NieuweRonde({
     setBezig(true);
     try {
       const naar = (set: Set<string>) => [...set].map((bestand) => ({ bestand }));
-      const { ronde } = await coordinatie.botsingsrondeStart(naar(setA), naar(setB), soort, tolerantie);
+      const { ronde } = await coordinatie.botsingsrondeControles([{ set_a: naar(setA), set_b: naar(setB), soort, tolerantie }], null);
       await onKlaar(ronde);
     } catch (e) {
       setFout(describe(e));
@@ -270,9 +270,9 @@ function Ronde({
           </label>
           {zichtbaar.length === 0 && <p className="viewer__hint">{t("geen_botsingen")}</p>}
           {groepeer(zichtbaar).map(({ groep, botsingen: lijst }) => (
-            <section key={groep} className="inspector__section">
+            <section key={groep ?? ""} className="inspector__section">
               <h3 className="inspector__section-title">
-                {groep} ({lijst.length})
+                {groep ?? ""} ({lijst.length})
               </h3>
               <ul className="issue__lijst">
                 {lijst.map((b) => (

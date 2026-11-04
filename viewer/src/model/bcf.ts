@@ -98,12 +98,73 @@ export type Extensions = {
 
 export type ClashSetItem = { bestand: string; klassen?: string[] };
 
+/** How a check looks for clashes: overlap, a distance, or the same element twice. */
+export type ClashKind = "hard" | "afstand" | "dubbel";
+
+/** Where a clash stands: exactly one. */
+export type ClashBucket = "beoordelen" | "contact" | "aangrenzend";
+
+export type ClashSeverity = "klein" | "groot" | "kritiek";
+
+/** What a clash did compared to the previous round. */
+export type ClashDevelopment = "nieuw" | "blijft" | "terug" | "weg" | "eerder_weg";
+
+/** One question to the kern: set A against set B. */
+export type ClashCheck = {
+  regel?: string;
+  set_a: ClashSetItem[];
+  set_b: ClashSetItem[];
+  soort: ClashKind;
+  /** Metres. */
+  tolerantie: number;
+  ernst?: ClashSeverity | null;
+  alleen_tussen_modellen?: boolean;
+};
+
+/** A project rule for a pair of disciplines (`a` sorts before `b`); `mm` is millimetres. */
+export type ClashRule = { a: string; b: string; soort: "uit" | "hard" | "afstand"; mm: number; ernst: ClashSeverity | null };
+
+export type ClashFilter = {
+  emmer: ClashBucket | "weg" | null;
+  ernst: ClashSeverity[];
+  status: ClashStatus[];
+  categorie: string[];
+  disciplines: string[];
+  verdieping: string[];
+  ontwikkeling: ClashDevelopment[];
+  tekst: string;
+};
+
+export type ClashGroupBy = "klassen" | "verdieping" | "disciplines" | "ernst" | "categorie" | "raster" | "ruimte" | "ontwikkeling";
+
+/** A saved view of the clash list. */
+export type ClashView = { naam: string; filter: ClashFilter; groep: ClashGroupBy };
+
+export type ClashSettings = { regels: ClashRule[]; weergaven: ClashView[]; mag_wijzigen: boolean };
+
+export type ClashSummary = {
+  totaal: number;
+  open: number;
+  nieuw: number;
+  blijft: number;
+  terug: number;
+  weg: number;
+  per_status: Partial<Record<ClashStatus, number>>;
+  per_ernst: Partial<Record<ClashSeverity, number>>;
+  per_emmer: Partial<Record<ClashBucket, number>>;
+  per_categorie: Record<string, number>;
+  regels_gewijzigd: boolean;
+};
+
+/** A point in the development of a series of rounds. */
+export type ClashTrend = { naam: string; titel: string; gestart: string; samenvatting: ClashSummary | null };
+
 export type ClashRound = {
   naam: string;
   titel: string;
   set_a: ClashSetItem[];
   set_b: ClashSetItem[];
-  soort: "hard" | "afstand";
+  soort: ClashKind | "gemengd";
   tolerantie: number;
   status: "wacht" | "bezig" | "klaar" | "fout";
   aantal: number;
@@ -112,12 +173,30 @@ export type ClashRound = {
   gestart: string;
   gestart_door: string;
   fout: { error_code: string; melding: string } | null;
+  /** The normalised checks of the round; empty for rounds from before the checks. */
+  regels?: ClashCheck[] | null;
+  voorinstelling?: string | null;
+  reeks?: string | null;
+  /** Progress while the round runs, 0 to 100. */
+  voortgang?: number | null;
+  samenvatting?: ClashSummary | null;
 };
 
-export type ClashElement = { bestand: string; versie: string; globalid: string };
+export type ClashElement = {
+  bestand: string;
+  versie: string;
+  globalid: string;
+  klasse: string | null;
+  naam: string | null;
+  verdieping: string | null;
+};
 
-export type ClashStatus = "nieuw" | "actief" | "opgelost" | "genegeerd";
+export type ClashStatus = "nieuw" | "actief" | "bevestigd" | "geaccepteerd" | "genegeerd" | "opgelost";
 
+/**
+ * A clash as the server gives it. Rows from before the review work have empty fields: a missing `emmer` counts as
+ * `beoordelen`, a missing `ontwikkeling` as found.
+ */
 export type Clash = {
   naam: string;
   ronde: string;
@@ -129,6 +208,21 @@ export type Clash = {
   status: ClashStatus;
   issue: string | null;
   groep: string;
+  soort: ClashKind | null;
+  regel: string | null;
+  emmer: ClashBucket | null;
+  emmer_reden: string | null;
+  ernst: ClashSeverity | null;
+  categorie: string | null;
+  disciplines: string | null;
+  verdieping: string | null;
+  raster: string | null;
+  ruimte: string | null;
+  ontwikkeling: ClashDevelopment | null;
+  nummer: number | null;
+  reden: string | null;
+  beoordeeld_door: string | null;
+  beoordeeld_op: string | null;
 };
 
 /** Below this share of elements found again in a new version, the viewer warns that the link is uncertain. */

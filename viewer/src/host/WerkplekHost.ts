@@ -1,4 +1,4 @@
-import type { Clash, ClashRound, ClashStatus, Comment, Extensions, Topic, Viewpoint } from "../model/bcf";
+import type { Clash, ClashRound, ClashSettings, ClashStatus, ClashTrend, Comment, Extensions, Topic, Viewpoint } from "../model/bcf";
 import {
   HostError,
   type BimHost,
@@ -44,11 +44,21 @@ export class WerkplekHost implements BimHost {
       snapshot: (guid, standpunt) => vraag("bim.snapshot", { guid, standpunt }),
       bcfExport: (versie) => vraag("bim.bcf_export", { versie }),
       bcfImport: () => vraag("bim.bcf_import"),
-      botsingsrondeStart: (set_a, set_b, soort, tolerantie, titel) =>
-        vraag("bim.botsingsronde_start", { set_a, set_b, botsingsoort: soort, tolerantie, ...(titel ? { titel } : {}) }),
+      botsingsrondeControles: (controles, voorinstelling, titel) =>
+        vraag("bim.botsingsronde_start", { controles, voorinstelling, ...(titel ? { titel } : {}) }),
       botsingsrondes: () => vraag<ClashRound[]>("bim.botsingsrondes"),
       botsingen: (ronde) => vraag<Clash[]>("bim.botsingen", { ronde }),
-      botsingStatus: (botsing, status: ClashStatus) => vraag<Clash>("bim.botsing_status", { botsing, status }),
+      botsingStatus: (botsing, status: ClashStatus, reden) =>
+        vraag<Clash>("bim.botsing_status", { botsing, status, ...(reden !== undefined ? { reden } : {}) }),
+      botsingStatusVeel: (botsingen, status: ClashStatus, reden) =>
+        vraag<Clash[]>("bim.botsing_status_veel", { botsingen, status, ...(reden !== undefined ? { reden } : {}) }),
+      botsingInstellingen: () => vraag<ClashSettings>("bim.botsing_instellingen"),
+      botsingInstellingenBewaar: ({ regels, weergaven }) =>
+        vraag<ClashSettings>("bim.botsing_instellingen_bewaar", {
+          ...(regels !== undefined ? { regels } : {}),
+          ...(weergaven !== undefined ? { weergaven } : {}),
+        }),
+      botsingTrends: (ronde) => vraag<ClashTrend[]>("bim.botsing_trends", { ronde }),
       botsingNaarIssue: (botsing) => vraag<Topic>("bim.botsing_naar_issue", { botsing }),
     };
   }

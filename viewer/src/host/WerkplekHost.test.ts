@@ -62,18 +62,47 @@ describe("WerkplekHost", () => {
     await c.reacties("g1");
     await c.standpunten("g1");
     await c.standpuntBewaar("g1", { perspective_camera: undefined });
-    await c.botsingsrondeStart([{ bestand: "b1" }], [{ bestand: "b2", klassen: ["IfcDuctSegment"] }], "hard", 0.01);
     await c.botsingStatus("x1", "genegeerd");
     expect(vraag).toHaveBeenCalledWith("bim.reacties", { guid: "g1" });
     expect(vraag).toHaveBeenCalledWith("bim.standpunten", { guid: "g1" });
     expect(vraag).toHaveBeenCalledWith("bim.standpunt_bewaar", { guid: "g1", standpunt: { perspective_camera: undefined } });
-    expect(vraag).toHaveBeenCalledWith("bim.botsingsronde_start", {
-      set_a: [{ bestand: "b1" }],
-      set_b: [{ bestand: "b2", klassen: ["IfcDuctSegment"] }],
-      botsingsoort: "hard",
-      tolerantie: 0.01,
-    });
     expect(vraag).toHaveBeenCalledWith("bim.botsing_status", { botsing: "x1", status: "genegeerd" });
+  });
+
+  test("botsingsrondeControles sends the checks and the preset, and the title only when given", async () => {
+    const { kanaal: k, vraag } = kanaal(() => ({ ronde: "r1" }));
+    const c = new WerkplekHost(k).coordinatie;
+    const controles = [{ set_a: [{ bestand: "b1" }], set_b: [{ bestand: "b2", klassen: ["IfcDuctSegment"] }], soort: "hard" as const, tolerantie: 0.01 }];
+    expect(await c.botsingsrondeControles(controles, "harde")).toEqual({ ronde: "r1" });
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsingsronde_start", { controles, voorinstelling: "harde" });
+    await c.botsingsrondeControles(controles, null, "Mijn ronde");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsingsronde_start", { controles, voorinstelling: null, titel: "Mijn ronde" });
+  });
+
+  test("botsingStatus sends the reason only when there is one", async () => {
+    const { kanaal: k, vraag } = kanaal(() => ({}));
+    const c = new WerkplekHost(k).coordinatie;
+    await c.botsingStatus("x1", "genegeerd", "dubbel geteld");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_status", { botsing: "x1", status: "genegeerd", reden: "dubbel geteld" });
+    await c.botsingStatus("x1", "bevestigd");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_status", { botsing: "x1", status: "bevestigd" });
+  });
+
+  test("botsingStatusVeel, settings and trends send their messages", async () => {
+    const { kanaal: k, vraag } = kanaal(() => []);
+    const c = new WerkplekHost(k).coordinatie;
+    await c.botsingStatusVeel(["x1", "x2"], "genegeerd", "ruis");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_status_veel", { botsingen: ["x1", "x2"], status: "genegeerd", reden: "ruis" });
+    await c.botsingStatusVeel(["x1"], "geaccepteerd");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_status_veel", { botsingen: ["x1"], status: "geaccepteerd" });
+    await c.botsingInstellingen();
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_instellingen", undefined);
+    await c.botsingInstellingenBewaar({ regels: [{ a: "a", b: "b", soort: "hard", mm: 0, ernst: null }] });
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_instellingen_bewaar", { regels: [{ a: "a", b: "b", soort: "hard", mm: 0, ernst: null }] });
+    await c.botsingInstellingenBewaar({ weergaven: [] });
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_instellingen_bewaar", { weergaven: [] });
+    await c.botsingTrends("r1");
+    expect(vraag).toHaveBeenLastCalledWith("bim.botsing_trends", { ronde: "r1" });
   });
 
   test("a cancelled import is null", async () => {
