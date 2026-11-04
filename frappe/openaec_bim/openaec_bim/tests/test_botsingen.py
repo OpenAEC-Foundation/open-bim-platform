@@ -54,17 +54,88 @@ class TestBotsingen(ProjectTest):
 			koppeling_mod.bijwerken(k)
 		return k
 
+	def controle(self, **extra):
+		return {
+			"set_a": [{"bestand": self.constructie}],
+			"set_b": [{"bestand": self.installaties}],
+			"soort": "hard",
+			"tolerantie": 0.0,
+			**extra,
+		}
+
+	def test_een_ronde_met_voorinstelling_hoort_bij_haar_reeks(self):
+		eerste = botsingen.start_controles(self.project, [self.controle()], voorinstelling="harde")
+		self.lever(eerste, [("w1", "k1")])
+		tweede = botsingen.start_controles(self.project, [self.controle(tolerantie=0.01)], voorinstelling="harde")
+		doc = frappe.get_doc("BIM Botsingsronde", tweede)
+		self.assertEqual((doc.reeks, doc.vorige_ronde, doc.voorinstelling), ("harde", eerste, "harde"))
+
+	def test_zonder_voorinstelling_is_de_reeks_de_sets_en_de_soort(self):
+		sets = ([{"bestand": self.constructie}], [{"bestand": self.installaties}])
+		a = botsingen.start(self.project, *sets, "hard", 0.0)
+		self.lever(a, [("w1", "k1")])
+		b = botsingen.start(self.project, *sets, "hard", 0.05)
+		c = botsingen.start(self.project, *sets, "afstand", 0.05)
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", b, "vorige_ronde"), a)
+		self.assertTrue(frappe.db.get_value("BIM Botsingsronde", a, "reeks").startswith("sets:"))
+		self.assertFalse(frappe.db.get_value("BIM Botsingsronde", c, "vorige_ronde"))
+
+	def test_te_veel_controles_of_een_vreemd_bestand_wordt_geweigerd(self):
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [self.controle()] * 31)
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [])
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [{**self.controle(), "set_a": [{"bestand": "bestaat-niet"}]}])
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [self.controle(ernst="enorm")])
+		with self.assertRaises(frappe.ValidationError):
+			botsingen.start_controles(self.project, [self.controle(soort="dubbel", tolerantie=2)])
+
+	def test_de_kern_krijgt_de_controles_met_adressen_en_versies(self):
+		botsingen.start_controles(self.project, [self.controle(regel="r", ernst="kritiek", alleen_tussen_modellen=True)])
+		controle = self.kern.laatste_botsingen["controles"][0]
+		self.assertEqual((controle["regel"], controle["ernst"], controle["alleen_tussen_modellen"]), ("r", "kritiek", True))
+		self.assertEqual((controle["set_a"][0]["sleutel"], controle["set_a"][0]["versie"]), (self.constructie, "1"))
+		self.assertIn("bron", controle["set_a"][0])
+
+	def test_soort_is_gemengd_bij_verschillende_soorten(self):
+		naam = botsingen.start_controles(self.project, [self.controle(), self.controle(soort="afstand", tolerantie=0.05)])
+		doc = frappe.get_doc("BIM Botsingsronde", naam)
+		self.assertEqual(doc.soort, "gemengd")
+		self.assertEqual(len(json.loads(doc.regels)), 2)
+		self.assertEqual(len(json.loads(doc.set_a)), 1)
+		dubbel = botsingen.start_controles(self.project, [self.controle(soort="dubbel")], titel=None, voorinstelling="dubbele")
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", dubbel, "soort"), "dubbel")
+		self.assertTrue(frappe.db.get_value("BIM Botsingsronde", dubbel, "titel").startswith("dubbele "))
+
+	def test_bijwerken_neemt_de_voortgang_over(self):
+		ronde = self.start()
+		doc = frappe.get_doc("BIM Botsingsronde", ronde)
+		self.kern.taken[doc.kern_taak] = {"status": "bezig", "voortgang": 0.4}
+		botsingen.bijwerken(doc)
+		doc.reload()
+		self.assertEqual((doc.status, doc.voortgang), ("bezig", 0.4))
+		self.kern.taken[doc.kern_taak] = {"status": "bezig", "voortgang": 0.7}
+		botsingen.bijwerken(doc)
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", ronde, "voortgang"), 0.7)
+		json_ronde = botsingen.ronde_naar_json(frappe.get_doc("BIM Botsingsronde", ronde))
+		for veld in ("regels", "voorinstelling", "reeks", "voortgang", "samenvatting"):
+			self.assertIn(veld, json_ronde)
+		self.assertEqual(json_ronde["voortgang"], 0.7)
+
 	def test_ronde_start_met_de_versies_van_nu(self):
 		ronde = self.start()
 		doc = frappe.get_doc("BIM Botsingsronde", ronde)
 		self.assertEqual(json.loads(doc.bron_versies), {self.constructie: "1", self.installaties: "1"})
 		methode, pad, vraag = self.kern.verzoeken[-1]
 		self.assertEqual((methode, pad), ("POST", "/v1/tools/botsingen"))
-		self.assertEqual([(m["sleutel"], m["versie"]) for m in vraag["set_a"]], [(self.constructie, "1")])
-		self.assertEqual((vraag["soort"], vraag["tolerantie"]), ("hard", 0.01))
+		[controle] = vraag["controles"]
+		self.assertEqual([(m["sleutel"], m["versie"]) for m in controle["set_a"]], [(self.constructie, "1")])
+		self.assertEqual((controle["soort"], controle["tolerantie"]), ("hard", 0.01))
 		self.assertIn(f"bim/botsingen/{ronde}.json", vraag["doel"])
 		# De rij botsing doet één taak tegelijk: de adressen blijven een dag geldig, ook na lang wachten.
-		self.assertIn("X-Amz-Expires=86400", vraag["set_a"][0]["bron"]["url"])
+		self.assertIn("X-Amz-Expires=86400", controle["set_a"][0]["bron"]["url"])
 		self.assertIn("X-Amz-Expires=86400", vraag["doel"])
 		self.assertEqual(doc.status, "wacht")
 

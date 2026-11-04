@@ -114,10 +114,22 @@ def bcf_import(map: str, bestand: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def botsingsronde_start(map: str, set_a, set_b, soort: str = "hard", tolerantie=0.0, titel: str | None = None) -> dict:
+def botsingsronde_start(
+	map: str,
+	set_a=None,
+	set_b=None,
+	soort: str = "hard",
+	tolerantie=0.0,
+	titel: str | None = None,
+	controles=None,
+	voorinstelling: str | None = None,
+) -> dict:
 	_gastpagina()
 	project = issues_mod.project_van(map)
-	ronde = botsingen_mod.start(project, _lijst(set_a), _lijst(set_b), soort, float(tolerantie), titel)
+	if controles:
+		ronde = botsingen_mod.start_controles(project, _lijst(controles), titel, voorinstelling)
+	else:
+		ronde = botsingen_mod.start(project, _lijst(set_a), _lijst(set_b), soort, float(tolerantie), titel)
 	return {"ronde": ronde}
 
 

@@ -6,6 +6,7 @@ versiekoppeling: een paar dat terugkomt houdt zijn status (genegeerd blijft gene
 zijn issue; een paar dat niet meer voorkomt, komt als opgelost in de nieuwe ronde.
 """
 
+import hashlib
 import json
 import math
 
@@ -17,7 +18,9 @@ from openaec_bim import afgeleid, api, issues, kern, koppeling
 
 RONDE = "BIM Botsingsronde"
 BOTSING = "BIM Botsing"
-SOORTEN = ("hard", "afstand")
+SOORTEN = ("hard", "afstand", "dubbel")
+ERNSTEN = ("klein", "groot", "kritiek")
+MAX_CONTROLES = 30
 STATUSSEN = ("nieuw", "actief", "opgelost", "genegeerd")
 # De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
 GELDIG = 24 * 3600
@@ -54,39 +57,72 @@ def _json(waarde) -> str:
 	return json.dumps(waarde, sort_keys=True)
 
 
-def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | None = None) -> str:
-	"""Start een ronde op de versies die het project nu toont; geeft de naam van de ronde."""
-	project = issues._project(project)
-	_vereis_schrijver(project)
+def _controle(controle: dict, modellen: dict) -> dict:
+	"""Een controle genormaliseerd en gevalideerd: sets op bestand en klassen gesorteerd, soort en tolerantie in bereik."""
+	soort = controle.get("soort")
 	if soort not in SOORTEN:
-		_weiger(_("Kies hard of afstand."), "soort_onbekend")
-	tolerantie = flt(tolerantie)
+		_weiger(_("Kies hard, afstand of dubbel."), "soort_onbekend")
+	tolerantie = flt(controle.get("tolerantie"))
 	if not 0 <= tolerantie <= 1:
 		_weiger(_("De tolerantie ligt tussen 0 en 1 m."), "tolerantie_ongeldig")
+	ernst = controle.get("ernst") or None
+	if ernst is not None and ernst not in ERNSTEN:
+		_weiger(_("Onbekende ernst {0}.").format(ernst), "ernst_onbekend")
+	return {
+		"regel": str(controle["regel"])[:140] if controle.get("regel") else None,
+		"set_a": _set(controle.get("set_a"), modellen),
+		"set_b": _set(controle.get("set_b"), modellen),
+		"soort": soort,
+		"tolerantie": tolerantie,
+		"ernst": ernst,
+		"alleen_tussen_modellen": bool(controle.get("alleen_tussen_modellen")),
+	}
+
+
+def _vereniging(sets: list[list[dict]]) -> list[dict]:
+	"""De sets van alle controles samen, zonder dubbelen, op volgorde van bestand."""
+	uniek = {_json(item): item for items in sets for item in items}
+	return sorted(uniek.values(), key=lambda m: (m["bestand"], _json(m["klassen"])))
+
+
+def start_controles(
+	project, controles: list[dict], titel: str | None = None, voorinstelling: str | None = None
+) -> str:
+	"""Start een ronde met een of meer controles op de versies die het project nu toont; geeft de naam van de ronde."""
+	project = issues._project(project)
+	_vereis_schrijver(project)
+	if not 1 <= len(controles or []) <= MAX_CONTROLES:
+		_weiger(_("Een ronde heeft 1 tot {0} controles.").format(MAX_CONTROLES), "controles_aantal")
 	map_doc = frappe.db.get_value("Opslagmap", project.modelmap, ["name", "ruimte", "naam"], as_dict=True)
 	modellen = {b.name: b for b, _discipline in api.ifc_in_map(map_doc)}
-	set_a, set_b = _set(set_a, modellen), _set(set_b, modellen)
+	controles = [_controle(c, modellen) for c in controles]
+	set_a = _vereniging([c["set_a"] for c in controles])
+	set_b = _vereniging([c["set_b"] for c in controles])
+	soorten = {c["soort"] for c in controles}
+	soort = soorten.pop() if len(soorten) == 1 else "gemengd"
 	versies = {}
 	for item in set_a + set_b:
 		versie = afgeleid.getoonde_versie(item["bestand"])
 		if not versie:
 			_weiger(_("{0} is nog niet omgezet.").format(modellen[item["bestand"]].naam), "model_niet_omgezet")
 		versies[item["bestand"]] = str(versie)
+	voorinstelling = (voorinstelling or "").strip() or None
+	reeks = voorinstelling or "sets:" + hashlib.sha1(_json([set_a, set_b, soort]).encode()).hexdigest()
 	vorige = frappe.db.get_value(
-		RONDE,
-		{"project": project.name, "status": "klaar", "soort": soort, "set_a": _json(set_a), "set_b": _json(set_b)},
-		"name",
-		order_by="creation desc",
+		RONDE, {"project": project.name, "status": "klaar", "reeks": reeks}, "name", order_by="creation desc"
 	)
 	doc = frappe.get_doc(
 		{
 			"doctype": RONDE,
 			"project": project.name,
-			"titel": titel or _("Botsingen {0}").format(now_datetime().strftime("%Y-%m-%d %H:%M")),
+			"titel": titel or f"{voorinstelling or _('Botsingen')} {now_datetime().strftime('%Y-%m-%d %H:%M')}",
 			"set_a": _json(set_a),
 			"set_b": _json(set_b),
 			"soort": soort,
-			"tolerantie": tolerantie,
+			"regels": _json(sorted(controles, key=_json)),
+			"voorinstelling": voorinstelling,
+			"reeks": reeks,
+			"tolerantie": max(c["tolerantie"] for c in controles),
 			"status": "wacht",
 			"bron_versies": _json(versies),
 			"vorige_ronde": vorige,
@@ -105,15 +141,22 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 			for m in items
 		]
 
+	kern_controles = [
+		{**c, "set_a": kern_set(c["set_a"]), "set_b": kern_set(c["set_b"])} for c in controles
+	]
 	try:
-		doc.kern_taak = kern.start_botsingen(
-			kern_set(set_a), kern_set(set_b), soort, tolerantie, afgeleid.schrijfadres(doc.resultaat, GELDIG)
-		)
+		doc.kern_taak = kern.start_botsingen(kern_controles, afgeleid.schrijfadres(doc.resultaat, GELDIG))
 	except kern.KernFout as fout:
 		doc.status = "fout"
 		doc.fout = json.dumps({"error_code": fout.code, "melding": str(fout)})
 	doc.save(ignore_permissions=True)
 	return doc.name
+
+
+def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | None = None) -> str:
+	"""Start een ronde met één controle op de versies die het project nu toont; geeft de naam van de ronde."""
+	controle = {"set_a": set_a, "set_b": set_b, "soort": soort, "tolerantie": tolerantie}
+	return start_controles(project, [controle], titel=titel)
 
 
 def bijwerken(doc) -> None:
@@ -138,9 +181,11 @@ def bijwerken(doc) -> None:
 		doc.reload()
 		return
 	if status in ("wacht", "bezig"):
-		if doc.status == status:
+		voortgang = flt(taak.get("voortgang"))
+		if doc.status == status and flt(doc.voortgang) == voortgang:
 			return
 		doc.status = status
+		doc.voortgang = voortgang
 	else:
 		doc.status = "fout"
 		doc.fout = json.dumps(taak.get("fout") or {"error_code": status or "onbekend", "melding": _("De ronde is gestopt.")})
@@ -348,6 +393,11 @@ def ronde_naar_json(ronde) -> dict:
 		"set_b": json.loads(ronde.set_b or "[]"),
 		"soort": ronde.soort,
 		"tolerantie": flt(ronde.tolerantie),
+		"regels": json.loads(ronde.regels or "[]"),
+		"voorinstelling": ronde.voorinstelling,
+		"reeks": ronde.reeks,
+		"voortgang": flt(ronde.voortgang),
+		"samenvatting": json.loads(ronde.samenvatting) if ronde.samenvatting else None,
 		"status": ronde.status,
 		"aantal": cint(ronde.aantal),
 		"bron_versies": json.loads(ronde.bron_versies or "{}"),

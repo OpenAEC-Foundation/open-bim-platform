@@ -14,7 +14,9 @@
   "prioriteiten",
   "fasen",
   "labels",
-  "standaard_status"
+  "standaard_status",
+  "botsingsregels",
+  "botsingsweergaven"
  ],
  "fields": [
   {
@@ -73,11 +75,21 @@
    "fieldtype": "Data",
    "label": "Standaardstatus",
    "default": "Open"
+  },
+  {
+   "fieldname": "botsingsregels",
+   "fieldtype": "JSON",
+   "label": "Botsingsregels"
+  },
+  {
+   "fieldname": "botsingsweergaven",
+   "fieldtype": "JSON",
+   "label": "Botsingsweergaven"
   }
  ],
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 09:00:00.000000",
+ "modified": "2026-11-04 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "OpenAEC BIM",
  "name": "BIM Project",

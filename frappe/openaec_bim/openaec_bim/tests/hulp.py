@@ -34,11 +34,14 @@ class NepKern:
 		self.verzoeken = []
 		self.taken = {}
 		self.elementen = {}
+		self.laatste_botsingen = None
 
 	def roep(self, methode, pad, json=None):
 		self.verzoeken.append((methode, pad, json))
 		if pad.startswith("/v1/tools/") and pad.rsplit("/", 1)[1] in ("omzetten", "koppelen", "botsingen"):
 			taak = f"taak-{len(self.taken) + 1}"
+			if pad.endswith("/botsingen"):
+				self.laatste_botsingen = json
 			self.taken[taak] = {"status": "wacht", "voortgang": 0}
 			return {"taak": taak}
 		if pad.startswith("/v1/taken/"):

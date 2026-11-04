@@ -5,7 +5,7 @@
  "engine": "InnoDB",
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 13:00:00.000000",
+ "modified": "2026-11-04 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "OpenAEC BIM",
  "owner": "Administrator",
@@ -69,7 +69,7 @@
    "fieldname": "status",
    "fieldtype": "Select",
    "label": "Status",
-   "options": "nieuw\nactief\nopgelost\ngenegeerd",
+   "options": "nieuw\nactief\nbevestigd\ngeaccepteerd\ngenegeerd\nopgelost",
    "default": "nieuw",
    "in_list_view": 1
   },
@@ -84,6 +84,91 @@
    "fieldtype": "Data",
    "label": "Groep",
    "in_list_view": 1
+  },
+  {
+   "fieldname": "soort",
+   "fieldtype": "Select",
+   "label": "Soort",
+   "options": "\nhard\nafstand\ndubbel"
+  },
+  {
+   "fieldname": "regel",
+   "fieldtype": "Data",
+   "label": "Regel"
+  },
+  {
+   "fieldname": "emmer",
+   "fieldtype": "Select",
+   "label": "Emmer",
+   "options": "\nbeoordelen\ncontact\naangrenzend"
+  },
+  {
+   "fieldname": "emmer_reden",
+   "fieldtype": "Data",
+   "label": "Reden van de emmer"
+  },
+  {
+   "fieldname": "ernst",
+   "fieldtype": "Select",
+   "label": "Ernst",
+   "options": "\nklein\ngroot\nkritiek"
+  },
+  {
+   "fieldname": "categorie",
+   "fieldtype": "Data",
+   "label": "Categorie"
+  },
+  {
+   "fieldname": "disciplines",
+   "fieldtype": "Data",
+   "label": "Disciplines"
+  },
+  {
+   "fieldname": "verdieping",
+   "fieldtype": "Data",
+   "label": "Verdieping"
+  },
+  {
+   "fieldname": "raster",
+   "fieldtype": "Data",
+   "label": "Raster"
+  },
+  {
+   "fieldname": "ruimte",
+   "fieldtype": "Data",
+   "label": "Ruimte"
+  },
+  {
+   "fieldname": "ontwikkeling",
+   "fieldtype": "Select",
+   "label": "Ontwikkeling",
+   "options": "\nnieuw\nblijft\nterug\nweg\neerder_weg"
+  },
+  {
+   "fieldname": "nummer",
+   "fieldtype": "Int",
+   "label": "Nummer"
+  },
+  {
+   "fieldname": "reden",
+   "fieldtype": "Small Text",
+   "label": "Reden"
+  },
+  {
+   "fieldname": "beoordeeld_door",
+   "fieldtype": "Link",
+   "label": "Beoordeeld door",
+   "options": "User"
+  },
+  {
+   "fieldname": "beoordeeld_op",
+   "fieldtype": "Datetime",
+   "label": "Beoordeeld op"
+  },
+  {
+   "fieldname": "issue_status_voor",
+   "fieldtype": "Data",
+   "label": "Status van het issue voor het sluiten"
   }
  ],
  "field_order": [
@@ -95,6 +180,22 @@
   "afstand",
   "status",
   "issue",
-  "groep"
+  "groep",
+  "soort",
+  "regel",
+  "emmer",
+  "emmer_reden",
+  "ernst",
+  "categorie",
+  "disciplines",
+  "verdieping",
+  "raster",
+  "ruimte",
+  "ontwikkeling",
+  "nummer",
+  "reden",
+  "beoordeeld_door",
+  "beoordeeld_op",
+  "issue_status_voor"
  ]
 }
