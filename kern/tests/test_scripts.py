@@ -199,6 +199,18 @@ def test_variant_drops_elements_by_name_and_copies_a_class_moved(variant, ifc_sm
     assert all(k.ContainedInStructure for k in kanalen)
 
 
+def test_variant_renames_elements_and_storeys_and_keeps_the_globalids(ifc_small, tmp_path):
+    module = load("variant")
+    lang = "x" * 150
+    out = tmp_path / "lang.ifc"
+    namen = ["--hernoem", f"Wand B 1=Wand B 1 {lang}", "--hernoem", f"00 begane grond=00 {lang}"]
+    module.main([str(ifc_small), str(out), *namen])
+    before, after = ifcopenshell.open(str(ifc_small)), ifcopenshell.open(str(out))
+    assert [w.Name for w in after.by_type("IfcWall") if w.Name.startswith("Wand B 1")] == [f"Wand B 1 {lang}"]
+    assert f"00 {lang}" in [s.Name for s in after.by_type("IfcBuildingStorey")]
+    assert {e.GlobalId for e in before.by_type("IfcElement")} == {e.GlobalId for e in after.by_type("IfcElement")}
+
+
 def test_variant_replaces_part_of_the_globalids_and_the_link_finds_them_back(variant, ifc_small, tmp_path):
     from openbim_kern.linking import link_versions
 

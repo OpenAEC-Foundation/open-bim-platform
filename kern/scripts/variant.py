@@ -3,12 +3,13 @@ a new GlobalId (as some exporters do in a new version).
 
     python scripts/variant.py <in.ifc> <out.ifc> [--alleen IfcWall,IfcSlab] [--zonder IfcDuctSegment]
                               [--zonder-naam "Wand B 0"] [--kopie IfcDuctSegment:0,0,3]
-                              [--nieuwe-globalids 0.3] [--zaad 1]
+                              [--hernoem "Wand B 1=Andere naam"] [--nieuwe-globalids 0.3] [--zaad 1]
 
 `--alleen` and `--zonder` take IFC classes (subclasses count too); the spatial structure always stays. `--zonder-naam`
 drops the elements with exactly that name. `--kopie` adds a copy of every element of a class, moved over x,y,z metres
-(with a new GlobalId), so a model can get a second clash. Which elements get a new GlobalId is fixed by `--zaad`, so a
-trial can be repeated.
+(with a new GlobalId), so a model can get a second clash. `--hernoem` (repeatable) gives everything with exactly that
+name a new one, elements and storeys alike. Which elements get a new GlobalId is fixed by `--zaad`, so a trial can be
+repeated.
 """
 
 from __future__ import annotations
@@ -39,6 +40,7 @@ def variant(
     kopie: tuple[str, tuple[float, float, float]] | None = None,
     nieuwe_globalids: float = 0.0,
     zaad: int = 1,
+    hernoem: dict[str, str] | None = None,
 ) -> Path:
     model = ifcopenshell.open(str(source))
     weg = [
@@ -68,6 +70,9 @@ def variant(
             matrix = ifcopenshell.util.placement.get_local_placement(element.ObjectPlacement)
             matrix[:, 3] += np.array([dx, dy, dz, 0.0])
             ifcopenshell.api.geometry.edit_object_placement(model, product=nieuw, matrix=matrix, is_si=False)
+    for product in model.by_type("IfcRoot") if hernoem else ():
+        if product.Name in hernoem:
+            product.Name = hernoem[product.Name]
     if nieuwe_globalids > 0:
         kies = random.Random(zaad)
         elementen = sorted(model.by_type("IfcElement"), key=lambda e: e.GlobalId)
@@ -85,6 +90,10 @@ def _verschuiving(text: str | None) -> tuple[str, tuple[float, float, float]] | 
     return klasse, (dx, dy, dz)
 
 
+def _hernoemingen(paren: list[str] | None) -> dict[str, str] | None:
+    return dict(paar.split("=", 1) for paar in paren) if paren else None
+
+
 def main(argv=None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("bron", type=Path)
@@ -93,6 +102,7 @@ def main(argv=None) -> None:
     parser.add_argument("--zonder", help="komma-gescheiden IFC-klassen die weg gaan")
     parser.add_argument("--zonder-naam", help="komma-gescheiden namen van elementen die weg gaan")
     parser.add_argument("--kopie", help="Klasse:dx,dy,dz: een kopie van elk element van de klasse, verschoven (meters)")
+    parser.add_argument("--hernoem", action="append", help="oud=nieuw: een andere naam voor wat zo heet")
     parser.add_argument("--nieuwe-globalids", type=float, default=0.0, help="deel van de elementen met nieuwe GlobalId")
     parser.add_argument("--zaad", type=int, default=1)
     args = parser.parse_args(argv)
@@ -105,6 +115,7 @@ def main(argv=None) -> None:
         _verschuiving(args.kopie),
         args.nieuwe_globalids,
         args.zaad,
+        _hernoemingen(args.hernoem),
     )
 
 
