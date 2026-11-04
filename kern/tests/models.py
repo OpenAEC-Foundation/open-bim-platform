@@ -219,6 +219,23 @@ def ifc_boxes(path: Path, boxes: list[tuple[str, str, tuple[float, float, float]
     return _write(f, path)
 
 
+def ifc_cut_away(path: Path) -> Path:
+    """IFC4 model with a wall that its opening cuts away completely, so that the wall has no vertices at all.
+
+    The opening has the length and height of the wall and is wider across it; an opening that is larger in every
+    direction leaves the wall whole in the geometry engine. A duct runs through the place where the wall stood, and a
+    second duct through a normal wall.
+    """
+    f, make, _ = _one_storey()
+    gone = make("IfcWallStandardCase", "Weggesneden", 0.0, 0.0, 0.0, 1.2, 0.1, 2.0)
+    opening = make("IfcOpeningElement", "Opening", 0.0, -0.1, 0.0, 1.2, 0.3, 2.0, container=False)
+    ifcopenshell.api.run("feature.add_feature", f, feature=opening, element=gone)
+    make("IfcDuctSegment", "Kanaal door de lege plek", 0.5, -0.5, 1.0, 0.3, 1.1, 0.3)
+    make("IfcWall", "Wand", 5.0, 0.0, 0.0, 3.0, 0.2, 2.0)
+    make("IfcDuctSegment", "Kanaal", 6.0, -0.5, 1.0, 0.3, 1.2, 0.3)
+    return _write(f, path)
+
+
 def ifc_clash_context(path: Path) -> Path:
     """IFC4 model with one pair for every classification rule of a clash round (all on the ground floor).
 

@@ -113,6 +113,9 @@ wijzigen samen *(keuze)*.
 - De detectie blijft die van de geometrieboom: echte overlappen met samenvallende vlakken worden niet altijd gevonden. In een
   controle met 400 willekeurige dozenparen ontbraken er 45, waaronder twee balken met 1 m overlap.
 - `IfcVirtualElement` valt voortaan af, naast de al uitgesloten openingen.
+- Een vorm zonder vertices gaat niet in de boom, want daar crasht de boom op. Dat komt voor: een opening met de lengte en hoogte
+  van de wand snijdt de hele wand weg, zodat de wand wel omgezet wordt maar geen geometrie heeft. Zo'n element doet in geen
+  enkele controle mee: de elementenlijsten bevatten alleen wat in de boom staat.
 - De tool meldt voortgang: laden tot 50% (naar bestandsgrootte), controles tot 90% (per controle), context tot 100%. De voortgang
   wordt alleen weggeschreven als een heel procent verandert.
 

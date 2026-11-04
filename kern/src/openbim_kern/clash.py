@@ -120,6 +120,7 @@ class ClashScene:
         self.tree = ifcopenshell.geom.tree()
         self.files: dict[Path, ifcopenshell.file] = {}
         self.boxes: dict[str, tuple[Vec3, Vec3]] = {}
+        self.in_tree: dict[Path, set[str]] = {}
         self.contexts: dict[Path, ModelContext] = {}
         unique = list(dict.fromkeys(paths))
         sizes = {p: max(1, p.stat().st_size) for p in unique}
@@ -127,14 +128,17 @@ class ClashScene:
         for path in unique:
             self.files[path] = model = ifcopenshell.open(str(path))
             self.contexts[path] = ModelContext(model, settings)
+            self.in_tree[path] = in_tree = set()
             iterator = ifcopenshell.geom.iterator(settings, model)
             if iterator.initialize():
                 last = -1
                 while True:
                     shape = iterator.get()
-                    self.tree.add_element(shape)
                     verts = np.asarray(shape.geometry.verts, dtype=float).reshape(-1, 3)
+                    # An opening can cut an element away completely, and the tree crashes on a shape without vertices.
                     if len(verts):
+                        self.tree.add_element(shape)
+                        in_tree.add(shape.guid)
                         low, high = verts.min(axis=0), verts.max(axis=0)
                         self.boxes[shape.guid] = (tuple(float(v) for v in low), tuple(float(v) for v in high))
                     percent = int(iterator.progress())
@@ -149,11 +153,13 @@ class ClashScene:
     def _side(
         self, models: list[ClashModel]
     ) -> tuple[list[ifcopenshell.entity_instance], dict[str, tuple[ifcopenshell.entity_instance, ClashModel]]]:
+        """The elements of the models that are in the tree: only those can be asked about."""
         elements, owners = [], {}
         for m in models:
             for e in _elements(self.files[m.pad], m.klassen):
-                elements.append(e)
-                owners[e.GlobalId] = (e, m)
+                if e.GlobalId in self.in_tree[m.pad]:
+                    elements.append(e)
+                    owners[e.GlobalId] = (e, m)
         return elements, owners
 
     def _ref(self, entity: ifcopenshell.entity_instance, model: ClashModel) -> ElementRef:

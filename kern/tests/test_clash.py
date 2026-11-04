@@ -2,6 +2,7 @@ import hashlib
 import json
 
 import ifcopenshell
+import ifcopenshell.geom
 import models
 import pytest
 
@@ -188,6 +189,60 @@ def test_virtual_elements_do_not_clash(tmp_path):
     path = models.ifc_clash_context(tmp_path / "context.ifc")
     found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="hard")])
     assert found and not any("IfcVirtualElement" in (c.a.klasse, c.b.klasse) for c in found)
+
+
+def vertices_per_name(path):
+    opened = ifcopenshell.open(str(path))
+    settings = ifcopenshell.geom.settings()
+    iterator = ifcopenshell.geom.iterator(settings, opened)
+    assert iterator.initialize()
+    counts = {}
+    while True:
+        shape = iterator.get()
+        counts[opened.by_guid(shape.guid).Name] = len(shape.geometry.verts) // 3
+        if not iterator.next():
+            return counts
+
+
+@pytest.fixture
+def cut_away(tmp_path):
+    path = models.ifc_cut_away(tmp_path / "leeg.ifc")
+    # Without this the tests below prove nothing: the wall really has no vertices, and the tree crashes on such a shape.
+    assert vertices_per_name(path)["Weggesneden"] == 0
+    return path
+
+
+def test_a_wall_cut_away_by_its_opening_does_not_stop_a_hard_check(cut_away):
+    found = run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="hard")])
+    assert [{c.a.naam, c.b.naam} for c in found] == [{"Wand", "Kanaal"}]
+
+
+def test_a_wall_cut_away_by_its_opening_does_not_stop_a_clearance_check(cut_away):
+    found = run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="afstand", tolerantie=0.05)])
+    assert {"Weggesneden"}.isdisjoint(name for c in found for name in (c.a.naam, c.b.naam))
+    assert {"Wand", "Kanaal"} in [{c.a.naam, c.b.naam} for c in found]
+
+
+def test_a_wall_cut_away_by_its_opening_is_no_duplicate(cut_away):
+    assert run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="dubbel")]) == []
+
+
+def test_a_set_with_only_a_wall_that_is_cut_away_finds_nothing(cut_away):
+    check = ClashCheck(set_a=[model(cut_away, ["IfcWallStandardCase"])], set_b=[model(cut_away)], soort="hard")
+    assert run_checks([check]) == []
+
+
+def test_the_tree_is_only_asked_about_elements_it_holds(cut_away, monkeypatch):
+    asked = []
+    real = ifcopenshell.geom.tree.clash_intersection_many
+
+    def spy(self, set_a, set_b, **kwargs):
+        asked.append({e.Name for e in (*set_a, *set_b)})
+        return real(self, set_a, set_b, **kwargs)
+
+    monkeypatch.setattr(ifcopenshell.geom.tree, "clash_intersection_many", spy)
+    run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="hard")])
+    assert asked == [{"Wand", "Kanaal", "Kanaal door de lege plek"}]
 
 
 def test_progress_runs_up_to_one(ifc_small):
