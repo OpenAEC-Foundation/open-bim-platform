@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
 import type { Clash, ClashRound, ClashSettings, ClashStatus } from "../model/bcf";
-import { STATUSSEN, groepeer, telStatussen } from "../model/clashes";
+import { STATUSSEN, groepeer, telStatussen, voortgangProcent } from "../model/clashes";
 import { ClashRules } from "./ClashRules";
 import { ClashStart } from "./ClashStart";
 import { describe } from "./format";
@@ -112,7 +112,7 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
                   {t(`ronde_status.${r.status}`)}
                 </span>
                 {(r.status === "wacht" || r.status === "bezig") && r.voortgang != null && (
-                  <span>{t("ronde_voortgang", { procent: Math.round(r.voortgang) })}</span>
+                  <span>{t("ronde_voortgang", { procent: voortgangProcent(r.voortgang) })}</span>
                 )}
                 {r.status === "klaar" && <span>{t("aantal_botsingen", { count: r.aantal })}</span>}
                 <span>{t(`soort_${r.soort}`)}</span>

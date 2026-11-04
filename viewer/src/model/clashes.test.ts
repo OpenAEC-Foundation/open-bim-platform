@@ -20,6 +20,7 @@ import {
   standaardRegels,
   telStatussen,
   vorige,
+  voortgangProcent,
   volgende,
   voorinstellingen,
 } from "./clashes";
@@ -470,5 +471,16 @@ describe("mmWaarde", () => {
 
   test("refuses empty, negative, too large and non-numeric text", () => {
     for (const tekst of ["", "  ", "-1", "1000,1", "abc", "1e2", "0x10", "5 mm", "1,2,3"]) expect(mmWaarde(tekst)).toBeNull();
+  });
+});
+
+describe("voortgangProcent", () => {
+  test("turns a fraction into a percentage between 0 and 100", () => {
+    expect(voortgangProcent(0.4)).toBe(40);
+    expect(voortgangProcent(1)).toBe(100);
+    expect(voortgangProcent(0)).toBe(0);
+    expect(voortgangProcent(1.2)).toBe(100);
+    expect(voortgangProcent(-0.1)).toBe(0);
+    expect(voortgangProcent(Number.NaN)).toBe(0);
   });
 });

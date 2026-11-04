@@ -64,6 +64,12 @@ function telKlassen(modellen: ModelInfo[], past: (klasse: string) => boolean): b
   return modellen.some((m) => Object.entries(m.index?.aantallen_per_klasse ?? {}).some(([klasse, aantal]) => aantal > 0 && past(klasse)));
 }
 
+/** Progress of a round as a whole percentage; the server sends a fraction from 0 to 1. */
+export function voortgangProcent(voortgang: number): number {
+  if (!Number.isFinite(voortgang)) return 0;
+  return Math.min(100, Math.max(0, Math.round(voortgang * 100)));
+}
+
 /** Millimetres typed in a field (comma or point), 0 to 1000; null when it is not a number in that range. */
 export function mmWaarde(tekst: string): number | null {
   const schoon = tekst.trim().replace(",", ".");
