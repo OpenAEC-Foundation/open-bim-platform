@@ -124,14 +124,17 @@ export class FragmentsEngine {
         }
       }
     }
-    // Only models that hold one of the elements are touched; any other model stays at normal opacity.
-    for (const [key, entries] of found) {
-      const model = entries[0].model;
-      if (ISOLATE_GHOST) {
+    // Every model goes transparent (an element of a third model could hide the pair); only the models that hold
+    // one of the elements get them back at full opacity and marked.
+    if (ISOLATE_GHOST) {
+      for (const [key, model] of this.fragments.list) {
         this.ghosted.add(key);
         await model.setOpacity(undefined, GHOST_OPACITY);
-        await model.resetOpacity(entries.map((entry) => entry.id));
       }
+    }
+    for (const [, entries] of found) {
+      const model = entries[0].model;
+      if (ISOLATE_GHOST) await model.resetOpacity(entries.map((entry) => entry.id));
       for (const { id, material } of entries) await model.highlight([id], material);
     }
     const size = boxes.length ? this.jointSize(boxes) : null;
