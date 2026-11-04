@@ -34,6 +34,11 @@ body {
   grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) var(--spacing-sidebar-width);
 }
 
+/* Issues and Botsingen: a column of 360 px. */
+.viewer__body--inspector.viewer__body--breed {
+  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) 360px;
+}
+
 .viewer__sidebar {
   min-height: 0;
 }

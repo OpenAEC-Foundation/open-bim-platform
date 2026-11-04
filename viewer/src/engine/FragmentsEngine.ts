@@ -4,6 +4,15 @@ import * as FRAGS from "@thatopen/fragments";
 import workerUrl from "@thatopen/fragments/worker?url";
 import * as THREE from "three";
 import { fromBcfCamera, ifcToThree, toBcfCamera, type BcfCamera, type Vec3 } from "../model/bcf";
+import { isolateRadius } from "./isolate";
+
+/** Ghost everything but the two elements of a clash; false only marks them and moves the camera. */
+export const ISOLATE_GHOST = true;
+/** Opacity of the ghosted rest of the model. */
+const GHOST_OPACITY = 0.12;
+
+/** An element to act on: its model parts and GlobalId. */
+export type Target = { keys: string[]; globalid: string };
 
 type World = OBC.SimpleWorld<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer>;
 
@@ -15,6 +24,8 @@ export class FragmentsEngine {
   private readonly components = new OBC.Components();
   private readonly world: World;
   private readonly fragments: OBC.FragmentsManager;
+  /** Keys of the models that the current isolation ghosted. */
+  private readonly ghosted = new Set<string>();
 
   constructor(private readonly container: HTMLElement) {
     const worlds = this.components.get(OBC.Worlds);
@@ -89,6 +100,77 @@ export class FragmentsEngine {
     await this.fragments.core.update(true);
   }
 
+  /**
+   * Show a clash: both elements marked (A in the accent colour, B in the info colour), the rest of the models that hold
+   * them ghosted, and the camera on the point. A previous isolation is cleared first.
+   */
+  async isolate(a: Target[], b: Target[], point: Vec3): Promise<void> {
+    await this.clearIsolation();
+    const found = new Map<string, { model: FRAGS.FragmentsModel; id: number; material: FRAGS.MaterialDefinition }[]>();
+    const boxes: THREE.Box3[] = [];
+    const sides: [Target[], FRAGS.MaterialDefinition][] = [
+      [a, this.markMaterial("--theme-accent")],
+      [b, this.markMaterial("--color-semantic-info")],
+    ];
+    for (const [targets, material] of sides) {
+      for (const target of targets) {
+        for (const key of target.keys) {
+          const model = this.fragments.list.get(key);
+          if (!model) continue;
+          const [id] = (await model.getLocalIdsByGuids([target.globalid])) ?? [];
+          if (id == null) continue;
+          found.set(key, [...(found.get(key) ?? []), { model, id, material }]);
+          boxes.push((await model.getMergedBox([id])).applyMatrix4(model.object.matrixWorld));
+        }
+      }
+    }
+    // Only models that hold one of the elements are touched; any other model stays at normal opacity.
+    for (const [key, entries] of found) {
+      const model = entries[0].model;
+      if (ISOLATE_GHOST) {
+        this.ghosted.add(key);
+        await model.setOpacity(undefined, GHOST_OPACITY);
+        await model.resetOpacity(entries.map((entry) => entry.id));
+      }
+      for (const { id, material } of entries) await model.highlight([id], material);
+    }
+    const size = boxes.length ? this.jointSize(boxes) : null;
+    await this.focus(point, isolateRadius(size));
+  }
+
+  /** Look at elements (the joint box of all of them) and mark them; when none is found nothing moves. */
+  async focusElements(targets: Target[]): Promise<void> {
+    await this.clearIsolation();
+    await this.highlightMany(targets);
+    const boxes: THREE.Box3[] = [];
+    for (const target of targets) {
+      for (const key of target.keys) {
+        const model = this.fragments.list.get(key);
+        const [id] = (await model?.getLocalIdsByGuids([target.globalid])) ?? [];
+        if (model && id != null) boxes.push((await model.getMergedBox([id])).applyMatrix4(model.object.matrixWorld));
+      }
+    }
+    if (!boxes.length) return;
+    const joint = boxes.reduce((all, box) => all.union(box), new THREE.Box3());
+    await this.focusThree(joint.getCenter(new THREE.Vector3()), isolateRadius(this.jointSize(boxes)));
+  }
+
+  /** Back to the normal view: full opacity everywhere and no marking. */
+  async clearIsolation(): Promise<void> {
+    for (const key of this.ghosted) {
+      const model = this.fragments.list.get(key);
+      if (model) await model.resetOpacity(undefined);
+    }
+    this.ghosted.clear();
+    for (const model of this.fragments.list.values()) await model.resetHighlight();
+    await this.fragments.core.update(true);
+  }
+
+  private jointSize(boxes: THREE.Box3[]): [number, number, number] {
+    const size = boxes.reduce((all, box) => all.union(box), new THREE.Box3()).getSize(new THREE.Vector3());
+    return [size.x, size.y, size.z];
+  }
+
   /** The current view as a BCF perspective camera (IFC world coordinates). */
   camera(): BcfCamera {
     const three = this.world.camera.three as THREE.PerspectiveCamera;
@@ -113,7 +195,10 @@ export class FragmentsEngine {
 
   /** Look at a point (IFC world coordinates, such as a clash point) from a distance that fits `radius` metres. */
   async focus(point: Vec3, radius: number): Promise<void> {
-    const center = new THREE.Vector3(...ifcToThree(point, this.basis()));
+    await this.focusThree(new THREE.Vector3(...ifcToThree(point, this.basis())), radius);
+  }
+
+  private async focusThree(center: THREE.Vector3, radius: number): Promise<void> {
     await this.world.camera.controls.fitToSphere(new THREE.Sphere(center, Math.max(radius, 0.5)), true);
     await this.fragments.core.update(true);
   }
@@ -148,9 +233,14 @@ export class FragmentsEngine {
 
   /** The accent colour of the active style-book theme. */
   private highlightMaterial(): FRAGS.MaterialDefinition {
-    const accent = getComputedStyle(this.container).getPropertyValue("--theme-accent").trim();
+    return this.markMaterial("--theme-accent");
+  }
+
+  /** A marking material in the colour of a style-book token, read from the page at the moment of use. */
+  private markMaterial(token: string): FRAGS.MaterialDefinition {
+    const colour = getComputedStyle(this.container).getPropertyValue(token).trim();
     return {
-      color: new THREE.Color(accent),
+      color: new THREE.Color(colour),
       renderedFaces: FRAGS.RenderedFaces.TWO,
       opacity: 1,
       transparent: false,

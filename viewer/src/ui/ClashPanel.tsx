@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
 import type { Clash, ClashRound, ClashStatus } from "../model/bcf";
-import { STATUSSEN, elementenVan, groepeer, telStatussen } from "../model/clashes";
+import { STATUSSEN, groepeer, telStatussen } from "../model/clashes";
 import { describe } from "./format";
 import type { Weergave } from "./weergave";
 
@@ -212,7 +212,11 @@ function Ronde({
   const vervang = (b: Clash) => setBotsingen((lijst) => (lijst ?? []).map((x) => (x.naam === b.naam ? b : x)));
   const toon = (b: Clash) => {
     setActief(b.naam);
-    void weergave.focus(b.punt, elementenVan(b));
+    void weergave.isoleer(
+      { bestand: b.element_a.bestand, globalid: b.element_a.globalid },
+      { bestand: b.element_b.bestand, globalid: b.element_b.globalid },
+      b.punt,
+    );
   };
   const zetStatus = async (b: Clash, status: ClashStatus) => {
     try {

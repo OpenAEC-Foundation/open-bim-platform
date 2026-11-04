@@ -206,8 +206,28 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           await engine.focus(punt, 2);
           await engine.highlightMany(targets(elementen));
         }),
+      isoleer: (a: ElementRef, b: ElementRef, punt: Vec3) =>
+        later((engine) => engine.isolate(targets([a]), targets([b]), punt)),
+      naarElement: (e: ElementRef) => later((engine) => engine.focusElements(targets([e]))),
+      herstel: () => later((engine) => engine.clearIsolation()),
     };
   }, []);
+
+  // Switching tab ends a clash view: back to the normal view, with the selection marked again.
+  useEffect(() => {
+    void weergave
+      .herstel()
+      .then(() => {
+        const current = selectionRef.current;
+        const engine = engineRef.current;
+        if (!current || !engine) return;
+        const keys = partsRef.current.get(sourceKey(current.bron)) ?? [];
+        queueRef.current = queueRef.current
+          .then(() => engine.highlight({ keys, globalid: current.globalid }))
+          .catch((e) => setError(describe(e)));
+      })
+      .catch(() => undefined);
+  }, [tab, weergave]);
 
   // Test entry for the browser test (e2e/smoke.spec.ts); it exists only in the development build.
   useEffect(() => {
@@ -247,7 +267,7 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           { id: "vernieuwen", label: t("vernieuwen"), icon: uiRefresh, onClick: () => void refresh() },
         ]}
       />
-      <div className="viewer__body viewer__body--inspector">
+      <div className={`viewer__body viewer__body--inspector${host.coordinatie && tab !== "eigenschappen" ? " viewer__body--breed" : ""}`}>
         <aside className="oa-sidebar viewer__sidebar" aria-label={t("modellen")}>
           <div className="oa-sidebar__header">
             <span className="oa-sidebar__section-label">{t("modellen")}</span>
