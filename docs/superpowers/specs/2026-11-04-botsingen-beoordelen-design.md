@@ -103,8 +103,9 @@ wijzigen samen *(keuze)*.
   scène die de bestanden en de boom laadt, en een vraag per controle. `find_clashes(set_a, set_b, soort, tolerantie)` blijft
   bestaan voor de bestaande tests.
 - Volgorde: eerst `dubbel`, dan `hard`, dan `afstand`. Een paar komt één keer voor; de eerste controle die het vindt, wint.
-- `dubbel`: een harde vraag, waarvan alleen paren overblijven met dezelfde klasse en een omhullende doos die per zijde
-  hoogstens 10 mm afwijkt. De dozen komen uit de vertices tijdens het trianguleren.
+- `dubbel`: paren met dezelfde klasse en een omhullende doos die per zijde hoogstens 10 mm afwijkt. De dozen komen uit de
+  vertices tijdens het trianguleren. Dit gaat niet via een harde vraag: exact samenvallende volumes hebben coplanaire vlakken
+  en geven in de geometrieboom geen botsing. `punt` is het midden van de doos en `afstand` de kleinste maat ervan.
 - `IfcVirtualElement` valt voortaan af, naast de al uitgesloten openingen.
 - De tool meldt voortgang: laden tot 50% (naar bestandsgrootte), controles tot 90% (per controle), context tot 100%.
 
