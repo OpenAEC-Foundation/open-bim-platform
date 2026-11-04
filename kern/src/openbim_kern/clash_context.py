@@ -162,7 +162,10 @@ class ModelContext:
     def raster(self, punt: tuple[float, float, float]) -> str | None:
         """Nearest grid axis per direction, as `C-4`; None without a grid."""
         if self._axes is None:
-            self._axes = self._read_grid()
+            try:
+                self._axes = self._read_grid()
+            except Exception:
+                self._axes = ([], [])  # cache the failure: the reader must not run again for every clash
         tags = [t for t in (self._nearest(axes, punt) for axes in self._axes) if t]
         return "-".join(tags) if tags else None
 
@@ -198,7 +201,10 @@ class ModelContext:
     def ruimte(self, punt: tuple[float, float, float]) -> tuple[float, str] | None:
         """Volume and name of the smallest space whose bounding box holds the point."""
         if self._spaces is None:
-            self._spaces = self._read_spaces()
+            try:
+                self._spaces = self._read_spaces()
+            except Exception:
+                self._spaces = []  # cache the failure: the geometry pass must not run again for every clash
         best: tuple[float, str] | None = None
         for volume, name, low, high in self._spaces:
             if (best is None or volume < best[0]) and np.all(low <= punt) and np.all(punt <= high):

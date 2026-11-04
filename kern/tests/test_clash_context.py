@@ -109,3 +109,20 @@ def test_a_failing_context_never_fails_the_round(context_round, monkeypatch):
     again = run_checks([ClashCheck(set_a=[m], set_b=[m], soort="hard")])
     assert len(again) == len(found)
     assert all(c.raster is None and c.ruimte is None for c in again)
+
+
+@pytest.mark.parametrize("reader,question", [("_read_spaces", "ruimte"), ("_read_grid", "raster")])
+def test_a_failing_reader_runs_once_and_gives_none(ifc_small, monkeypatch, reader, question):
+    import ifcopenshell
+
+    calls = []
+
+    def boom(self):
+        calls.append(1)
+        raise RuntimeError("kapot")
+
+    monkeypatch.setattr(ModelContext, reader, boom)
+    context = ModelContext(ifcopenshell.open(str(ifc_small)), None)
+    results = [getattr(context, question)((0.0, 0.0, 0.0)) for _ in range(3)]
+    assert results == [None, None, None]
+    assert len(calls) == 1
