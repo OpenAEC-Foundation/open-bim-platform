@@ -180,6 +180,37 @@ def test_variant_keeps_only_the_given_classes(variant, ifc_small, tmp_path):
     assert model.by_type("IfcBuildingStorey")
 
 
+def test_variant_drops_elements_by_name_and_copies_a_class_moved(variant, ifc_small, tmp_path):
+    import ifcopenshell.util.placement
+
+    out = variant(ifc_small, tmp_path / "zonder.ifc", zonder_naam=["Wand B 0"])
+    namen = [e.Name for e in ifcopenshell.open(str(out)).by_type("IfcWall")]
+    assert "Wand B 0" not in namen and "Wand B 1" in namen
+
+    out = variant(ifc_small, tmp_path / "kopie.ifc", kopie=("IfcDuctSegment", (0.0, 0.0, 3.0)))
+    kanalen = ifcopenshell.open(str(out)).by_type("IfcDuctSegment")
+    assert len(kanalen) == 2 and len({k.GlobalId for k in kanalen}) == 2
+    hoogtes = sorted(float(ifcopenshell.util.placement.get_local_placement(k.ObjectPlacement)[2][3]) for k in kanalen)
+    assert hoogtes[1] - hoogtes[0] == pytest.approx(3.0)
+    # The copy has a shape of its own in the same geometric context, and sits in the same storey.
+    vormen = [k.Representation.Representations[0] for k in kanalen]
+    assert vormen[0] is not vormen[1] and vormen[0].Items[0] != vormen[1].Items[0]
+    assert vormen[0].ContextOfItems == vormen[1].ContextOfItems
+    assert all(k.ContainedInStructure for k in kanalen)
+
+
+def test_variant_renames_elements_and_storeys_and_keeps_the_globalids(ifc_small, tmp_path):
+    module = load("variant")
+    lang = "x" * 150
+    out = tmp_path / "lang.ifc"
+    namen = ["--hernoem", f"Wand B 1=Wand B 1 {lang}", "--hernoem", f"00 begane grond=00 {lang}"]
+    module.main([str(ifc_small), str(out), *namen])
+    before, after = ifcopenshell.open(str(ifc_small)), ifcopenshell.open(str(out))
+    assert [w.Name for w in after.by_type("IfcWall") if w.Name.startswith("Wand B 1")] == [f"Wand B 1 {lang}"]
+    assert f"00 {lang}" in [s.Name for s in after.by_type("IfcBuildingStorey")]
+    assert {e.GlobalId for e in before.by_type("IfcElement")} == {e.GlobalId for e in after.by_type("IfcElement")}
+
+
 def test_variant_replaces_part_of_the_globalids_and_the_link_finds_them_back(variant, ifc_small, tmp_path):
     from openbim_kern.linking import link_versions
 

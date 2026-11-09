@@ -1,0 +1,410 @@
+import { Icon, uiChevronLeft, uiHelp } from "@openaec/icons";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import type { IsolateResult } from "../engine/isolate";
+import type { Coordinatie, ModelInfo } from "../host/BimHost";
+import type { Clash, ClashBucket, ClashElement, ClashFilter, ClashGroupBy, ClashRound as RondeGegevens, ClashSettings, ClashStatus } from "../model/bcf";
+import {
+  GROEPSACTIE_MAX,
+  type SneltoetsActie,
+  emmerTelling,
+  filter as filterRijen,
+  groepeer,
+  houdVast,
+  isZichtbaar,
+  leegFilter,
+  magBeslissen,
+  nietInBeeld,
+  rijActies,
+  rondeTelling,
+  sneltoets,
+  sprongNaBesluit,
+  teBeslissen,
+  volgende,
+  vorige,
+  voortgangProcent,
+} from "../model/clashes";
+import { ClashFilters } from "./ClashFilters";
+import { ClashGroupHeader, type GroepsActie } from "./ClashGroupHeader";
+import { ClashRow } from "./ClashRow";
+import { ClashTrends } from "./ClashTrends";
+import { describe, isSuperseded } from "./format";
+import type { Weergave } from "./weergave";
+
+const EMMERS: ClashBucket[] = ["beoordelen", "contact", "aangrenzend"];
+const PER_KEER = 100;
+const TOETSEN: [string, SneltoetsActie][] = [
+  ["J, ↓", "volgende"],
+  ["K, ↑", "vorige"],
+  ["B", "bevestigen"],
+  ["A", "accepteren"],
+  ["X", "afwijzen"],
+  ["Esc", "alles_tonen"],
+  ["?", "hulp"],
+];
+
+/** The view is not awaited: the app reports its own failures. */
+function wis(belofte: Promise<void>) {
+  belofte.catch(() => undefined);
+}
+
+/** A round as a worklist: buckets, filters, groups, rows with their decisions, and the shortcuts. */
+export function ClashRound({
+  coordinatie,
+  weergave,
+  ronde,
+  modellen,
+  instellingen,
+  onInstellingen,
+  onVerouderd,
+  onTerug,
+}: {
+  coordinatie: Coordinatie;
+  weergave: Weergave;
+  ronde: RondeGegevens;
+  modellen: ModelInfo[];
+  instellingen: ClashSettings;
+  onInstellingen: (instellingen: ClashSettings) => void;
+  /** The host refused a decision because of a newer round: load the round again, so that the buttons go. */
+  onVerouderd: () => void;
+  onTerug: () => void;
+}) {
+  const { t } = useTranslation();
+  const mag = magBeslissen(instellingen.mag_wijzigen, ronde);
+  const [botsingen, setBotsingen] = useState<Clash[] | null>(null);
+  const [laadFout, setLaadFout] = useState<string | null>(null);
+  const [filter, setFilter] = useState<ClashFilter>(leegFilter);
+  const [groep, setGroep] = useState<ClashGroupBy>("klassen");
+  const [gekozen, setGekozen] = useState<string | null>(null);
+  const [vast, setVast] = useState<string | null>(null);
+  const [afwijzen, setAfwijzen] = useState<string | null>(null);
+  const [rijFout, setRijFout] = useState<{ naam: string; melding: string } | null>(null);
+  const [inBeeld, setInBeeld] = useState<{ naam: string; uit: IsolateResult } | null>(null);
+  const [bezig, setBezig] = useState(false);
+  const [ingeklapt, setIngeklapt] = useState<Set<string>>(new Set());
+  const [limieten, setLimieten] = useState<Record<string, number>>({});
+  const [groepsActie, setGroepsActie] = useState<GroepsActie | null>(null);
+  const [groepFout, setGroepFout] = useState<string | null>(null);
+  const [hulp, setHulp] = useState(false);
+  const loopt = useRef(false);
+  const isoleerd = useRef(false);
+  const scrollen = useRef(false);
+  const lijstRef = useRef<HTMLDivElement>(null);
+  const handler = useRef<(e: KeyboardEvent) => void>(() => undefined);
+
+  useEffect(() => {
+    if (ronde.status !== "klaar") return;
+    let cancelled = false;
+    coordinatie
+      .botsingen(ronde.naam)
+      .then((lijst) => {
+        if (!cancelled) setBotsingen(lijst);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setLaadFout(describe(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [coordinatie, ronde.naam, ronde.status]);
+
+  // Leaving the round ends the isolated view.
+  useEffect(
+    () => () => {
+      if (isoleerd.current) wis(weergave.herstel());
+    },
+    [weergave],
+  );
+
+  // Shortcuts live as long as this screen; the panel is only mounted while the Botsingen tab is open.
+  useEffect(() => {
+    const luister = (e: KeyboardEvent) => handler.current(e);
+    window.addEventListener("keydown", luister);
+    return () => window.removeEventListener("keydown", luister);
+  }, []);
+
+  useEffect(() => {
+    if (!gekozen || !scrollen.current) return;
+    scrollen.current = false;
+    lijstRef.current?.querySelector(`[data-botsing="${CSS.escape(gekozen)}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [gekozen]);
+
+  const alle = useMemo(() => botsingen ?? [], [botsingen]);
+  const emmers = useMemo(() => emmerTelling(alle), [alle]);
+  const tel = useMemo(() => rondeTelling(alle), [alle]);
+  const getoond = useMemo(() => houdVast(filterRijen(alle, filter), alle, vast), [alle, filter, vast]);
+  const groepen = useMemo(() => groepeer(getoond, groep), [getoond, groep]);
+  const sleutelVan = (g: string | null) => g ?? "";
+  const zichtbaar = groepen.flatMap((g) => (ingeklapt.has(sleutelVan(g.groep)) ? [] : g.botsingen.slice(0, limieten[sleutelVan(g.groep)] ?? PER_KEER)));
+  const zichtbaarGekozen = isZichtbaar(zichtbaar, gekozen);
+  const rij = zichtbaarGekozen ? (zichtbaar.find((b) => b.naam === gekozen) ?? null) : null;
+  const gekozenRef = useRef<string | null>(null);
+  gekozenRef.current = gekozen;
+  const zetGroepsActie = (actie: GroepsActie | null) => {
+    setGroepFout(null);
+    setGroepsActie(actie);
+  };
+
+  const vervang = (nieuw: Clash[]) =>
+    setBotsingen((lijst) => (lijst ?? []).map((x) => nieuw.find((n) => n.naam === x.naam) ?? x));
+
+  const kies = (b: Clash, opties: { auto?: boolean; scroll?: boolean } = {}) => {
+    if (!opties.auto) setVast(null);
+    scrollen.current = opties.scroll === true;
+    isoleerd.current = true;
+    setGekozen(b.naam);
+    setAfwijzen(null);
+    setRijFout(null);
+    setInBeeld(null);
+    weergave
+      .isoleer({ bestand: b.element_a.bestand, globalid: b.element_a.globalid }, { bestand: b.element_b.bestand, globalid: b.element_b.globalid }, b.punt)
+      .then(
+        (uit) => setInBeeld({ naam: b.naam, uit }),
+        (e: unknown) => setRijFout({ naam: b.naam, melding: describe(e) }),
+      );
+  };
+  const toonAlles = () => {
+    isoleerd.current = false;
+    setGekozen(null);
+    setAfwijzen(null);
+    wis(weergave.herstel());
+  };
+  // A selected row that leaves the shown list (filter, collapsed group) ends the selection.
+  useEffect(() => {
+    if (gekozen !== null && !zichtbaarGekozen) toonAlles();
+  }, [gekozen, zichtbaarGekozen]);
+  const beweeg = (richting: 1 | -1) => {
+    const naam = (richting === 1 ? volgende : vorige)(zichtbaar, gekozen);
+    const b = zichtbaar.find((x) => x.naam === naam);
+    if (b && b.naam !== gekozen) kies(b, { scroll: true });
+  };
+
+  const beslis = async (b: Clash, status: ClashStatus, reden?: string) => {
+    if (!mag || loopt.current) return;
+    loopt.current = true;
+    setBezig(true);
+    setRijFout(null);
+    try {
+      vervang([await coordinatie.botsingStatus(b.naam, status, reden)]);
+      setAfwijzen(null);
+      setVast(b.naam);
+      const naam = status === "actief" ? null : sprongNaBesluit(zichtbaar, b.naam, gekozenRef.current);
+      const volgt = zichtbaar.find((x) => x.naam === naam);
+      if (volgt) kies(volgt, { auto: true, scroll: true });
+    } catch (e) {
+      setRijFout({ naam: b.naam, melding: describe(e) });
+      if (isSuperseded(e)) onVerouderd();
+    } finally {
+      loopt.current = false;
+      setBezig(false);
+    }
+  };
+
+  const beslisGroep = async (rijen: Clash[], status: GroepsActie["status"], reden: string) => {
+    const namen = teBeslissen(rijen).map((b) => b.naam);
+    if (!mag || loopt.current || namen.length === 0 || namen.length > GROEPSACTIE_MAX) return;
+    loopt.current = true;
+    setBezig(true);
+    setGroepFout(null);
+    try {
+      vervang(await coordinatie.botsingStatusVeel(namen, status, reden || undefined));
+      zetGroepsActie(null);
+    } catch (e) {
+      setGroepFout(describe(e));
+      if (isSuperseded(e)) onVerouderd();
+    } finally {
+      loopt.current = false;
+      setBezig(false);
+    }
+  };
+
+  handler.current = (e) => {
+    if (!botsingen) return;
+    const actie = sneltoets(e);
+    if (!actie) return;
+    if (actie === "volgende" || actie === "vorige") {
+      e.preventDefault();
+      beweeg(actie === "volgende" ? 1 : -1);
+    } else if (actie === "bevestigen" || actie === "accepteren" || actie === "afwijzen") {
+      if (rij === null || !rijActies(rij, mag).beslissen) return;
+      // The reject field gets the focus before the browser handles the key: without this the letter ends up in it.
+      e.preventDefault();
+      if (actie === "afwijzen") setAfwijzen(rij.naam);
+      else void beslis(rij, actie === "bevestigen" ? "bevestigd" : "geaccepteerd");
+    } else if (actie === "hulp") {
+      e.preventDefault();
+      setHulp((h) => !h);
+    } else if (actie === "alles_tonen") {
+      e.preventDefault();
+      if (afwijzen !== null) setAfwijzen(null);
+      else if (groepsActie !== null) zetGroepsActie(null);
+      else toonAlles();
+    }
+  };
+
+  const naam = (sleutel: string) => modellen.find((m) => m.bron.sleutel === sleutel)?.naam ?? sleutel;
+  const groepNaam = (waarde: string | null) => {
+    if (waarde === null) return t("groep_onbekend");
+    if (groep === "ernst") return t(`ernst.${waarde}`, waarde);
+    if (groep === "ontwikkeling") return t(`ontwikkeling.${waarde}`, waarde);
+    return waarde;
+  };
+  const inFilter = (emmer: ClashFilter["emmer"]) => setFilter({ ...filter, emmer });
+  const naarElement = (e: ClashElement) => wis(weergave.naarElement({ bestand: e.bestand, globalid: e.globalid }));
+  const lopend = ronde.status === "wacht" || ronde.status === "bezig";
+
+  return (
+    <div className="issue" data-isoleer={gekozen ?? ""}>
+      <div className="issue__kop">
+        <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={onTerug}>
+          <Icon svg={uiChevronLeft} size={14} /> {t("terug")}
+        </button>
+        <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="sneltoetsen" aria-pressed={hulp} onClick={() => setHulp(!hulp)}>
+          <Icon svg={uiHelp} size={14} /> {t("sneltoetsen_knop")}
+        </button>
+      </div>
+      <div className="inspector__title">
+        <strong>{ronde.titel}</strong>
+        <span>
+          {t(`soort_${ronde.soort}`)} ·{" "}
+          {ronde.tolerantie === null ? t("tolerantie_per_regel") : t("tolerantie_waarde", { mm: Math.round(ronde.tolerantie * 1000) })} ·{" "}
+          {Object.entries(ronde.bron_versies)
+            .map(([bestand, versie]) => `${naam(bestand)} v${versie}`)
+            .join(", ")}
+        </span>
+      </div>
+      {ronde.status !== "klaar" && (
+        <p className={ronde.status === "fout" ? "viewer__error" : "viewer__hint"}>
+          {ronde.status === "fout" ? (ronde.fout?.melding ?? t("ronde_status.fout")) : t(`ronde_status.${ronde.status}`)}
+          {lopend && ronde.voortgang != null && ` ${t("ronde_voortgang", { procent: voortgangProcent(ronde.voortgang) })}`}
+        </p>
+      )}
+      {laadFout && <p className="viewer__error">{laadFout}</p>}
+      {hulp && (
+        <dl className="botsing__hulp" data-sectie="sneltoetsen" aria-label={t("sneltoetsen_titel")}>
+          {TOETSEN.map(([toets, actie]) => (
+            <div key={actie} className="inspector__row">
+              <dt>
+                <kbd className="oa-code">{toets}</kbd>
+              </dt>
+              <dd>{t(`sneltoets.${actie}`)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {ronde.status === "klaar" && !botsingen && !laadFout && <p className="viewer__hint">{t("laden")}</p>}
+      {botsingen && (
+        <>
+          <div className="botsing__emmers" role="group" aria-label={t("emmers_label")}>
+            {EMMERS.map((emmer) => (
+              <button
+                key={emmer}
+                type="button"
+                className="botsing__emmer"
+                data-emmer={emmer}
+                aria-pressed={filter.emmer === emmer}
+                title={t(`emmer_uitleg.${emmer}`)}
+                onClick={() => inFilter(emmer)}
+              >
+                <strong>{emmers[emmer]}</strong> {t(`emmer.${emmer}`)}
+              </button>
+            ))}
+          </div>
+          <p className="issues__meta ronde__tel">
+            <span>{t("tel_open", { count: tel.open })}</span>
+            <span>{t("tel_nieuw", { count: tel.nieuw })}</span>
+            <button type="button" className="botsing__weg" data-emmer="weg" aria-pressed={filter.emmer === "weg"} onClick={() => inFilter("weg")}>
+              {t("tel_weg", { count: tel.weg })}
+            </button>
+          </p>
+          {ronde.samenvatting?.regels_gewijzigd && <p className="viewer__hint ronde__tel">{t("regels_gewijzigd_uitleg")}</p>}
+          <ClashTrends coordinatie={coordinatie} ronde={ronde.naam} />
+          <ClashFilters
+            coordinatie={coordinatie}
+            botsingen={alle}
+            filter={filter}
+            onFilter={setFilter}
+            groep={groep}
+            onGroep={setGroep}
+            instellingen={instellingen}
+            onInstellingen={onInstellingen}
+          />
+          {!instellingen.mag_wijzigen && <p className="viewer__hint ronde__tel">{t("beoordelen_alleen_lezen")}</p>}
+          {instellingen.mag_wijzigen && !mag && (
+            <p className="viewer__hint ronde__tel" data-melding="heeft-opvolger">
+              {t("ronde_heeft_opvolger")}
+            </p>
+          )}
+          {alle.length === 0 && <p className="viewer__hint ronde__tel">{t("ronde_leeg")}</p>}
+          {alle.length > 0 && getoond.length === 0 && (
+            <div className="botsing__leeg">
+              <p className="viewer__hint">{t("leeg_emmer")}</p>
+              <button type="button" className="oa-btn oa-btn--secondary oa-btn--sm" data-actie="filters-wissen" onClick={() => setFilter({ ...leegFilter(), emmer: filter.emmer })}>
+                {t("filters_wissen")}
+              </button>
+            </div>
+          )}
+          <div ref={lijstRef} aria-label={t("botsing_lijst")}>
+            {groepen.map(({ groep: waarde, botsingen: rijen }) => {
+              const sleutel = sleutelVan(waarde);
+              const dicht = ingeklapt.has(sleutel);
+              const limiet = limieten[sleutel] ?? PER_KEER;
+              const open = teBeslissen(rijen).length;
+              const actie = mag && groepsActie?.sleutel === sleutel ? groepsActie : null;
+              return (
+                <section key={sleutel} className="inspector__section botsing__groep">
+                  <ClashGroupHeader
+                    sleutel={sleutel}
+                    titel={groepNaam(waarde)}
+                    aantal={rijen.length}
+                    open={open}
+                    dicht={dicht}
+                    mag={mag}
+                    bezig={bezig}
+                    actie={actie}
+                    fout={groepFout}
+                    onWissel={() =>
+                      setIngeklapt((s) => {
+                        const nieuw = new Set(s);
+                        if (!nieuw.delete(sleutel)) nieuw.add(sleutel);
+                        return nieuw;
+                      })
+                    }
+                    onActie={zetGroepsActie}
+                    onBeslis={(status, reden) => void beslisGroep(rijen, status, reden)}
+                  />
+                  {!dicht && (
+                    <ul className="issue__lijst">
+                      {rijen.slice(0, limiet).map((b) => (
+                        <ClashRow
+                          key={b.naam}
+                          b={b}
+                          open={gekozen === b.naam}
+                          mag={mag}
+                          bezig={bezig}
+                          afwijzen={afwijzen === b.naam}
+                          fout={rijFout?.naam === b.naam ? rijFout.melding : null}
+                          nietInBeeld={inBeeld?.naam === b.naam ? nietInBeeld(b, inBeeld.uit) : []}
+                          onKies={() => (gekozen === b.naam ? toonAlles() : kies(b))}
+                          onBeslis={(status, reden) => void beslis(b, status, reden)}
+                          onAfwijzen={(aan) => setAfwijzen(aan ? b.naam : null)}
+                          onNaar={naarElement}
+                          onAllesTonen={toonAlles}
+                        />
+                      ))}
+                    </ul>
+                  )}
+                  {!dicht && rijen.length > limiet && (
+                    <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="meer" onClick={() => setLimieten({ ...limieten, [sleutel]: limiet + PER_KEER })}>
+                      {t("meer_tonen", { aantal: rijen.length - limiet })}
+                    </button>
+                  )}
+                </section>
+              );
+            })}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}

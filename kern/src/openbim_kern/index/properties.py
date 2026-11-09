@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
 from typing import Any
@@ -15,6 +14,7 @@ import ifcopenshell.util.element as element_util
 from typing_extensions import TypedDict
 
 from ..errors import KernError
+from ..progress import Progress, no_progress
 from .identity import index_identity
 
 SCHEMA = """
@@ -53,8 +53,11 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _storey(element: ifcopenshell.entity_instance) -> ifcopenshell.entity_instance | None:
-    """Storey of an element; a storey is its own storey, project/site/building have none."""
+def storey_of(element: ifcopenshell.entity_instance) -> ifcopenshell.entity_instance | None:
+    """Storey of an element; a storey is its own storey, project/site/building have none.
+
+    An element that is not contained itself, such as a part of an assembly, gets the storey of what it is a part of.
+    """
     if element.is_a("IfcBuildingStorey"):
         return element
     if not element.is_a("IfcElement") and not element.is_a("IfcSpace"):
@@ -92,11 +95,7 @@ def build_property_index(ifc: Path, db: Path) -> None:
     index_model(ifcopenshell.open(str(ifc)), db)
 
 
-def _no_progress(_: float) -> None:
-    pass
-
-
-def index_model(model: ifcopenshell.file, db: Path, progress: Callable[[float], None] = _no_progress) -> None:
+def index_model(model: ifcopenshell.file, db: Path, progress: Progress = no_progress) -> None:
     """Create or extend the index database, reporting the share of the elements done (at most a hundred times).
 
     Rows are inserted with INSERT OR IGNORE so the parts of a split file can fill one database.
@@ -114,7 +113,7 @@ def index_model(model: ifcopenshell.file, db: Path, progress: Callable[[float], 
         for done, el in enumerate(indexed, start=1):
             gid = el.GlobalId
             type_ = element_util.get_type(el) if el.is_a("IfcObject") else None
-            storey = _storey(el)
+            storey = storey_of(el)
             con.execute(
                 "INSERT OR IGNORE INTO elements VALUES (?,?,?,?,?)",
                 (gid, el.is_a(), el.Name, type_.GlobalId if type_ else None, storey.GlobalId if storey else None),

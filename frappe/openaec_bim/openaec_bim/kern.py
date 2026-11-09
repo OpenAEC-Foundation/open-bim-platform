@@ -72,17 +72,18 @@ def start_koppelen(vorige: dict, nieuwe: dict) -> str:
 	return roep("POST", "/v1/tools/koppelen", {"vorige": vorige, "nieuwe": nieuwe})["taak"]
 
 
-def start_botsingen(set_a: list[dict], set_b: list[dict], soort: str, tolerantie: float, doel: str) -> str:
-	"""Zet een botsingscontrole klaar bij de kern; de lijst komt als JSON op het schrijfadres `doel`."""
-	return roep(
-		"POST",
-		"/v1/tools/botsingen",
-		{"set_a": set_a, "set_b": set_b, "soort": soort, "tolerantie": tolerantie, "doel": doel},
-	)["taak"]
+def start_botsingen(controles: list[dict], doel: str) -> str:
+	"""Zet een botsingsronde met een of meer controles klaar bij de kern; de lijst komt als JSON op het schrijfadres `doel`."""
+	return roep("POST", "/v1/tools/botsingen", {"controles": controles, "doel": doel})["taak"]
 
 
 def taak(taak_id: str) -> dict:
 	return roep("GET", f"/v1/taken/{taak_id}")
+
+
+def stop_taak(taak_id: str) -> None:
+	"""Stopt een wachtende of lopende taak; een taak die al klaar is, blijft zoals ze is."""
+	roep("DELETE", f"/v1/taken/{taak_id}")
 
 
 def eigenschappen(index: dict, globalids: list[str]) -> dict:

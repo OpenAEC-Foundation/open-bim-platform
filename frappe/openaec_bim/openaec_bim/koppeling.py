@@ -37,6 +37,14 @@ def start(bestand: str, van_versie: int, naar_versie: int):
 	except kern.KernFout as fout:
 		doc.status = "fout"
 		doc.fout = json.dumps({"error_code": fout.code, "melding": str(fout)})
+	except Exception as fout:
+		# Niet de omzetting die dit startte is stuk, maar deze koppeling. Mislukt ze als poging, dan stopt het opnieuw
+		# proberen na MAX_POGINGEN. Een botsing met een ander verzoek gaat naar `zonder_botsing`: de transactie is dan al weg.
+		if afgeleid.tijdelijk(fout) or isinstance(fout, (frappe.QueryDeadlockError, frappe.TimestampMismatchError)):
+			raise
+		frappe.log_error(title=f"{DOCTYPE} {doc.name}")
+		doc.status = "fout"
+		doc.fout = json.dumps({"error_code": "koppeling_mislukt", "melding": _("De versies konden niet worden gekoppeld.")})
 	doc.save(ignore_permissions=True)
 	return doc
 
@@ -84,9 +92,13 @@ def bijwerken(doc) -> None:
 	doc.save(ignore_permissions=True)
 
 
+def werk_bij(doc) -> None:
+	afgeleid.per_stuk(bijwerken, doc, _("De uitkomst van de koppeling kon niet worden ingelezen."))
+
+
 def volg_lopende() -> None:
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
+		werk_bij(frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
 	herstel()
 	frappe.db.commit()
@@ -103,22 +115,27 @@ def herstel(bestand: str | None = None) -> None:
 	for k in frappe.get_all(
 		DOCTYPE, filters, ["name", "bestand", "van_versie", "naar_versie", "fout", "creation"], order_by="creation desc"
 	):
-		paar = {"bestand": k.bestand, "van_versie": k.van_versie, "naar_versie": k.naar_versie}
-		if frappe.db.get_value(DOCTYPE, paar, "name", order_by="creation desc") != k.name or _pogingen(paar) >= MAX_POGINGEN:
-			continue  # er is al een nieuwere poging, of het is genoeg geweest
-		code = (json.loads(k.fout) if k.fout else {}).get("error_code")
-		if code in INDEX_VEROUDERD:
-			versie = cint(k[INDEX_VEROUDERD[code]])
-			omzetting = afgeleid.laatste(k.bestand, versie)
-			if omzetting is None:
-				continue
-			if get_datetime(omzetting.creation) <= get_datetime(k.creation):
-				if omzetting.status == "klaar":
-					afgeleid.start(k.bestand, versie)  # een nieuwe index, met de identiteitstabel
-				continue
-			if omzetting.status != "klaar":
-				continue  # de nieuwe omzetting loopt nog
-		start(k.bestand, cint(k.van_versie), cint(k.naar_versie))
+		# Een herstel dat mislukt, blijft bij dit paar: de volgende tik probeert het weer, en de rest gaat door.
+		afgeleid.bewaakt(f"{DOCTYPE} {k.name}", lambda k=k: _herstel_paar(k))
+
+
+def _herstel_paar(k) -> None:
+	paar = {"bestand": k.bestand, "van_versie": k.van_versie, "naar_versie": k.naar_versie}
+	if frappe.db.get_value(DOCTYPE, paar, "name", order_by="creation desc") != k.name or _pogingen(paar) >= MAX_POGINGEN:
+		return  # er is al een nieuwere poging, of het is genoeg geweest
+	code = (json.loads(k.fout) if k.fout else {}).get("error_code")
+	if code in INDEX_VEROUDERD:
+		versie = cint(k[INDEX_VEROUDERD[code]])
+		omzetting = afgeleid.laatste(k.bestand, versie)
+		if omzetting is None:
+			return
+		if get_datetime(omzetting.creation) <= get_datetime(k.creation):
+			if omzetting.status == "klaar":
+				afgeleid.start(k.bestand, versie)  # een nieuwe index, met de identiteitstabel
+			return
+		if omzetting.status != "klaar":
+			return  # de nieuwe omzetting loopt nog
+	start(k.bestand, cint(k.van_versie), cint(k.naar_versie))
 
 
 def keten_loopt(bestand: str, van_versie: int, naar_versie: int) -> bool:

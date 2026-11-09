@@ -2,9 +2,21 @@ import hashlib
 import json
 
 import ifcopenshell
+import ifcopenshell.geom
+import models
 import pytest
 
-from openbim_kern.clash import ClashModel, find_clashes
+from openbim_kern import clash as clash_module
+from openbim_kern.clash import (
+    Botsing,
+    ClashCheck,
+    ClashModel,
+    ClashScene,
+    ElementRef,
+    box_overlap,
+    find_clashes,
+    run_checks,
+)
 from openbim_kern.jobs.worker import queues_from_env, run_worker
 from openbim_kern.tools.registry import REGISTRY
 
@@ -20,6 +32,11 @@ def model(path, klassen=None):
 
 def gids(path, ifc_class):
     return {e.GlobalId for e in ifcopenshell.open(str(path)).by_type(ifc_class)}
+
+
+def gid_of(path, name):
+    (gid,) = [e.GlobalId for e in ifcopenshell.open(str(path)).by_type("IfcProduct") if e.Name == name]
+    return gid
 
 
 def test_duct_through_wall_is_a_hard_clash(ifc_small):
@@ -82,10 +99,14 @@ def test_botsingen_tool_delivers_json(client, auth, store, httpserver, ifc_small
     )
     bron = {"url": httpserver.url_for("/m.ifc"), "sha256": hashlib.sha256(data).hexdigest()}
     body = {
-        "set_a": [{"sleutel": "b1", "versie": "1", "bron": bron, "klassen": ["IfcDuctSegment"]}],
-        "set_b": [{"sleutel": "b1", "versie": "1", "bron": bron, "klassen": ["IfcWall"]}],
-        "soort": "hard",
-        "tolerantie": 0.0,
+        "controles": [
+            {
+                "regel": "kanalen x wanden",
+                "set_a": [{"sleutel": "b1", "versie": "1", "bron": bron, "klassen": ["IfcDuctSegment"]}],
+                "set_b": [{"sleutel": "b1", "versie": "1", "bron": bron, "klassen": ["IfcWall"]}],
+                "soort": "hard",
+            }
+        ],
         "doel": httpserver.url_for("/uit.json"),
     }
     r = client.post("/v1/tools/botsingen", headers=auth, json=body)
@@ -96,6 +117,7 @@ def test_botsingen_tool_delivers_json(client, auth, store, httpserver, ifc_small
     resultaten = json.loads(geleverd["json"])
     assert job["uitkomst"]["aantal"] == len(resultaten) == 1
     assert resultaten[0]["a"]["sleutel"] == "b1" and len(resultaten[0]["punt"]) == 3
+    assert resultaten[0]["regel"] == "kanalen x wanden" and resultaten[0]["soort"] == "hard"
 
 
 def test_tolerance_is_limited():
@@ -104,4 +126,218 @@ def test_tolerance_is_limited():
     from openbim_kern.tools.botsingen import BotsingIn
 
     with pytest.raises(ValidationError):
-        BotsingIn(set_a=[], set_b=[], soort="hard", tolerantie=1.5, doel="http://127.0.0.1:1/x")
+        BotsingIn(
+            controles=[{"set_a": [], "set_b": [], "soort": "hard", "tolerantie": 1.5}], doel="http://127.0.0.1:1/x"
+        )
+
+
+def test_the_number_of_checks_is_limited():
+    from pydantic import ValidationError
+
+    from openbim_kern.tools.botsingen import BotsingIn
+
+    check = {"set_a": [], "set_b": [], "soort": "hard"}
+    for controles in ([], [check] * 31):
+        with pytest.raises(ValidationError):
+            BotsingIn(controles=controles, doel="http://127.0.0.1:1/x")
+
+
+def test_two_checks_read_the_file_once_and_report_a_pair_once(ifc_small, monkeypatch):
+    opens = []
+    real = ifcopenshell.open
+    monkeypatch.setattr(ifcopenshell, "open", lambda p: opens.append(p) or real(p))
+    check = ClashCheck(
+        set_a=[model(ifc_small, ["IfcDuctSegment"])], set_b=[model(ifc_small, ["IfcWall"])], soort="hard"
+    )
+    found = run_checks([check.model_copy(update={"regel": "een"}), check.model_copy(update={"regel": "twee"})])
+    assert len(opens) == 1
+    assert len({frozenset((c.a.globalid, c.b.globalid)) for c in found}) == len(found) > 0
+    assert {c.regel for c in found} == {"een"}
+
+
+def test_hard_wins_from_distance_for_the_same_pair(ifc_small):
+    a, b = [model(ifc_small, ["IfcDuctSegment"])], [model(ifc_small, ["IfcWall"])]
+    found = run_checks(
+        [
+            ClashCheck(regel="ver", set_a=a, set_b=b, soort="afstand", tolerantie=0.05),
+            ClashCheck(regel="door", set_a=a, set_b=b, soort="hard"),
+        ]
+    )
+    hit = next(c for c in found if c.b.globalid in gids(ifc_small, "IfcWall"))
+    assert hit.soort == "hard" and hit.regel == "door"
+
+
+def test_only_between_models_skips_pairs_in_one_model(ifc_small, tmp_path):
+    same = ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard", alleen_tussen_modellen=True)
+    assert run_checks([same]) == []
+    # Two builds of the same model have their own GlobalIds and do clash with each other.
+    other = models.ifc_small(tmp_path / "ander.ifc")
+    two = same.model_copy(update={"set_b": [model(other)]})
+    found = run_checks([two])
+    assert found and all(c.a.sleutel != c.b.sleutel for c in found)
+
+
+def test_the_same_global_ids_in_two_files_give_no_pair_with_itself(ifc_small, tmp_path):
+    copy = tmp_path / "kopie.ifc"
+    copy.write_bytes(ifc_small.read_bytes())
+    found = run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(copy)], soort="hard")])
+    assert all(c.a.globalid != c.b.globalid for c in found)
+
+
+WALL = ("IfcWall", "Wand", (0.0, 0.0, 0.0), (5.0, 0.2, 3.0))
+
+
+def versions_with_the_same_global_ids(tmp_path):
+    """Two versions of one model with the same GlobalIds: in the first the duct runs through the 200 mm wall, in the
+    second it goes 50 mm into it."""
+    deep = models.ifc_boxes(
+        tmp_path / "diep.ifc", [WALL, ("IfcDuctSegment", "Kanaal", (2.0, -0.5, 1.0), (2.3, 0.7, 1.3))]
+    )
+    shallow = models.ifc_boxes(
+        tmp_path / "ondiep.ifc", [WALL, ("IfcDuctSegment", "Kanaal", (2.0, -0.5, 1.0), (2.3, 0.05, 1.3))]
+    )
+    source = {e.Name: e.GlobalId for e in ifcopenshell.open(str(deep)).by_type("IfcElement")}
+    copy = ifcopenshell.open(str(shallow))
+    for element in copy.by_type("IfcElement"):
+        element.GlobalId = source[element.Name]
+    copy.write(str(shallow))
+    assert gids(deep, "IfcElement") == gids(shallow, "IfcElement")
+    return deep, shallow
+
+
+def test_each_file_keeps_its_own_geometry_with_the_same_global_ids(tmp_path):
+    deep, shallow = versions_with_the_same_global_ids(tmp_path)
+    found = run_checks([ClashCheck(set_a=[model(p)], set_b=[model(p)], soort="hard") for p in (deep, shallow)])
+    assert sorted((c.a.sleutel, c.b.sleutel, round(c.afstand, 3)) for c in found) == [
+        ("diep.ifc", "diep.ifc", 0.2),
+        ("ondiep.ifc", "ondiep.ifc", 0.05),
+    ]
+
+
+def test_a_set_of_two_files_with_the_same_global_ids_keeps_both(tmp_path):
+    deep, shallow = versions_with_the_same_global_ids(tmp_path)
+    check = ClashCheck(
+        set_a=[model(deep, ["IfcDuctSegment"]), model(shallow, ["IfcDuctSegment"])],
+        set_b=[model(deep, ["IfcWall"]), model(shallow, ["IfcWall"])],
+        soort="hard",
+    )
+    found = run_checks([check])
+    assert sorted((c.a.sleutel, c.b.sleutel, round(c.afstand, 3)) for c in found) == [
+        ("diep.ifc", "diep.ifc", 0.2),
+        ("diep.ifc", "ondiep.ifc", 0.2),
+        ("ondiep.ifc", "diep.ifc", 0.05),
+        ("ondiep.ifc", "ondiep.ifc", 0.05),
+    ]
+
+
+def test_duplicate_needs_the_same_class_and_box(tmp_path):
+    path = models.ifc_clash_context(tmp_path / "context.ifc")
+    found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="dubbel")])
+    assert [c.soort for c in found] == ["dubbel"]
+    assert {found[0].a.klasse, found[0].b.klasse} == {"IfcWall"}
+
+
+def test_a_box_of_another_class_is_no_duplicate(tmp_path):
+    box = ((0.0, 0.0, 0.0), (4.0, 0.2, 3.0))
+    path = models.ifc_boxes(
+        tmp_path / "dubbel.ifc", [("IfcWall", "Wand 1", *box), ("IfcSlab", "Plaat", *box), ("IfcWall", "Wand 2", *box)]
+    )
+    found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="dubbel")])
+    assert [{c.a.naam, c.b.naam} for c in found] == [{"Wand 1", "Wand 2"}]
+
+
+def test_elements_carry_name_and_storey(ifc_small):
+    check = ClashCheck(
+        set_a=[model(ifc_small, ["IfcDuctSegment"])], set_b=[model(ifc_small, ["IfcWall"])], soort="hard"
+    )
+    found = run_checks([check])
+    assert found[0].a.naam == "Kanaal" and found[0].a.verdieping == "00 begane grond"
+
+
+def test_virtual_elements_do_not_clash(tmp_path):
+    path = models.ifc_clash_context(tmp_path / "context.ifc")
+    # Without this the test proves nothing: the virtual element runs right through a wall.
+    scene = ClashScene([path])
+    virtual, wall = (gid_of(path, name) for name in ("Virtueel", "Wand 1"))
+    assert box_overlap(scene.boxes[(path, virtual)], scene.boxes[(path, wall)])[0] >= 0.1
+    found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="hard")])
+    assert found and not any("IfcVirtualElement" in (c.a.klasse, c.b.klasse) for c in found)
+
+
+def vertices_per_name(path):
+    opened = ifcopenshell.open(str(path))
+    settings = ifcopenshell.geom.settings()
+    iterator = ifcopenshell.geom.iterator(settings, opened)
+    assert iterator.initialize()
+    counts = {}
+    while True:
+        shape = iterator.get()
+        counts[opened.by_guid(shape.guid).Name] = len(shape.geometry.verts) // 3
+        if not iterator.next():
+            return counts
+
+
+@pytest.fixture
+def cut_away(tmp_path):
+    path = models.ifc_cut_away(tmp_path / "leeg.ifc")
+    # Without this the tests below prove nothing: the wall really has no vertices, and the tree crashes on such a shape.
+    assert vertices_per_name(path)["Weggesneden"] == 0
+    return path
+
+
+def test_a_wall_cut_away_by_its_opening_does_not_stop_a_hard_check(cut_away):
+    found = run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="hard")])
+    assert [{c.a.naam, c.b.naam} for c in found] == [{"Wand", "Kanaal"}]
+
+
+def test_a_wall_cut_away_by_its_opening_does_not_stop_a_clearance_check(cut_away):
+    found = run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="afstand", tolerantie=0.05)])
+    assert {"Weggesneden"}.isdisjoint(name for c in found for name in (c.a.naam, c.b.naam))
+    assert {"Wand", "Kanaal"} in [{c.a.naam, c.b.naam} for c in found]
+
+
+def test_a_wall_cut_away_by_its_opening_is_no_duplicate(cut_away):
+    assert run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="dubbel")]) == []
+
+
+def test_a_set_with_only_a_wall_that_is_cut_away_finds_nothing(cut_away):
+    check = ClashCheck(set_a=[model(cut_away, ["IfcWallStandardCase"])], set_b=[model(cut_away)], soort="hard")
+    assert run_checks([check]) == []
+
+
+def test_the_tree_is_only_asked_about_elements_it_holds(cut_away, monkeypatch):
+    asked = []
+    real = ifcopenshell.geom.tree.clash_intersection_many
+
+    def spy(self, set_a, set_b, **kwargs):
+        asked.append({e.Name for e in (*set_a, *set_b)})
+        return real(self, set_a, set_b, **kwargs)
+
+    monkeypatch.setattr(ifcopenshell.geom.tree, "clash_intersection_many", spy)
+    run_checks([ClashCheck(set_a=[model(cut_away)], set_b=[model(cut_away)], soort="hard")])
+    assert asked == [{"Wand", "Kanaal", "Kanaal door de lege plek"}]
+
+
+def test_progress_runs_up_to_one(ifc_small):
+    seen = []
+    check = ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard")
+    run_checks([check, check], progress=seen.append)
+    assert seen == sorted(seen) and seen[-1] == pytest.approx(1.0)
+    assert seen.index(pytest.approx(0.5)) < seen.index(
+        pytest.approx(0.7)
+    )  # loading ends at 50%, then one step per check
+
+
+def test_the_context_step_writes_progress_per_whole_percent(ifc_small, monkeypatch):
+    ref = ElementRef(sleutel="m", versie="1", globalid="g")
+    many = [
+        Botsing(a=ref.model_copy(update={"globalid": f"a{i}"}), b=ref, punt=(0.0, 0.0, 0.0), afstand=0.1)
+        for i in range(2000)
+    ]
+    monkeypatch.setattr(ClashScene, "check", lambda self, check: many)
+    monkeypatch.setattr(clash_module, "_enrich", lambda *args: None)
+    seen = []
+    run_checks([ClashCheck(set_a=[model(ifc_small)], set_b=[model(ifc_small)], soort="hard")], progress=seen.append)
+    in_context = [value for value in seen if value > 0.9]
+    assert len(in_context) <= 12  # 90 to 100%, and the closing 100%
+    assert seen[-1] == pytest.approx(1.0)

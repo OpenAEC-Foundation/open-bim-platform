@@ -106,11 +106,11 @@ def project(map: str) -> dict:
 		versie = cint(bestand.huidige_versie)
 		doc = afgeleid.laatste(bestand.name, versie)
 		if doc and doc.status in ("wacht", "bezig"):
-			afgeleid.zonder_botsing(afgeleid.bijwerken, doc)
+			afgeleid.werk_bij(doc)
 		for lopend in frappe.get_all(
 			koppeling.DOCTYPE, {"bestand": bestand.name, "naar_versie": versie, "status": ("in", ("wacht", "bezig"))}, pluck="name"
 		):
-			afgeleid.zonder_botsing(koppeling.bijwerken, frappe.get_doc(koppeling.DOCTYPE, lopend))
+			koppeling.werk_bij(frappe.get_doc(koppeling.DOCTYPE, lopend))
 		stand.append((bestand, discipline, versie, doc))
 	# Pas na het bijwerken nieuw werk bij de kern starten: een bijwerking die MariaDB terugdraait (1020) neemt dan
 	# geen taak mee die dit verzoek al gestart had.
@@ -127,7 +127,7 @@ def _klaar(bestand: str, versie):
 	_bestand(bestand)
 	doc = afgeleid.laatste(bestand, cint(versie))
 	if doc and doc.status in ("wacht", "bezig"):
-		afgeleid.zonder_botsing(afgeleid.bijwerken, doc)  # misschien is de kern al klaar en heeft niemand het gezien
+		afgeleid.werk_bij(doc)  # misschien is de kern al klaar en heeft niemand het gezien
 	if not doc or doc.status != "klaar":
 		raise NogNietKlaar(_("Dit model is nog niet omgezet."))
 	return doc

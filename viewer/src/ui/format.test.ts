@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { HostError } from "../host/BimHost";
-import { describe as describeError, formatBytes, formatValue, isNoFolder } from "./format";
+import { describe as describeError, formatBytes, formatValue, isNoFolder, isSuperseded } from "./format";
 
 test("formatBytes uses binary units in the reader's language", () => {
   expect(formatBytes(2 * 1024 ** 3, "nl")).toBe("2 GB");
@@ -19,6 +19,12 @@ test("formatValue", () => {
 test("describe shows the kern's message and remedy", () => {
   const error = new HostError(409, { error_code: "x", melding: "Nog niet klaar.", remedie: "Wacht even." });
   expect(describeError(error)).toBe("Nog niet klaar. Wacht even.");
+});
+
+test("isSuperseded recognises the refusal on a round with a newer round", () => {
+  expect(isSuperseded(new HostError(0, { error_code: "ronde_heeft_opvolger", melding: "Er is een nieuwere ronde.", remedie: "" }))).toBe(true);
+  expect(isSuperseded(new HostError(0, { error_code: "werkplek", melding: "Iets anders.", remedie: "" }))).toBe(false);
+  expect(isSuperseded(new Error("ronde_heeft_opvolger"))).toBe(false);
 });
 
 test("isNoFolder recognises a host without a model folder", () => {

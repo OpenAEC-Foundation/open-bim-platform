@@ -4,6 +4,15 @@ import * as FRAGS from "@thatopen/fragments";
 import workerUrl from "@thatopen/fragments/worker?url";
 import * as THREE from "three";
 import { fromBcfCamera, ifcToThree, toBcfCamera, type BcfCamera, type Vec3 } from "../model/bcf";
+import { isolateRadius, type IsolateResult, type Size } from "./isolate";
+
+/** Ghost everything but the two elements of a clash; false only marks them and moves the camera. */
+export const ISOLATE_GHOST = true;
+/** Opacity of the ghosted rest of the model. */
+const GHOST_OPACITY = 0.12;
+
+/** An element to act on: its model parts and GlobalId. */
+export type Target = { keys: string[]; globalid: string };
 
 type World = OBC.SimpleWorld<OBC.SimpleScene, OBC.SimpleCamera, OBC.SimpleRenderer>;
 
@@ -15,6 +24,8 @@ export class FragmentsEngine {
   private readonly components = new OBC.Components();
   private readonly world: World;
   private readonly fragments: OBC.FragmentsManager;
+  /** Keys of the models that the current isolation ghosted. */
+  private readonly ghosted = new Set<string>();
 
   constructor(private readonly container: HTMLElement) {
     const worlds = this.components.get(OBC.Worlds);
@@ -78,7 +89,7 @@ export class FragmentsEngine {
   /** Mark several elements at once (the elements of an issue, both sides of a clash); an empty list clears. */
   async highlightMany(targets: { keys: string[]; globalid: string }[]): Promise<void> {
     for (const model of this.fragments.list.values()) await model.resetHighlight();
-    const material = this.highlightMaterial();
+    const material = this.markMaterial("--theme-accent");
     for (const target of targets) {
       for (const key of target.keys) {
         const model = this.fragments.list.get(key);
@@ -87,6 +98,98 @@ export class FragmentsEngine {
       }
     }
     await this.fragments.core.update(true);
+  }
+
+  /**
+   * Show a clash: both elements marked (A in the accent colour, B in the info colour), the rest of the models that hold
+   * them ghosted, and the camera on the point, without a flight. A previous isolation is cleared first. Says which elements
+   * it found; an element with an empty box counts as not found. With nothing found nothing goes transparent, and the camera
+   * still goes to the point.
+   */
+  async isolate(a: Target[], b: Target[], point: Vec3): Promise<IsolateResult> {
+    await this.resetMarks();
+    const found = new Map<string, { model: FRAGS.FragmentsModel; id: number; material: FRAGS.MaterialDefinition }[]>();
+    const sides: [Target[], FRAGS.MaterialDefinition][] = [
+      [a, this.markMaterial("--theme-accent")],
+      [b, this.markMaterial("--color-semantic-info")],
+    ];
+    const sizes: (Size | null)[] = [];
+    for (const [targets, material] of sides) {
+      const boxes: THREE.Box3[] = [];
+      for (const target of targets) {
+        for (const key of target.keys) {
+          const model = this.fragments.list.get(key);
+          if (!model) continue;
+          const [id] = (await model.getLocalIdsByGuids([target.globalid])) ?? [];
+          if (id == null) continue;
+          const box = await model.getMergedBox([id]);
+          if (box.isEmpty()) continue;
+          found.set(key, [...(found.get(key) ?? []), { model, id, material }]);
+          boxes.push(box);
+        }
+      }
+      sizes.push(boxes.length ? this.jointSize(boxes) : null);
+    }
+    try {
+      // Every model goes transparent (an element of a third model could hide the pair); only the models that hold
+      // one of the elements get them back at full opacity and marked.
+      if (ISOLATE_GHOST && found.size > 0) {
+        for (const [key, model] of this.fragments.list) {
+          this.ghosted.add(key);
+          await model.setOpacity(undefined, GHOST_OPACITY);
+        }
+      }
+      for (const [, entries] of found) {
+        const model = entries[0].model;
+        if (ISOLATE_GHOST) await model.resetOpacity(entries.map((entry) => entry.id));
+        for (const { id, material } of entries) await model.highlight([id], material);
+      }
+      await this.jump(new THREE.Vector3(...ifcToThree(point, this.basis())), isolateRadius(sizes));
+    } catch (error) {
+      // A failed isolation must not leave everything transparent. The first error is the one to report.
+      await this.clearIsolation().catch(() => undefined);
+      throw error;
+    }
+    return { a: sizes[0] !== null, b: sizes[1] !== null };
+  }
+
+  /** Look at elements (the joint box of all of them) and mark them; when none is found nothing moves. */
+  async focusElements(targets: Target[]): Promise<void> {
+    await this.clearIsolation();
+    await this.highlightMany(targets);
+    const boxes: THREE.Box3[] = [];
+    for (const target of targets) {
+      for (const key of target.keys) {
+        const model = this.fragments.list.get(key);
+        const [id] = (await model?.getLocalIdsByGuids([target.globalid])) ?? [];
+        const box = model && id != null ? await model.getMergedBox([id]) : null;
+        if (box && !box.isEmpty()) boxes.push(box);
+      }
+    }
+    if (!boxes.length) return;
+    const joint = boxes.reduce((all, box) => all.union(box), new THREE.Box3());
+    await this.focusThree(joint.getCenter(new THREE.Vector3()), isolateRadius([this.jointSize(boxes)]));
+  }
+
+  /** Back to the normal view: full opacity everywhere and no marking. */
+  async clearIsolation(): Promise<void> {
+    await this.resetMarks();
+    await this.fragments.core.update(true);
+  }
+
+  /** Full opacity and no marking, without redrawing: for callers that redraw right after (isolate ends with a refresh). */
+  private async resetMarks(): Promise<void> {
+    for (const key of this.ghosted) {
+      const model = this.fragments.list.get(key);
+      if (model) await model.resetOpacity(undefined);
+    }
+    this.ghosted.clear();
+    for (const model of this.fragments.list.values()) await model.resetHighlight();
+  }
+
+  private jointSize(boxes: THREE.Box3[]): Size {
+    const size = boxes.reduce((all, box) => all.union(box), new THREE.Box3()).getSize(new THREE.Vector3());
+    return [size.x, size.y, size.z];
   }
 
   /** The current view as a BCF perspective camera (IFC world coordinates). */
@@ -113,8 +216,23 @@ export class FragmentsEngine {
 
   /** Look at a point (IFC world coordinates, such as a clash point) from a distance that fits `radius` metres. */
   async focus(point: Vec3, radius: number): Promise<void> {
-    const center = new THREE.Vector3(...ifcToThree(point, this.basis()));
+    await this.focusThree(new THREE.Vector3(...ifcToThree(point, this.basis())), radius);
+  }
+
+  private async focusThree(center: THREE.Vector3, radius: number): Promise<void> {
     await this.world.camera.controls.fitToSphere(new THREE.Sphere(center, Math.max(radius, 0.5)), true);
+    await this.fragments.core.update(true);
+  }
+
+  /**
+   * Put the camera around a point at once. Without a transition the controls only move the camera on their next update,
+   * and no "rest" follows, while the refresh below reads the camera now: without this update the tiles of the new view
+   * would stay behind until the next movement.
+   */
+  private async jump(center: THREE.Vector3, radius: number): Promise<void> {
+    const controls = this.world.camera.controls;
+    await controls.fitToSphere(new THREE.Sphere(center, Math.max(radius, 0.5)), false);
+    controls.update(0);
     await this.fragments.core.update(true);
   }
 
@@ -146,11 +264,11 @@ export class FragmentsEngine {
     return b && b.length >= 3 ? [b[0], b[1], b[2]] : [0, 0, 0];
   }
 
-  /** The accent colour of the active style-book theme. */
-  private highlightMaterial(): FRAGS.MaterialDefinition {
-    const accent = getComputedStyle(this.container).getPropertyValue("--theme-accent").trim();
+  /** A marking material in the colour of a style-book token, read from the page at the moment of use. */
+  private markMaterial(token: string): FRAGS.MaterialDefinition {
+    const colour = getComputedStyle(this.container).getPropertyValue(token).trim();
     return {
-      color: new THREE.Color(accent),
+      color: new THREE.Color(colour),
       renderedFaces: FRAGS.RenderedFaces.TWO,
       opacity: 1,
       transparent: false,

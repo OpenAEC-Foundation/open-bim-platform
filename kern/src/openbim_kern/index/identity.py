@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS identiteit (
 
 def index_identity(model: ifcopenshell.file, con: sqlite3.Connection) -> None:
     """Fill the table `identiteit` for every IfcProduct with an object placement."""
-    from .properties import _storey  # properties calls this module while indexing
+    from .properties import storey_of  # properties calls this module while indexing
 
     con.executescript(SCHEMA)
     scale = ifcopenshell.util.unit.calculate_unit_scale(model)
@@ -31,7 +31,7 @@ def index_identity(model: ifcopenshell.file, con: sqlite3.Connection) -> None:
             continue
         origin = ifcopenshell.util.placement.get_local_placement(product.ObjectPlacement)[:3, 3] * scale
         type_ = element_util.get_type(product) if product.is_a("IfcObject") else None
-        storey = _storey(product)
+        storey = storey_of(product)
         con.execute(
             "INSERT OR IGNORE INTO identiteit VALUES (?,?,?,?,?,?,?,?)",
             (

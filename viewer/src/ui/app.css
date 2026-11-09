@@ -34,6 +34,11 @@ body {
   grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) var(--spacing-sidebar-width);
 }
 
+/* Issues and Botsingen: a column of 360 px, the sidebar width and 80 px. */
+.viewer__body--inspector.viewer__body--wide {
+  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) calc(var(--spacing-sidebar-width) + var(--spacing-20));
+}
+
 .viewer__sidebar {
   min-height: 0;
 }
@@ -68,6 +73,7 @@ body {
   padding: var(--spacing-3) var(--spacing-4);
   font-size: var(--font-size-sm);
   color: var(--color-text-muted);
+  overflow-wrap: anywhere;
 }
 
 .viewer__error {
@@ -316,6 +322,15 @@ body {
   min-width: 0;
 }
 
+/* The filters of a clash round: every field gets room to show its text, two or three to a row in the column. */
+.botsing__filters .issues__filter > * {
+  flex: 1 1 calc(var(--spacing-24) + var(--spacing-10));
+}
+
+.botsing__filters .issues__filter > input[type="search"] {
+  flex-basis: 100%;
+}
+
 .issues__lijst,
 .issue__lijst {
   margin: 0;
@@ -355,6 +370,27 @@ body {
   font-size: var(--font-size-xs);
 }
 
+/* Names from a model can be long and without spaces: they wrap inside the narrow column. */
+.issues__meta > *,
+.issue__meta > *,
+.issues__item,
+.inspector__title,
+.issue__tekst,
+.botsing__groepknop,
+.botsing__chip {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.botsing__groepknop,
+.botsing__chip {
+  text-align: left;
+}
+
+.botsing__chip {
+  white-space: normal;
+}
+
 .issue__lijst li {
   display: flex;
   flex-direction: column;
@@ -371,6 +407,7 @@ body {
 
 .issue__waarschuwing {
   color: var(--color-semantic-warning);
+  overflow-wrap: anywhere;
 }
 
 .issue__tekst {
@@ -444,8 +481,7 @@ body {
   border: 1px solid var(--color-border);
 }
 
-.ronde__tel,
-.ronde__verberg {
+.ronde__tel {
   padding: 0 var(--spacing-4);
 }
 
@@ -479,11 +515,210 @@ body {
   gap: var(--spacing-2);
 }
 
-.botsing__acties select {
-  flex: 1;
+.botsing__acties {
+  flex-wrap: wrap;
+}
+
+.botsing__titel {
+  overflow-wrap: anywhere;
+}
+
+.botsing__detail {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1) 0 var(--spacing-2);
+}
+
+.botsing__reden {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+}
+
+.botsing__reden .oa-input {
+  flex: 1 1 calc(var(--spacing-24) + var(--spacing-8));
   min-width: 0;
+}
+
+.botsing__emmers {
+  display: flex;
+  gap: var(--spacing-2);
+  padding: var(--spacing-3) var(--spacing-4) 0;
+}
+
+.botsing__emmer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  background: none;
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.botsing__emmer strong {
+  font-size: var(--font-size-lg);
+}
+
+.botsing__emmer[aria-pressed="true"] {
+  border-color: var(--color-brand-primary);
+  background: var(--color-bg);
+}
+
+.botsing__weg {
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.botsing__weg[aria-pressed="true"] {
+  color: var(--color-text);
+  font-weight: var(--font-weight-semibold);
+}
+
+.botsing__filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.botsing__chips {
+  align-items: center;
+}
+
+.botsing__chips > * {
+  flex: 0 1 auto;
+}
+
+.botsing__chip {
+  border: none;
+  cursor: pointer;
+}
+
+.botsing__melding,
+.botsing__leeg,
+.botsing__hulp,
+.botsing__trend {
+  padding: 0 var(--spacing-4);
+}
+
+.botsing__leeg {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--spacing-2);
+}
+
+.botsing__groep .botsing__acties,
+.botsing__groep .botsing__bevestig {
+  padding-bottom: var(--spacing-2);
+}
+
+.botsing__groepknop {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.trend__grafiek {
+  display: block;
+  width: 100%;
+  height: var(--spacing-16);
+}
+
+.trend__totaal {
+  fill: var(--color-border);
+}
+
+.trend__open {
+  fill: var(--color-brand-primary);
+}
+
+.trend__tabel {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--font-size-xs);
+  text-align: right;
+}
+
+.trend__tabel th[scope="row"],
+.trend__tabel th:first-child {
+  text-align: left;
+}
+
+.trend__tabel th,
+.trend__tabel td {
+  padding: var(--spacing-1);
+  border-top: 1px solid var(--color-border);
 }
 
 .model-list__koppeling {
   grid-column: 1 / -1;
+}
+
+/* Starting a clash round: one card per quick choice. */
+.start-cards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.start-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  padding: var(--spacing-2);
+  border: 1px solid var(--color-border);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.start-card[aria-current="true"] {
+  border-color: var(--color-brand-primary);
+  background: var(--color-bg);
+}
+
+.start-card[data-disabled="true"] {
+  color: var(--color-text-muted);
+  cursor: not-allowed;
+}
+
+.start-card__kop {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.start-card__uitleg,
+.start-card__reden {
+  color: var(--color-text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.start-card__reden {
+  color: var(--color-semantic-warning);
+}
+
+.rule__velden {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-24) + var(--spacing-4)), 1fr));
+  gap: var(--spacing-2);
 }

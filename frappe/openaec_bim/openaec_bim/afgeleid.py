@@ -11,6 +11,8 @@ import math
 import re
 
 import frappe
+from botocore.exceptions import ClientError, HTTPClientError, IncompleteReadError
+from botocore.exceptions import ConnectionError as OpslagNietBereikbaar
 from frappe import _
 from frappe.utils import cint, now_datetime
 
@@ -127,6 +129,22 @@ def bijwerken(doc) -> None:
 		koppeling.na_omzetting(doc)
 
 
+def tijdelijk(fout: Exception) -> bool:
+	"""Gaat deze fout vanzelf over? Een lock wait en een storing in de opslag wel. Kapotte JSON, een ontbrekende sleutel of
+	een validatiefout komen bij elke poging terug."""
+	if isinstance(fout, ClientError):
+		return fout.response.get("Error", {}).get("Code") != "NoSuchKey"
+	return isinstance(fout, (frappe.QueryTimeoutError, OpslagNietBereikbaar, HTTPClientError, IncompleteReadError))
+
+
+def _terug_naar(savepoint: str) -> None:
+	try:
+		frappe.db.rollback(save_point=savepoint)
+	except frappe.db.OperationalError:
+		# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid, en het savepoint met haar.
+		frappe.db.rollback()
+
+
 def zonder_botsing(stap, *args) -> None:
 	"""Een bijwerking die een ander verzoek tegelijk doet (de viewer vraagt het project elke paar seconden, ook terwijl
 	de planner bijwerkt), botst bij het opslaan: MariaDB 1020 of een verouderde tijdstempel. Die keer wordt de stap
@@ -135,11 +153,7 @@ def zonder_botsing(stap, *args) -> None:
 	try:
 		stap(*args)
 	except (frappe.QueryDeadlockError, frappe.TimestampMismatchError):
-		try:
-			frappe.db.rollback(save_point="openaec_bim_bijwerken")
-		except frappe.db.OperationalError:
-			# Na een 1020 heeft MariaDB de hele transactie al teruggedraaid, en het savepoint met haar.
-			frappe.db.rollback()
+		_terug_naar("openaec_bim_bijwerken")
 		# Het document in het geheugen kan al een stand hebben die niet is opgeslagen.
 		for doc in args:
 			if hasattr(doc, "reload") and getattr(doc, "name", None):
@@ -149,12 +163,50 @@ def zonder_botsing(stap, *args) -> None:
 					pass
 
 
+def bewaakt(titel: str, stap, *args) -> Exception | None:
+	"""Doe een stap; een fout wordt teruggedraaid en met de details in het foutenlog gezet, en komt als antwoord terug.
+	Een `frappe.throw` laat ook een bericht voor het antwoord achter: dat gaat weg, want daar kan een adres of SQL in staan."""
+	frappe.db.savepoint("openaec_bim_stuk")
+	try:
+		zonder_botsing(stap, *args)
+	except Exception as fout:
+		_terug_naar("openaec_bim_stuk")
+		frappe.log_error(title=titel)
+		frappe.clear_messages()
+		return fout
+	return None
+
+
+def _zet_fout(doc, melding: str) -> None:
+	doc.reload()
+	doc.status = "fout"
+	doc.fout = json.dumps({"error_code": "inlezen_mislukt", "melding": melding})
+	doc.save(ignore_permissions=True)
+
+
+def per_stuk(stap, doc, melding: str) -> None:
+	"""Een lopend stuk bijwerken; wat er misgaat, blijft bij dat stuk en de rest gaat door. Bij een tijdelijke fout blijft
+	het lopen en volgt de volgende tik opnieuw. Een blijvende fout zet het op `fout`, met een vaste tekst voor elke lezer."""
+	fout = bewaakt(f"{doc.doctype} {doc.name}", stap, doc)
+	if fout is None:
+		return
+	if tijdelijk(fout):
+		doc.reload()
+	else:
+		# Ook dit opslaan kan botsen met een ander verzoek; dan zet de volgende tik de fout.
+		zonder_botsing(_zet_fout, doc, melding)
+
+
+def werk_bij(doc) -> None:
+	per_stuk(bijwerken, doc, _("De uitkomst van de omzetting kon niet worden ingelezen."))
+
+
 def volg_lopende() -> None:
 	"""Geplande taak: elke lopende omzetting, versiekoppeling en botsingsronde bijwerken."""
 	from openaec_bim import botsingen, koppeling
 
 	for naam in frappe.get_all(DOCTYPE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		zonder_botsing(bijwerken, frappe.get_doc(DOCTYPE, naam))
+		werk_bij(frappe.get_doc(DOCTYPE, naam))
 		frappe.db.commit()
 	koppeling.volg_lopende()
 	botsingen.volg_lopende()

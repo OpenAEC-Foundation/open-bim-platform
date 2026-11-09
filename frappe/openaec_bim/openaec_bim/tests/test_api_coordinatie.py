@@ -91,6 +91,47 @@ class TestApiCoordinatie(ProjectTest):
 		self.assertEqual(len(api_coordinatie.botsingen(ronde)), 1)
 		self.assertRaises(frappe.PermissionError, api_coordinatie.botsing_status, b["naam"], "genegeerd")
 
+	def test_botsingsronde_start_met_controles_als_lijst_of_json(self):
+		self.model_klaar(self.constructie)
+		self.model_klaar(self.installaties)
+		controles = [
+			{
+				"set_a": [{"bestand": self.constructie}],
+				"set_b": [{"bestand": self.installaties}],
+				"soort": "hard",
+				"tolerantie": 0.0,
+			}
+		]
+		for naam, waarde in (("harde", controles), ("dubbel", json.dumps(controles))):
+			ronde = api_coordinatie.botsingsronde_start(self.map, controles=waarde, voorinstelling=naam)["ronde"]
+			doc = frappe.get_doc("BIM Botsingsronde", ronde)
+			self.assertEqual((doc.reeks, len(json.loads(doc.regels))), (naam, 1))
+			self.assertEqual(len(self.kern.laatste_botsingen["controles"]), 1)
+
+	def test_groepsactie_instellingen_en_verloop_via_de_api_met_json_tekst(self):
+		# Een formulierverzoek geeft lijsten als tekst; de methoden lezen ze zoals een lijst.
+		self.model_klaar(self.constructie)
+		self.model_klaar(self.installaties)
+		controle = {"set_a": [{"bestand": self.constructie}], "set_b": [{"bestand": self.installaties}], "soort": "hard"}
+		ronde = api_coordinatie.botsingsronde_start(self.map, controles=json.dumps([controle]))["ronde"]
+		test_botsingen.TestBotsingen.lever(self, ronde, [("w1", "k1"), ("w2", "k2")])
+		namen = [b["naam"] for b in api_coordinatie.botsingen(ronde)]
+		uit = api_coordinatie.botsing_status_veel(json.dumps(namen), "genegeerd", "Bedoeld zo")
+		self.assertEqual(sorted((r["naam"], r["status"], r["reden"]) for r in uit), sorted((n, "genegeerd", "Bedoeld zo") for n in namen))
+		self.assertEqual(frappe.get_last_doc("BIM Auditregel", {"object": namen[0]}).bron, "gastpagina")
+		regel = {"a": "constructie", "b": "installaties", "soort": "afstand", "mm": 25.0, "ernst": "groot"}
+		weergave = {"naam": "Groot", "filter": {"ernst": ["groot"]}, "groep": "verdieping"}
+		bewaard = api_coordinatie.botsing_instellingen_bewaar(self.map, json.dumps([regel]), json.dumps([weergave]))
+		self.assertEqual((bewaard["regels"], bewaard["weergaven"], bewaard["mag_wijzigen"]), ([regel], [weergave], True))
+		# Wat niet meekomt, blijft staan.
+		leeg = api_coordinatie.botsing_instellingen_bewaar(self.map, weergaven="[]")
+		self.assertEqual((leeg["regels"], leeg["weergaven"]), ([regel], []))
+		self.assertEqual(api_coordinatie.botsing_instellingen(self.map)["regels"], [regel])
+		self.assertEqual([r["naam"] for r in api_coordinatie.botsing_trends(ronde)], [ronde])
+		for slecht in ('{"geen": "lijst"}', "geen json"):
+			with self.assertRaises((frappe.ValidationError, json.JSONDecodeError)):
+				api_coordinatie.botsing_status_veel(slecht, "genegeerd")
+
 	def test_audit_export_alleen_met_schrijfrecht(self):
 		api_coordinatie.issue_bewaar(self.map, {"title": "In het log"})
 		self.assertTrue(api_coordinatie.audit_export(self.map)["csv"].startswith("tijd,gebruiker,handeling"))

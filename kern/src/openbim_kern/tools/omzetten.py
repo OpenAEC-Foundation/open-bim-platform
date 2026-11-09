@@ -13,7 +13,6 @@ import re
 import sys
 import tempfile
 import time
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -28,6 +27,7 @@ from ..errors import KernError
 from ..index.properties import count_elements, index_model
 from ..index.spatial import merge_bounds, merge_spatial_trees, spatial_tree, summarize
 from ..paths import data_dir
+from ..progress import Progress, no_progress
 from ..sources import Source, deliver, fetch_source
 from .registry import tool
 
@@ -70,10 +70,6 @@ class OmzetUitkomst(BaseModel):
     piek_geheugen: int
 
 
-def _no_progress(_: float) -> None:
-    pass
-
-
 def planned_parts(size: int) -> int:
     """0 when the file is converted whole, otherwise the number of parts to split it into."""
     if size <= int(os.environ.get("OPENBIM_SPLITS_VANAF_BYTES", 1_500_000_000)):
@@ -88,7 +84,7 @@ def planned_parts(size: int) -> int:
     lang=True,
     rij="omzetten",
 )
-def omzetten(invoer: OmzetVerzoek, progress: Callable[[float], None] = _no_progress) -> OmzetUitkomst:
+def omzetten(invoer: OmzetVerzoek, progress: Progress = no_progress) -> OmzetUitkomst:
     t0 = time.monotonic()
     if invoer.bron.grootte is not None:
         _check_targets(invoer.doelen, planned_parts(invoer.bron.grootte))
@@ -133,7 +129,7 @@ class Converted:
     cleaning: dict[str, Any] = field(default_factory=dict)  # what cleaning did, or why it was skipped
 
 
-def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no_progress) -> Converted:
+def convert_model(ifc: Path, work: Path, progress: Progress = no_progress) -> Converted:
     """Clean, split when large, convert to fragments and build the index, tree and summary: output in work / "uit".
 
     The one conversion path, for the tool and the CLI alike. When cleaning fails the source is converted as it is.

@@ -85,17 +85,19 @@
   "reactie_plaatsen": "Post",
   "botsingen_fout": "The clash rounds could not be loaded: {{melding}}",
   "ronde_nieuw": "New round",
-  "ronde_uitleg": "Find clashes between the models of set A and set B, in the versions now in view.",
   "ronde_starten": "Start",
   "geen_rondes": "No clash rounds yet.",
   "set_a": "Set A",
   "set_b": "Set B",
   "soort_hard": "Hard",
   "soort_afstand": "Clearance",
+  "soort_dubbel": "Duplicate",
+  "soort_gemengd": "Mixed",
   "soort_hard_uitleg": "Hard: elements that penetrate each other deeper than the tolerance",
   "soort_afstand_uitleg": "Clearance: elements closer to each other than the tolerance",
   "tolerantie_mm": "Tolerance (mm)",
   "tolerantie_waarde": "{{mm}} mm",
+  "tolerantie_per_regel": "tolerance per rule",
   "ronde_status": {
     "wacht": "Waiting for the kern",
     "bezig": "Calculating",
@@ -105,16 +107,192 @@
   "botsing_status": {
     "nieuw": "New",
     "actief": "Active",
-    "opgelost": "Resolved",
-    "genegeerd": "Ignored"
+    "bevestigd": "Confirmed",
+    "geaccepteerd": "Accepted",
+    "genegeerd": "Ignored",
+    "opgelost": "Resolved"
   },
   "aantal_botsingen_one": "{{count}} clash",
   "aantal_botsingen_other": "{{count}} clashes",
-  "verberg_afgehandeld": "Hide resolved and ignored",
-  "geen_botsingen": "No clashes to show.",
   "botsing_afstand": "{{mm}} mm",
-  "naar_issue": "Create issue",
   "heeft_issue": "Issue",
-  "issue_gemaakt": "Issue “{{titel}}” created.",
-  "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again"
+  "koppeling": "Linked to version {{vorige}}: {{procent}}% of the elements found again",
+  "start_uitleg": "Choose what to check, or set it up yourself.",
+  "voorinstelling": {
+    "harde": {
+      "titel": "Hard clashes",
+      "uitleg": "All models against all, elements that penetrate each other."
+    },
+    "constructie_installaties": {
+      "titel": "Structure against installations",
+      "uitleg": "Beams, columns, footings, piles, slabs and walls against pipes and ducts."
+    },
+    "wanden_installaties": {
+      "titel": "Walls and floors against installations",
+      "uitleg": "Only walls and floors against pipes and ducts."
+    },
+    "tussen_modellen": {
+      "titel": "Between models",
+      "uitleg": "Hard clashes, but only between different models."
+    },
+    "bijna": {
+      "titel": "Near-clashes",
+      "uitleg": "Elements of different models that are closer together than the distance."
+    },
+    "dubbel": {
+      "titel": "Duplicate elements",
+      "uitleg": "The same element that is in the models twice."
+    },
+    "regels": {
+      "titel": "By the project rules",
+      "uitleg": "The rules per pair of disciplines of this project."
+    },
+    "zelf": {
+      "titel": "Set it up yourself",
+      "uitleg": "Choose the sets, the kind and the tolerance yourself."
+    }
+  },
+  "voorinstelling_reden": {
+    "geen_modellen": "There are no models that are ready.",
+    "geen_constructie": "No model has structural elements.",
+    "geen_installaties": "No model has installation elements.",
+    "geen_wanden_vloeren": "No model has walls or floors.",
+    "een_model": "This needs at least two models.",
+    "geen_regels": "There are no rules yet that fit these models.",
+    "te_veel_regels": "There are more rules than one round can handle (30). Switch rules off or merge pairs."
+  },
+  "bijna_mm": "Distance (mm)",
+  "mm_ongeldig": "Enter a number from 0 to 1000 millimetres.",
+  "overlap_waarschuwing": "The models of this choice are not near each other. Check that they are in the same place and the same coordinate system; you can still start.",
+  "niet_gereed_one": "{{namen}} is not ready yet and does not take part. The clashes of this model may count as gone in this round.",
+  "niet_gereed_other": "{{namen}} are not ready yet and do not take part. The clashes of these models may count as gone in this round.",
+  "ronde_voortgang": "{{procent}}%",
+  "regels_knop": "Rules",
+  "regels_titel": "Rules per pair of disciplines",
+  "regels_uitleg": "For each pair of disciplines the kind of check, the distance and the severity. They apply to the choice By the project rules.",
+  "regels_alleen_lezen": "You can view the rules but not change them.",
+  "regels_geen": "There are no models yet to make rules for.",
+  "regel_soort": {
+    "uit": "Off",
+    "hard": "Hard",
+    "afstand": "Clearance"
+  },
+  "regel_mm": "Distance (mm)",
+  "ernst_veld": "Severity",
+  "ernst": {
+    "auto": "Automatic",
+    "klein": "Small",
+    "groot": "Large",
+    "kritiek": "Critical"
+  },
+  "emmer": {
+    "beoordelen": "To review",
+    "contact": "Contact",
+    "aangrenzend": "Adjacent"
+  },
+  "emmers_label": "Clashes per bucket",
+  "emmer_uitleg": {
+    "beoordelen": "Real clashes for you to review",
+    "contact": "Elements that are meant to touch",
+    "aangrenzend": "Elements that lie next to each other"
+  },
+  "tel_open": "{{count}} open",
+  "tel_nieuw": "{{count}} new",
+  "tel_weg": "{{count}} gone",
+  "regels_gewijzigd_uitleg": "The rules changed since the previous round, so differences may be caused by that.",
+  "ontwikkeling": {
+    "nieuw": "New",
+    "blijft": "Remains",
+    "terug": "Back",
+    "weg": "Gone",
+    "eerder_weg": "Gone earlier"
+  },
+  "filter_veld": {
+    "ernst": "Severity",
+    "status": "Status",
+    "categorie": "Category",
+    "disciplines": "Disciplines",
+    "verdieping": "Storey",
+    "ontwikkeling": "Development"
+  },
+  "filter_optie": "{{waarde}} ({{aantal}})",
+  "filter_zoek": "Search by name, class or GlobalId",
+  "filter_chip_weg": "Remove {{label}}",
+  "filters_wissen": "Clear filters",
+  "weergave_kies": "Choose a view",
+  "weergave_bewaren": "Save view",
+  "weergave_verwijderen": "Delete view",
+  "weergaven_vol": "There are already {{max}} views. Delete one first, or save under an existing name.",
+  "weergave_naam": "Name of the view",
+  "groeperen_op": "Group by",
+  "groep_door": {
+    "klassen": "Classes",
+    "verdieping": "Storey",
+    "disciplines": "Disciplines",
+    "ernst": "Severity",
+    "categorie": "Category",
+    "raster": "Grid",
+    "ruimte": "Space",
+    "ontwikkeling": "Development"
+  },
+  "groep_onbekend": "Unknown",
+  "groep_alles_afwijzen": "Reject all",
+  "groep_alles_accepteren": "Accept all",
+  "groep_vraag_afwijzen_one": "Reject {{count}} clash?",
+  "groep_vraag_afwijzen_other": "Reject {{count}} clashes?",
+  "groep_vraag_accepteren_one": "Accept {{count}} clash?",
+  "groep_vraag_accepteren_other": "Accept {{count}} clashes?",
+  "groep_te_veel": "A group action handles at most {{max}} clashes and this group has {{count}} still to review. Filtering makes the group smaller.",
+  "meer_tonen": "Show more ({{aantal}} left)",
+  "reden_veld": "Reason (may be empty)",
+  "beoordelen_alleen_lezen": "You can view the clashes but not review them.",
+  "ronde_heeft_opvolger": "There is a newer round: decide there. This round can only be viewed.",
+  "niet_in_beeld": "Not found in the view: {{namen}}. Is the model switched on?",
+  "niet_in_beeld_weg": "Not found in the view: {{namen}}. This clash was no longer found: the element may have left the model.",
+  "actie": {
+    "bevestigen": "Confirm",
+    "accepteren": "Accept",
+    "afwijzen": "Reject",
+    "heropenen": "Reopen",
+    "naar_a": "To A",
+    "naar_b": "To B",
+    "alles_tonen": "Show all"
+  },
+  "veld": {
+    "afstand": "Distance",
+    "disciplines": "Disciplines",
+    "raster": "Grid",
+    "ruimte": "Space",
+    "globalid_a": "GlobalId A",
+    "globalid_b": "GlobalId B",
+    "reden": "Reason",
+    "beoordeeld": "Reviewed by"
+  },
+  "botsing_lijst": "Clashes",
+  "ronde_leeg": "This round found no clashes.",
+  "leeg_emmer": "No clashes in this bucket.",
+  "trend_titel": "Trend",
+  "trend_laden": "Loading the trend…",
+  "trend_fout": "The trend could not be loaded: {{melding}}",
+  "trend_opnieuw": "Try again",
+  "trend_leeg": "There are no earlier rounds to compare with.",
+  "trend_grafiek": "Number of clashes per round, the open ones dark",
+  "trend_kolom": {
+    "ronde": "Round",
+    "totaal": "Total",
+    "open": "Open",
+    "nieuw": "New",
+    "weg": "Gone"
+  },
+  "sneltoetsen_knop": "Shortcuts",
+  "sneltoetsen_titel": "Shortcuts in the list",
+  "sneltoets": {
+    "volgende": "Next clash",
+    "vorige": "Previous clash",
+    "bevestigen": "Confirm (creates an issue)",
+    "accepteren": "Accept",
+    "afwijzen": "Reject, type a reason and press Enter",
+    "alles_tonen": "Show all and close the row",
+    "hulp": "Show this list"
+  }
 }

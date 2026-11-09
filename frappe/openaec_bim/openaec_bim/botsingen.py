@@ -2,26 +2,85 @@
 
 Een ronde legt bij de start de versies vast die ze gebruikt (de versie die het project toont), zodat een nieuwe versie
 tijdens de ronde niets verandert. Een volgende ronde met dezelfde sets volgt de botsingen van de vorige via de
-versiekoppeling: een paar dat terugkomt houdt zijn status (genegeerd blijft genegeerd, opgelost wordt weer actief) en
-zijn issue; een paar dat niet meer voorkomt, komt als opgelost in de nieuwe ronde.
+versiekoppeling: een paar dat blijft houdt zijn status en zijn issue; een paar dat niet meer voorkomt, komt als opgelost in
+de nieuwe ronde en onthoudt zijn beslissing, zodat het die terugkrijgt als het terugkomt.
 """
 
+import hashlib
 import json
 import math
 
 import frappe
 from frappe import _
-from frappe.utils import cint, flt, now_datetime
+from frappe.utils import cint, flt, now_datetime, time_diff_in_seconds
 
 from openaec_bim import afgeleid, api, issues, kern, koppeling
 
 RONDE = "BIM Botsingsronde"
 BOTSING = "BIM Botsing"
-SOORTEN = ("hard", "afstand")
-STATUSSEN = ("nieuw", "actief", "opgelost", "genegeerd")
+SOORTEN = ("hard", "afstand", "dubbel")
+ERNSTEN = ("klein", "groot", "kritiek")
+MAX_CONTROLES = 30
+STATUSSEN = ("nieuw", "actief", "bevestigd", "geaccepteerd", "genegeerd", "opgelost")
 # De rij botsing doet één taak tegelijk en een ronde kan uren duren: de adressen blijven een dag geldig.
 GELDIG = 24 * 3600
-VELDEN = ("ronde", "sleutel", "element_a", "element_b", "punt", "afstand", "status", "issue", "groep")
+LOPEND = ("wacht", "bezig")
+# Verandert er zo lang (seconden) niets aan de status of de voortgang, dan komt de ronde niet meer klaar.
+MAX_STIL = 2 * 3600
+VELDEN = (
+	"ronde",
+	"sleutel",
+	"element_a",
+	"element_b",
+	"punt",
+	"afstand",
+	"status",
+	"issue",
+	"groep",
+	"soort",
+	"regel",
+	"emmer",
+	"emmer_reden",
+	"ernst",
+	"categorie",
+	"disciplines",
+	"verdieping",
+	"raster",
+	"ruimte",
+	"ontwikkeling",
+	"nummer",
+	"reden",
+	"beoordeeld_door",
+	"beoordeeld_op",
+	"issue_status_voor",
+	"status_voor",
+)
+EMMERS = ("beoordelen", "contact", "aangrenzend")
+GEVONDEN = ("nieuw", "blijft", "terug")
+OPEN_STATUSSEN = ("nieuw", "actief", "bevestigd")
+BESLUITEN = ("bevestigd", "geaccepteerd", "genegeerd")
+# Wat een rij van de vorige ronde aan haar opvolger meegeeft.
+BESLISSING = ("reden", "beoordeeld_door", "beoordeeld_op", "issue", "issue_status_voor", "nummer")
+DICHTE_STATUSSEN = ("Opgelost", "Gesloten")
+MAX_REDEN = 200
+MAX_GROEPSACTIE = 500
+MAX_WEERGAVEN = 50
+MAX_VERLOOP = 20
+REGELSOORTEN = ("uit", "hard", "afstand")
+MAX_MM = 1000
+MAX_REGELS = 500
+# Een discipline, de naam van een weergave en een waarde in een filter: zo lang als de langste kolom van een botsing.
+MAX_NAAM = 140
+MAX_ZOEKTEKST = 200
+MAX_FILTERWAARDEN = 100
+# Per model in een set; de langste IFC-klasse is ruim korter.
+MAX_KLASSEN = 100
+MAX_KLASSENAAM = 64
+# De filters van een weergave: lijsten van tekst, en daarnaast de emmer en de zoektekst.
+FILTER_LIJSTEN = ("ernst", "status", "categorie", "disciplines", "verdieping", "ontwikkeling")
+FILTER_EMMERS = (*EMMERS, "weg")
+# Waarop de viewer een ronde kan groeperen.
+GROEPERINGEN = ("klassen", "verdieping", "disciplines", "ernst", "categorie", "raster", "ruimte", "ontwikkeling")
 
 
 def _weiger(melding: str, foutcode: str, uitzondering=frappe.ValidationError):
@@ -36,6 +95,21 @@ def _vereis_schrijver(project) -> None:
 		frappe.throw(_("Alleen wie in de modelmap mag schrijven, kan botsingen beheren."), frappe.PermissionError)
 
 
+def _volgorde(tekst: str) -> tuple[str, str]:
+	"""Disciplines op alfabet zonder op hoofdletters te letten, en bij gelijke letters op codepunt; de viewer sorteert zo ook."""
+	return tekst.lower(), tekst
+
+
+def _klassen(klassen) -> list[str] | None:
+	uit = sorted({str(k) for k in klassen or []})
+	if len(uit) > MAX_KLASSEN or any(len(k) > MAX_KLASSENAAM for k in uit):
+		_weiger(
+			_("Hoogstens {0} klassen per model, van hoogstens {1} tekens.").format(MAX_KLASSEN, MAX_KLASSENAAM),
+			"klassen_ongeldig",
+		)
+	return uit or None
+
+
 def _set(items, modellen: dict) -> list[dict]:
 	"""Een set als `[{bestand, klassen}]`, op volgorde van bestand; elk bestand is een IFC in de modelmap."""
 	uit = []
@@ -43,8 +117,7 @@ def _set(items, modellen: dict) -> list[dict]:
 		bestand = item.get("bestand") if isinstance(item, dict) else item
 		if bestand not in modellen:
 			_weiger(_("{0} is geen model in dit project.").format(bestand), "model_onbekend")
-		klassen = sorted({str(k) for k in (item.get("klassen") if isinstance(item, dict) else None) or []}) or None
-		uit.append({"bestand": bestand, "klassen": klassen})
+		uit.append({"bestand": bestand, "klassen": _klassen(item.get("klassen") if isinstance(item, dict) else None)})
 	if not uit:
 		_weiger(_("Een set heeft minstens één model nodig."), "set_leeg")
 	return sorted(uit, key=lambda m: m["bestand"])
@@ -54,39 +127,75 @@ def _json(waarde) -> str:
 	return json.dumps(waarde, sort_keys=True)
 
 
-def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | None = None) -> str:
-	"""Start een ronde op de versies die het project nu toont; geeft de naam van de ronde."""
-	project = issues._project(project)
-	_vereis_schrijver(project)
+def _controle(controle: dict, modellen: dict) -> dict:
+	"""Een controle genormaliseerd en gevalideerd: sets op bestand en klassen gesorteerd, soort en tolerantie in bereik."""
+	soort = controle.get("soort")
 	if soort not in SOORTEN:
-		_weiger(_("Kies hard of afstand."), "soort_onbekend")
-	tolerantie = flt(tolerantie)
+		_weiger(_("Kies hard, afstand of dubbel."), "soort_onbekend")
+	tolerantie = flt(controle.get("tolerantie"))
 	if not 0 <= tolerantie <= 1:
 		_weiger(_("De tolerantie ligt tussen 0 en 1 m."), "tolerantie_ongeldig")
+	ernst = controle.get("ernst") or None
+	if ernst is not None and ernst not in ERNSTEN:
+		_weiger(_("Onbekende ernst {0}.").format(ernst), "ernst_onbekend")
+	return {
+		"regel": str(controle["regel"])[:140] if controle.get("regel") else None,
+		"set_a": _set(controle.get("set_a"), modellen),
+		"set_b": _set(controle.get("set_b"), modellen),
+		"soort": soort,
+		"tolerantie": tolerantie,
+		"ernst": ernst,
+		"alleen_tussen_modellen": bool(controle.get("alleen_tussen_modellen")),
+	}
+
+
+def _vereniging(sets: list[list[dict]]) -> list[dict]:
+	"""De sets van alle controles samen, zonder dubbelen, op volgorde van bestand."""
+	uniek = {_json(item): item for items in sets for item in items}
+	return sorted(uniek.values(), key=lambda m: (m["bestand"], _json(m["klassen"])))
+
+
+def start_controles(
+	project, controles: list[dict], titel: str | None = None, voorinstelling: str | None = None
+) -> str:
+	"""Start een ronde met een of meer controles op de versies die het project nu toont; geeft de naam van de ronde."""
+	project = issues._project(project)
+	_vereis_schrijver(project)
+	if not 1 <= len(controles or []) <= MAX_CONTROLES:
+		_weiger(_("Een ronde heeft 1 tot {0} controles.").format(MAX_CONTROLES), "controles_aantal")
 	map_doc = frappe.db.get_value("Opslagmap", project.modelmap, ["name", "ruimte", "naam"], as_dict=True)
 	modellen = {b.name: b for b, _discipline in api.ifc_in_map(map_doc)}
-	set_a, set_b = _set(set_a, modellen), _set(set_b, modellen)
+	controles = [_controle(c, modellen) for c in controles]
+	set_a = _vereniging([c["set_a"] for c in controles])
+	set_b = _vereniging([c["set_b"] for c in controles])
+	soorten = {c["soort"] for c in controles}
+	soort = soorten.pop() if len(soorten) == 1 else "gemengd"
 	versies = {}
 	for item in set_a + set_b:
 		versie = afgeleid.getoonde_versie(item["bestand"])
 		if not versie:
 			_weiger(_("{0} is nog niet omgezet.").format(modellen[item["bestand"]].naam), "model_niet_omgezet")
 		versies[item["bestand"]] = str(versie)
+	voorinstelling = (voorinstelling or "").strip() or None
+	reeks = voorinstelling or "sets:" + hashlib.sha1(_json([set_a, set_b, soort]).encode()).hexdigest()
+	# De vorige ronde wordt hier bepaald: twee lopende rondes zouden dezelfde voorganger delen en de keten splitsen.
+	if frappe.db.exists(RONDE, {"project": project.name, "reeks": reeks, "status": ("in", LOPEND)}):
+		_weiger(_("Deze controle loopt al. Wacht tot die ronde klaar is en start dan een nieuwe."), "ronde_loopt")
 	vorige = frappe.db.get_value(
-		RONDE,
-		{"project": project.name, "status": "klaar", "soort": soort, "set_a": _json(set_a), "set_b": _json(set_b)},
-		"name",
-		order_by="creation desc",
+		RONDE, {"project": project.name, "status": "klaar", "reeks": reeks}, "name", order_by="creation desc"
 	)
 	doc = frappe.get_doc(
 		{
 			"doctype": RONDE,
 			"project": project.name,
-			"titel": titel or _("Botsingen {0}").format(now_datetime().strftime("%Y-%m-%d %H:%M")),
+			"titel": titel or f"{voorinstelling or _('Botsingen')} {now_datetime().strftime('%Y-%m-%d %H:%M')}",
 			"set_a": _json(set_a),
 			"set_b": _json(set_b),
 			"soort": soort,
-			"tolerantie": tolerantie,
+			"regels": _json(sorted(controles, key=_json)),
+			"voorinstelling": voorinstelling,
+			"reeks": reeks,
+			"tolerantie": max(c["tolerantie"] for c in controles),
 			"status": "wacht",
 			"bron_versies": _json(versies),
 			"vorige_ronde": vorige,
@@ -105,10 +214,13 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 			for m in items
 		]
 
+	# De kern leest `regel` als tekst: zonder regel (de snelle keuzes) gaat het veld niet mee.
+	kern_controles = [
+		{**{k: v for k, v in c.items() if k != "regel" or v}, "set_a": kern_set(c["set_a"]), "set_b": kern_set(c["set_b"])}
+		for c in controles
+	]
 	try:
-		doc.kern_taak = kern.start_botsingen(
-			kern_set(set_a), kern_set(set_b), soort, tolerantie, afgeleid.schrijfadres(doc.resultaat, GELDIG)
-		)
+		doc.kern_taak = kern.start_botsingen(kern_controles, afgeleid.schrijfadres(doc.resultaat, GELDIG))
 	except kern.KernFout as fout:
 		doc.status = "fout"
 		doc.fout = json.dumps({"error_code": fout.code, "melding": str(fout)})
@@ -116,9 +228,16 @@ def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | Non
 	return doc.name
 
 
+def start(project, set_a, set_b, soort: str, tolerantie: float, titel: str | None = None) -> str:
+	"""Start een ronde met één controle op de versies die het project nu toont; geeft de naam van de ronde."""
+	controle = {"set_a": set_a, "set_b": set_b, "soort": soort, "tolerantie": tolerantie}
+	return start_controles(project, [controle], titel=titel)
+
+
 def bijwerken(doc) -> None:
-	"""De stand van een lopende ronde bij de kern ophalen; bij klaar de botsingen inlezen."""
-	if doc.status not in ("wacht", "bezig") or not doc.kern_taak:
+	"""De stand van een lopende ronde bij de kern ophalen; bij klaar de botsingen inlezen. Alleen wat echt verandert, wordt
+	opgeslagen: `_verloop_als_stil` leest aan `modified` hoe lang er niets gebeurd is."""
+	if doc.status not in LOPEND or not doc.kern_taak:
 		return
 	try:
 		taak = kern.taak(doc.kern_taak)
@@ -137,19 +256,53 @@ def bijwerken(doc) -> None:
 		verwerk(doc.name)
 		doc.reload()
 		return
-	if status in ("wacht", "bezig"):
-		if doc.status == status:
+	if status in LOPEND:
+		# Afgerond zoals de kolom het bewaart: anders is bijvoorbeeld 0,6333... bij elke vraag weer een verandering.
+		voortgang = flt(taak.get("voortgang"), doc.precision("voortgang"))
+		if doc.status == status and flt(doc.voortgang) == voortgang:
 			return
 		doc.status = status
+		doc.voortgang = voortgang
 	else:
 		doc.status = "fout"
 		doc.fout = json.dumps(taak.get("fout") or {"error_code": status or "onbekend", "melding": _("De ronde is gestopt.")})
 	doc.save(ignore_permissions=True)
 
 
+def _verloop_als_stil(doc) -> None:
+	"""Een lopende ronde houdt haar reeks bezet: er kan niets starten en haar voorganger niet beslist worden. Verandert er te
+	lang niets (de kern is weg, de koppeling komt niet, de opslag blijft storen), dan eindigt ze en start de gebruiker opnieuw."""
+	if doc.status in LOPEND and time_diff_in_seconds(now_datetime(), doc.modified) >= MAX_STIL:
+		doc.status = "fout"
+		melding = _("Deze ronde is gestopt: er is twee uur lang niets veranderd. Start een nieuwe ronde.")
+		doc.fout = json.dumps({"error_code": "ronde_verlopen", "melding": melding})
+		doc.save(ignore_permissions=True)
+		_stop_kerntaak(doc)
+
+
+def _stop_kerntaak(doc) -> None:
+	"""Een taak die doorloopt, houdt de wachtrij bezet voor een uitkomst die niemand meer leest. Is de kern zelf weg, dan valt
+	er nu niets te stoppen."""
+	if not doc.kern_taak:
+		return
+	try:
+		kern.stop_taak(doc.kern_taak)
+	except kern.KernFout:
+		frappe.logger("openaec_bim").warning("kerntaak %s niet gestopt", doc.kern_taak)
+
+
+def _werk_bij(doc) -> None:
+	"""Eén lopende ronde bijwerken; wat er misgaat, blijft bij die ronde (`afgeleid.per_stuk`). De tijdgrens staat hier en niet
+	in `bijwerken`, omdat een tijdelijke fout `bijwerken` halverwege afbreekt: die grens stopt ook het opnieuw proberen."""
+	if doc.status not in LOPEND:
+		return
+	afgeleid.per_stuk(bijwerken, doc, _("De uitkomst van deze ronde kon niet worden ingelezen. Start een nieuwe ronde."))
+	afgeleid.zonder_botsing(_verloop_als_stil, doc)
+
+
 def volg_lopende() -> None:
-	for naam in frappe.get_all(RONDE, filters={"status": ("in", ("wacht", "bezig"))}, pluck="name"):
-		afgeleid.zonder_botsing(bijwerken, frappe.get_doc(RONDE, naam))
+	for naam in frappe.get_all(RONDE, filters={"status": ("in", LOPEND)}, pluck="name"):
+		_werk_bij(frappe.get_doc(RONDE, naam))
 		frappe.db.commit()
 
 
@@ -158,7 +311,11 @@ def _sleutel(a: dict, b: dict) -> str:
 
 
 def _element(ref: dict) -> dict:
-	return {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
+	uit = {"bestand": ref["sleutel"], "versie": str(ref["versie"]), "globalid": ref["globalid"]}
+	for veld in ("klasse", "naam", "verdieping"):
+		if ref.get(veld):
+			uit[veld] = ref[veld]
+	return uit
 
 
 def _wacht_op_koppeling(doc) -> bool:
@@ -181,7 +338,7 @@ def _gevolgd(element: dict, versies: dict) -> dict | None:
 	globalid, compleet = koppeling.volg(element["bestand"], element["globalid"], cint(element["versie"]), naar)
 	if not compleet:
 		globalid = element["globalid"]
-	return None if globalid is None else {"bestand": element["bestand"], "versie": str(naar), "globalid": globalid}
+	return None if globalid is None else {**element, "versie": str(naar), "globalid": globalid}
 
 
 def _vorige(doc, versies: dict) -> dict[str, tuple[dict, dict, dict]]:
@@ -200,19 +357,136 @@ def _vorige(doc, versies: dict) -> dict[str, tuple[dict, dict, dict]]:
 	return uit
 
 
+def _disciplines(project) -> dict[str, str]:
+	"""Per modelbestand de discipline: de submap van de modelmap, of anders de bestandsnaam zonder .ifc."""
+	if not project.modelmap:
+		return {}
+	map_doc = frappe.db.get_value("Opslagmap", project.modelmap, ["name", "ruimte", "naam"], as_dict=True)
+	uit = {}
+	for bestand, discipline in api.ifc_in_map(map_doc):
+		naam = bestand.naam or ""
+		uit[bestand.name] = discipline or (naam[:-4] if naam.lower().endswith(".ifc") else naam)
+	return uit
+
+
+def _dichte_status(project) -> str:
+	"""De dichte status die een issue krijgt als zijn botsing weg is: Opgelost, of anders de laatste van het project."""
+	lijst = issues._regels(project.statussen)
+	return "Opgelost" if not lijst or "Opgelost" in lijst else lijst[-1]
+
+
+def _regels_gewijzigd(doc) -> bool:
+	if not doc.vorige_ronde:
+		return False
+	vorige = frappe.db.get_value(RONDE, doc.vorige_ronde, "regels")
+	return json.loads(vorige or "null") != json.loads(doc.regels or "null")
+
+
+def _ontwikkeling(eerder, gevonden: bool) -> tuple[str, str]:
+	"""(nieuwe status, ontwikkeling) volgens de overgangstabel; `eerder` is de rij van de vorige ronde of None."""
+	if eerder is None:
+		return "nieuw", "nieuw"
+	if gevonden:
+		if eerder.status == "opgelost":
+			return (eerder.status_voor if eerder.status_voor in BESLUITEN else "actief"), "terug"
+		if eerder.status in BESLUITEN:
+			return eerder.status, "blijft"
+		return "actief", "blijft"
+	return "opgelost", "eerder_weg" if eerder.status == "opgelost" else "weg"
+
+
+def _zet_issue(issue: str, status: str, tekst: str) -> None:
+	"""Het issue naar een status, met een reactie op naam van de botsingsronde; via het document, dus ook in het log."""
+	doc = frappe.get_doc(issues.ISSUE, issue)
+	doc.status = status
+	doc.save(ignore_permissions=True)
+	issues._nieuwe_reactie(doc, {"comment": tekst}, auteur="Botsingsronde")
+
+
+def _issue_volgt(r: dict, eerder, dicht: str, gewijzigd: bool) -> None:
+	"""Zet het issue van een rij op `dicht` als haar botsing weg is, en terug als de botsing terugkomt; werkt `r` bij."""
+	if not r["issue"]:
+		return
+	if not frappe.db.exists(issues.ISSUE, r["issue"]):
+		r["issue"] = r["issue_status_voor"] = None
+		return
+	status = frappe.db.get_value(issues.ISSUE, r["issue"], "status")
+	if r["ontwikkeling"] == "weg" and not gewijzigd and status not in DICHTE_STATUSSEN:
+		r["issue_status_voor"] = status
+		_zet_issue(r["issue"], dicht, _("De botsing is in deze ronde niet meer gevonden; het issue is op {0} gezet.").format(dicht))
+	elif r["ontwikkeling"] == "terug" and eerder.issue_status_voor:
+		if status == dicht:
+			_zet_issue(
+				r["issue"],
+				eerder.issue_status_voor,
+				_("De botsing is in deze ronde weer gevonden; het issue is terug op {0}.").format(eerder.issue_status_voor),
+			)
+		# Is het issue intussen door iemand zelf gewijzigd, dan blijft het zoals het is.
+		r["issue_status_voor"] = None
+
+
+def _samenvatting(rijen: list[dict], gewijzigd: bool) -> dict:
+	gevonden = [r for r in rijen if r["ontwikkeling"] in GEVONDEN]
+	per_emmer = dict.fromkeys(EMMERS, 0)
+	per_categorie: dict[str, int] = {}
+	per_status: dict[str, int] = {}
+	per_ernst: dict[str, int] = {}
+	for r in gevonden:
+		per_emmer[r["emmer"]] += 1
+		if r["categorie"]:
+			per_categorie[r["categorie"]] = per_categorie.get(r["categorie"], 0) + 1
+	open_ = [r for r in gevonden if r["emmer"] == "beoordelen" and r["status"] in OPEN_STATUSSEN]
+	for r in open_:
+		if r["ernst"]:
+			per_ernst[r["ernst"]] = per_ernst.get(r["ernst"], 0) + 1
+	for r in rijen:
+		per_status[r["status"]] = per_status.get(r["status"], 0) + 1
+	return {
+		"totaal": len(gevonden),
+		"per_emmer": per_emmer,
+		"per_categorie": per_categorie,
+		**{o: sum(1 for r in rijen if r["ontwikkeling"] == o) for o in ("nieuw", "blijft", "terug", "weg")},
+		"open": len(open_),
+		"per_ernst": per_ernst,
+		"per_status": per_status,
+		"regels_gewijzigd": gewijzigd,
+	}
+
+
+def _kolomlengtes(doctype: str) -> dict[str, int]:
+	"""Per veld dat als varchar bewaard wordt de lengte van de kolom, uit de meta van het doctype."""
+	lengtes = {}
+	for df in frappe.get_meta(doctype).fields:
+		kolom = frappe.db.type_map.get(df.fieldtype)
+		if kolom and kolom[0] == "varchar":
+			lengtes[df.fieldname] = cint(df.length) or cint(kolom[1])
+	return lengtes
+
+
+def _kort_op_kolom(rij: dict, lengtes: dict[str, int]) -> None:
+	"""`bulk_insert` valideert niet en de database weigert wat te lang is: namen uit een model zijn soms langer."""
+	for veld, lengte in lengtes.items():
+		if isinstance(rij.get(veld), str):
+			rij[veld] = rij[veld][:lengte]
+
+
 def verwerk(ronde: str) -> None:
-	"""Lees de botsingen van de kern in en volg ze ten opzichte van de vorige ronde met dezelfde sets."""
+	"""Lees de botsingen van de kern in en volg ze ten opzichte van de vorige ronde in dezelfde reeks."""
 	doc = frappe.get_doc(RONDE, ronde)
+	project = issues._project(doc.project)
 	versies = json.loads(doc.bron_versies)
 	vorige = _vorige(doc, versies)
+	gewijzigd = _regels_gewijzigd(doc)
+	discipline = _disciplines(project)
 	rijen: dict[str, dict] = {}
 	for ruw in json.loads(afgeleid.lees_object(doc.resultaat)):
 		a, b = _element(ruw["a"]), _element(ruw["b"])
 		sleutel = _sleutel(a, b)
 		if sleutel in rijen:
 			continue
-		eerder = vorige.get(sleutel)
-		status = "nieuw" if eerder is None else ("genegeerd" if eerder[0].status == "genegeerd" else "actief")
+		eerder = vorige[sleutel][0] if sleutel in vorige else None
+		status, ontwikkeling = _ontwikkeling(eerder, True)
+		disciplines = sorted((discipline.get(e["bestand"], "") for e in (a, b)), key=_volgorde)
 		rijen[sleutel] = {
 			"sleutel": sleutel,
 			"element_a": a,
@@ -220,26 +494,71 @@ def verwerk(ronde: str) -> None:
 			"punt": [round(flt(x), 4) for x in ruw.get("punt") or []],
 			"afstand": flt(ruw.get("afstand")),
 			"status": status,
-			"issue": eerder[0].issue if eerder else None,
+			"issue": None,
 			"groep": f"{ruw['a'].get('klasse') or '?'} × {ruw['b'].get('klasse') or '?'}",
+			"soort": ruw.get("soort") or (doc.soort if doc.soort in SOORTEN else None),
+			"regel": ruw.get("regel") or None,
+			"emmer": ruw.get("emmer") if ruw.get("emmer") in EMMERS else "beoordelen",
+			"emmer_reden": ruw.get("emmer_reden") or None,
+			"ernst": ruw.get("ernst") or None,
+			"categorie": ruw.get("categorie") or None,
+			"disciplines": " × ".join(disciplines) if all(disciplines) else None,
+			"verdieping": a.get("verdieping") or b.get("verdieping"),
+			"raster": ruw.get("raster") or None,
+			"ruimte": ruw.get("ruimte") or None,
+			"ontwikkeling": ontwikkeling,
+			"nummer": None,
+			"reden": None,
+			"beoordeeld_door": None,
+			"beoordeeld_op": None,
+			"issue_status_voor": None,
+			"status_voor": None,
 		}
-	aantal = len(rijen)
+		if eerder:
+			for veld in BESLISSING:
+				rijen[sleutel][veld] = eerder.get(veld)
+			if status != "genegeerd":
+				rijen[sleutel]["reden"] = None
 	for sleutel, (rij, a, b) in vorige.items():
 		if sleutel not in rijen:
+			status, ontwikkeling = _ontwikkeling(rij, False)
+			# De beslissing blijft bewaard: rijen die weg zijn gaan mee, en een paar dat terugkomt krijgt haar terug.
+			status_voor = rij.status_voor if rij.status == "opgelost" else rij.status
 			rijen[sleutel] = {
+				**{veld: rij.get(veld) for veld in VELDEN if veld != "ronde"},
 				"sleutel": _sleutel(a, b),
 				"element_a": a,
 				"element_b": b,
 				"punt": json.loads(rij.punt or "[]"),
-				"afstand": rij.afstand,
-				"status": "opgelost",
-				"issue": rij.issue,
-				"groep": rij.groep,
+				"status": status,
+				"status_voor": status_voor,
+				"reden": rij.reden if status_voor == "genegeerd" else None,
+				"ontwikkeling": ontwikkeling,
+				"emmer": rij.emmer or "beoordelen",
 			}
+	aantal = sum(1 for r in rijen.values() if r["ontwikkeling"] in GEVONDEN)
+	# Nummers: wie er een had houdt het; de rest telt door vanaf het hoogste van de vorige ronde, op volgorde van sleutel.
+	hoogste = 0
+	if doc.vorige_ronde:
+		hoogste = cint(frappe.db.sql("select max(nummer) from `tabBIM Botsing` where ronde = %s", doc.vorige_ronde)[0][0])
+	for sleutel in sorted(rijen):
+		if not cint(rijen[sleutel]["nummer"]):
+			hoogste += 1
+			rijen[sleutel]["nummer"] = hoogste
+	bron = frappe.flags.bim_bron
+	frappe.flags.bim_bron = "achtergrond"
+	dicht = _dichte_status(project)
+	try:
+		for sleutel, r in rijen.items():
+			_issue_volgt(r, vorige[sleutel][0] if sleutel in vorige else None, dicht, gewijzigd)
+	finally:
+		frappe.flags.bim_bron = bron
 	nu, gebruiker = now_datetime(), frappe.session.user
 	velden = ["name", "creation", "modified", "owner", "modified_by", *VELDEN]
+	lengtes = _kolomlengtes(BOTSING)
 	waarden = []
 	for r in rijen.values():
+		_kort_op_kolom(r, lengtes)
 		waarden.append(
 			(
 				frappe.generate_hash(length=10),
@@ -248,18 +567,16 @@ def verwerk(ronde: str) -> None:
 				gebruiker,
 				gebruiker,
 				ronde,
-				r["sleutel"],
-				json.dumps(r["element_a"]),
-				json.dumps(r["element_b"]),
-				json.dumps(r["punt"]),
-				r["afstand"],
-				r["status"],
-				r["issue"],
-				r["groep"],
+				*(
+					json.dumps(r[veld]) if veld in ("element_a", "element_b", "punt") else r[veld]
+					for veld in VELDEN
+					if veld != "ronde"
+				),
 			)
 		)
 	frappe.db.bulk_insert(BOTSING, velden, waarden)
 	doc.aantal = aantal
+	doc.samenvatting = _json(_samenvatting(list(rijen.values()), gewijzigd))
 	doc.status = "klaar"
 	doc.save(ignore_permissions=True)
 
@@ -280,17 +597,84 @@ def naar_json(botsing) -> dict:
 		"status": botsing.status,
 		"issue": botsing.issue,
 		"groep": botsing.groep,
+		"soort": botsing.soort,
+		"regel": botsing.regel,
+		"emmer": botsing.emmer or "beoordelen",
+		"emmer_reden": botsing.emmer_reden,
+		"ernst": botsing.ernst,
+		"categorie": botsing.categorie,
+		"disciplines": botsing.disciplines,
+		"verdieping": botsing.verdieping,
+		"raster": botsing.raster,
+		"ruimte": botsing.ruimte,
+		"ontwikkeling": botsing.ontwikkeling,
+		"nummer": cint(botsing.nummer) or None,
+		"reden": botsing.reden,
+		"beoordeeld_door": botsing.beoordeeld_door,
+		"beoordeeld_op": str(botsing.beoordeeld_op) if botsing.beoordeeld_op else None,
+		"issue_status_voor": botsing.issue_status_voor,
+		"status_voor": botsing.status_voor,
 	}
 
 
-def zet_status(botsing: str, status: str) -> dict:
-	doc = frappe.get_doc(BOTSING, botsing)
-	_vereis_schrijver(_project_van(doc))
+def _controleer_status(status: str, reden: str | None) -> str | None:
+	"""De status en de reden voor een beoordeling; de reden telt alleen bij `genegeerd`."""
 	if status not in STATUSSEN:
 		_weiger(_("Onbekende status {0}.").format(status), "status_onbekend")
+	reden = (reden or "").strip() or None
+	if reden and len(reden) > MAX_REDEN:
+		_weiger(_("Een reden is hoogstens {0} tekens.").format(MAX_REDEN), "reden_te_lang")
+	return reden if status == "genegeerd" else None
+
+
+def _beoordeel(doc, status: str, reden: str | None) -> dict:
+	"""Zet status, reden en wie en wanneer; een bevestiging maakt het issue. De aanroeper heeft de rechten gecontroleerd."""
 	doc.status = status
+	doc.reden = reden
+	doc.beoordeeld_door = frappe.session.user
+	doc.beoordeeld_op = now_datetime()
 	doc.save(ignore_permissions=True)
+	if status == "bevestigd":
+		naar_issue(doc.name)
+		doc.reload()
 	return naar_json(doc)
+
+
+def _heeft_opvolger(ronde: str) -> bool:
+	"""Bouwt een andere ronde op deze voort? Een mislukte opvolger telt niet: die nam niets over, en de volgende ronde in
+	de reeks volgt deze weer."""
+	return bool(frappe.db.exists(RONDE, {"vorige_ronde": ronde, "status": ("!=", "fout")}))
+
+
+def _vereis_geen_opvolger(ronde: str) -> None:
+	"""De opvolger heeft de beslissingen al overgenomen, of doet dat zo: wat hier nog beslist wordt, ging stil verloren."""
+	if _heeft_opvolger(ronde):
+		_weiger(_("Er is een nieuwere ronde: beslis daar. Deze ronde is alleen nog te bekijken."), "ronde_heeft_opvolger")
+
+
+def zet_status(botsing: str, status: str, reden: str | None = None) -> dict:
+	"""Beoordeelt een botsing; `bevestigd` maakt een issue als er nog geen is en houdt het daarna."""
+	doc = frappe.get_doc(BOTSING, botsing)
+	_vereis_schrijver(_project_van(doc))
+	_vereis_geen_opvolger(doc.ronde)
+	return _beoordeel(doc, status, _controleer_status(status, reden))
+
+
+def zet_status_veel(botsingen: list[str], status: str, reden: str | None = None) -> list[dict]:
+	"""Dezelfde beoordeling voor tot 500 botsingen, met één rechtencontrole per ronde. Een naam die twee keer voorkomt, telt
+	één keer: twee keer geladen botste de tweede opslag op een verouderde tijdstempel."""
+	botsingen = list(botsingen or [])
+	if len(botsingen) > MAX_GROEPSACTIE:
+		_weiger(_("Een groepsactie omvat hoogstens {0} botsingen.").format(MAX_GROEPSACTIE), "te_veel_botsingen")
+	reden = _controleer_status(status, reden)
+	docs = [frappe.get_doc(BOTSING, naam) for naam in dict.fromkeys(botsingen)]
+	gecontroleerd = set()
+	for doc in docs:
+		if doc.ronde not in gecontroleerd:
+			_vereis_schrijver(_project_van(doc))
+			_vereis_geen_opvolger(doc.ronde)
+			gecontroleerd.add(doc.ronde)
+	return [_beoordeel(doc, status, reden) for doc in docs]
 
 
 def _camera(punt: list[float]) -> dict:
@@ -314,14 +698,26 @@ def naar_issue(botsing: str) -> dict:
 	issues._vereis_meedoen(project)
 	if doc.issue and frappe.db.exists(issues.ISSUE, doc.issue):
 		return issues.topic(doc.issue)
+	_vereis_geen_opvolger(doc.ronde)
 	a, b = json.loads(doc.element_a), json.loads(doc.element_b)
 	soorten = issues._regels(project.soorten)
+	klassen = [k.strip() for k in (doc.groep or "").split("×")] + ["", ""]
+	naam_a, naam_b = a.get("naam") or klassen[0] or a["globalid"], b.get("naam") or klassen[1] or b["globalid"]
+	omschrijving = _("{0} ({1}) en {2} ({3}), afstand {4} m.").format(
+		naam_a, a["globalid"], naam_b, b["globalid"], flt(doc.afstand)
+	)
+	if doc.verdieping:
+		omschrijving = _("Verdieping {0}. {1}").format(doc.verdieping, omschrijving)
+	titel = _("Botsing {0} / {1}").format(naam_a, naam_b)
+	lengte = _kolomlengtes(issues.ISSUE)["titel"]
+	# De volledige namen staan in de omschrijving.
+	titel = titel if len(titel) <= lengte else titel[: lengte - 1].rstrip() + "…"
 	t = issues.topic_maak(
 		project,
 		{
-			"title": _("Botsing {0}").format(doc.groep or "").strip(),
+			"title": titel,
 			"topic_type": "Botsing" if not soorten or "Botsing" in soorten else None,
-			"description": _("{0} en {1}, afstand {2} m.").format(a["globalid"], b["globalid"], flt(doc.afstand)),
+			"description": omschrijving,
 		},
 	)
 	issue = frappe.get_doc(issues.ISSUE, t["guid"])
@@ -340,18 +736,32 @@ def naar_issue(botsing: str) -> dict:
 	return issues.topic(t["guid"])
 
 
-def ronde_naar_json(ronde) -> dict:
+def _tolerantie(ronde) -> float | None:
+	"""De tolerantie van de ronde; None als haar controles verschillende toleranties hebben. Het veld bewaart dan de grootste,
+	en die is voor geen van de controles de tolerantie: de viewer toont ze dan per regel."""
+	toleranties = {flt(c.get("tolerantie")) for c in _lijst_uit(ronde.regels) if isinstance(c, dict)}
+	return None if len(toleranties) > 1 else flt(ronde.tolerantie)
+
+
+def ronde_naar_json(ronde, heeft_opvolger: bool | None = None) -> dict:
+	"""Een ronde voor de viewer; wie een hele lijst maakt, geeft `heeft_opvolger` mee en vraagt het niet per rij."""
 	return {
 		"naam": ronde.name,
 		"titel": ronde.titel,
 		"set_a": json.loads(ronde.set_a or "[]"),
 		"set_b": json.loads(ronde.set_b or "[]"),
 		"soort": ronde.soort,
-		"tolerantie": flt(ronde.tolerantie),
+		"tolerantie": _tolerantie(ronde),
+		"regels": json.loads(ronde.regels or "[]"),
+		"voorinstelling": ronde.voorinstelling,
+		"reeks": ronde.reeks,
+		"voortgang": flt(ronde.voortgang),
+		"samenvatting": json.loads(ronde.samenvatting) if ronde.samenvatting else None,
 		"status": ronde.status,
 		"aantal": cint(ronde.aantal),
 		"bron_versies": json.loads(ronde.bron_versies or "{}"),
 		"vorige_ronde": ronde.vorige_ronde,
+		"heeft_opvolger": _heeft_opvolger(ronde.name) if heeft_opvolger is None else heeft_opvolger,
 		"gestart": str(ronde.creation),
 		"gestart_door": ronde.owner,
 		"fout": json.loads(ronde.fout) if ronde.fout else None,
@@ -362,12 +772,18 @@ def rondes(project) -> list[dict]:
 	"""De rondes van het project, nieuwste eerst; lopende rondes worden eerst bij de kern bijgewerkt."""
 	project = issues._project(project)
 	issues._vereis_lezen(project)
-	uit = []
+	docs = []
 	for naam in frappe.get_all(RONDE, {"project": project.name}, pluck="name", order_by="creation desc"):
 		doc = frappe.get_doc(RONDE, naam)
-		afgeleid.zonder_botsing(bijwerken, doc)
-		uit.append(ronde_naar_json(doc))
-	return uit
+		_werk_bij(doc)
+		docs.append(doc)
+	# Na het bijwerken: een opvolger kan zojuist mislukt zijn.
+	opvolgers = frappe.get_all(
+		RONDE,
+		{"project": project.name, "vorige_ronde": ("is", "set"), "status": ("!=", "fout")},
+		pluck="vorige_ronde",
+	)
+	return [ronde_naar_json(doc, doc.name in opvolgers) for doc in docs]
 
 
 def lijst(ronde: str) -> list[dict]:
@@ -376,3 +792,118 @@ def lijst(ronde: str) -> list[dict]:
 	issues._vereis_lezen(project)
 	rijen = frappe.get_all(BOTSING, {"ronde": ronde}, ["name", *VELDEN], order_by="groep asc, sleutel asc")
 	return [naar_json(rij) for rij in rijen]
+
+
+def _lijst_uit(tekst) -> list:
+	waarde = json.loads(tekst) if isinstance(tekst, str) and tekst else tekst
+	return waarde if isinstance(waarde, list) else []
+
+
+def instellingen(project) -> dict:
+	"""De botsingsregels en opgeslagen weergaven van het project; `mag_wijzigen` is waar voor wie in de modelmap mag schrijven."""
+	project = issues._project(project)
+	issues._vereis_lezen(project)
+	return {
+		"regels": _lijst_uit(project.botsingsregels),
+		"weergaven": _lijst_uit(project.botsingsweergaven),
+		"mag_wijzigen": bool(issues._schrijver(project)),
+	}
+
+
+def _regel(regel) -> dict:
+	if not isinstance(regel, dict):
+		_weiger(_("Een regel is een object."), "regels_ongeldig")
+	a, b = str(regel.get("a") or "").strip(), str(regel.get("b") or "").strip()
+	if not a or not b:
+		_weiger(_("Een regel heeft twee disciplines nodig."), "regels_ongeldig")
+	if len(a) > MAX_NAAM or len(b) > MAX_NAAM:
+		_weiger(_("Een discipline is hoogstens {0} tekens.").format(MAX_NAAM), "regels_ongeldig")
+	if regel.get("soort") not in REGELSOORTEN:
+		_weiger(_("Kies uit, hard of afstand."), "regels_ongeldig")
+	# Een getal, geen tekst: van "abc" maakt flt() stil 0 mm. Een bool is in Python ook een int.
+	mm = regel.get("mm")
+	if isinstance(mm, bool) or not isinstance(mm, int | float) or not 0 <= mm <= MAX_MM:
+		_weiger(_("De afstand ligt tussen 0 en {0} mm.").format(MAX_MM), "regels_ongeldig")
+	ernst = regel.get("ernst") or None
+	if ernst is not None and ernst not in ERNSTEN:
+		_weiger(_("Onbekende ernst {0}.").format(ernst), "regels_ongeldig")
+	a, b = sorted((a, b), key=_volgorde)
+	return {"a": a, "b": b, "soort": regel["soort"], "mm": float(mm), "ernst": ernst}
+
+
+def _weergavefilter(filter_) -> dict:
+	"""Alleen bekende sleutels, lijsten van tekst waar lijsten horen en tekst bij het tekstveld: de viewer rekent erop."""
+	if not isinstance(filter_, dict):
+		_weiger(_("Het filter van een weergave is een object."), "weergave_ongeldig")
+	for sleutel, waarde in filter_.items():
+		if sleutel in FILTER_LIJSTEN:
+			goed = (
+				isinstance(waarde, list)
+				and len(waarde) <= MAX_FILTERWAARDEN
+				and all(isinstance(w, str) and len(w) <= MAX_NAAM for w in waarde)
+			)
+		elif sleutel == "tekst":
+			goed = isinstance(waarde, str) and len(waarde) <= MAX_ZOEKTEKST
+		elif sleutel == "emmer":
+			goed = waarde is None or waarde in FILTER_EMMERS
+		else:
+			goed = False
+		if not goed:
+			_weiger(_("Het filter van een weergave is ongeldig: {0}.").format(sleutel), "weergave_ongeldig")
+	return filter_
+
+
+def _weergave(weergave) -> dict:
+	if not isinstance(weergave, dict):
+		_weiger(_("Een weergave is een object."), "weergave_ongeldig")
+	naam = str(weergave.get("naam") or "").strip()
+	if not naam:
+		_weiger(_("Een weergave heeft een naam nodig."), "weergave_ongeldig")
+	if len(naam) > MAX_NAAM:
+		_weiger(_("De naam van een weergave is hoogstens {0} tekens.").format(MAX_NAAM), "weergave_ongeldig")
+	filter_ = _weergavefilter(weergave.get("filter") if weergave.get("filter") is not None else {})
+	groep = weergave.get("groep") or None
+	if groep is not None and groep not in GROEPERINGEN:
+		_weiger(_("Onbekende groepering {0}.").format(groep), "weergave_ongeldig")
+	return {"naam": naam, "filter": filter_, "groep": groep}
+
+
+def instellingen_bewaar(project, regels=None, weergaven=None) -> dict:
+	"""Bewaart de regels en/of weergaven die zijn meegegeven; wat `None` is blijft zoals het was."""
+	project = issues._project(project)
+	_vereis_schrijver(project)
+	if regels is not None:
+		if len(regels) > MAX_REGELS:
+			_weiger(_("Hoogstens {0} regels.").format(MAX_REGELS), "regels_ongeldig")
+		project.botsingsregels = _json([_regel(r) for r in regels])
+	if weergaven is not None:
+		if len(weergaven) > MAX_WEERGAVEN:
+			_weiger(_("Hoogstens {0} weergaven.").format(MAX_WEERGAVEN), "weergave_ongeldig")
+		nieuw = [_weergave(w) for w in weergaven]
+		if len({w["naam"] for w in nieuw}) != len(nieuw):
+			_weiger(_("Elke weergave heeft een eigen naam."), "weergave_ongeldig")
+		project.botsingsweergaven = _json(nieuw)
+	project.save(ignore_permissions=True)
+	return instellingen(project)
+
+
+def trends(ronde: str) -> list[dict]:
+	"""De samenvattingen langs `vorige_ronde`, hoogstens de laatste 20, oudste eerst."""
+	project = issues._project(frappe.db.get_value(RONDE, ronde, "project") or "")
+	issues._vereis_lezen(project)
+	uit = []
+	naam = ronde
+	while naam and len(uit) < MAX_VERLOOP:
+		rij = frappe.db.get_value(RONDE, naam, ["name", "titel", "creation", "samenvatting", "vorige_ronde"], as_dict=True)
+		if not rij:
+			break
+		uit.append(
+			{
+				"naam": rij.name,
+				"titel": rij.titel,
+				"gestart": str(rij.creation),
+				"samenvatting": json.loads(rij.samenvatting) if rij.samenvatting else None,
+			}
+		)
+		naam = rij.vorige_ronde
+	return uit[::-1]

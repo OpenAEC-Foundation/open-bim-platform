@@ -2,11 +2,11 @@
 
 import os
 import time
-from collections.abc import Callable
 
 from pydantic import BaseModel, ConfigDict
 
 from openbim_kern.errors import KernError
+from openbim_kern.progress import Progress, no_progress
 
 
 class EchoIn(BaseModel):
@@ -31,11 +31,7 @@ class WachtUit(BaseModel):
     klaar: bool
 
 
-def _no_progress(_: float) -> None:
-    pass
-
-
-def traag(invoer: WachtIn, progress: Callable[[float], None] = _no_progress) -> WachtUit:
+def traag(invoer: WachtIn, progress: Progress = no_progress) -> WachtUit:
     """Sleep in ten steps, reporting progress after each."""
     for step in range(10):
         time.sleep(invoer.seconden / 10)

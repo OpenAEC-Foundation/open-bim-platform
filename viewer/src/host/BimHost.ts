@@ -1,8 +1,12 @@
 import type {
   Clash,
+  ClashCheck,
   ClashRound,
-  ClashSetItem,
+  ClashRule,
+  ClashSettings,
   ClashStatus,
+  ClashTrend,
+  ClashView,
   Comment,
   Extensions,
   Topic,
@@ -96,10 +100,20 @@ export interface Coordinatie {
   bcfExport(versie: "2.1" | "3.0"): Promise<{ bestand: string }>;
   /** The guest page lets the user pick a .bcfzip in Storage; null when cancelled. */
   bcfImport(): Promise<{ nieuw: number; bijgewerkt: number } | null>;
-  botsingsrondeStart(setA: ClashSetItem[], setB: ClashSetItem[], soort: "hard" | "afstand", tolerantie: number, titel?: string): Promise<{ ronde: string }>;
+  /** Starts a round of one or more checks; `voorinstelling` is the id of the quick choice, or null for a manual round. */
+  botsingsrondeControles(controles: ClashCheck[], voorinstelling: string | null, titel?: string): Promise<{ ronde: string }>;
   botsingsrondes(): Promise<ClashRound[]>;
   botsingen(ronde: string): Promise<Clash[]>;
-  botsingStatus(botsing: string, status: ClashStatus): Promise<Clash>;
+  /** `reden` only goes with `genegeerd` (rejected). */
+  botsingStatus(botsing: string, status: ClashStatus, reden?: string): Promise<Clash>;
+  /** The same decision for up to 500 clashes (the group action). */
+  botsingStatusVeel(botsingen: string[], status: ClashStatus, reden?: string): Promise<Clash[]>;
+  /** The rules and saved views of the project; `mag_wijzigen` is true for who may write in the model folder. */
+  botsingInstellingen(): Promise<ClashSettings>;
+  /** Saves what is given; what is left out stays as it was. */
+  botsingInstellingenBewaar(wijziging: { regels?: ClashRule[]; weergaven?: ClashView[] }): Promise<ClashSettings>;
+  /** The summaries along the previous rounds of this round, oldest first. */
+  botsingTrends(ronde: string): Promise<ClashTrend[]>;
   botsingNaarIssue(botsing: string): Promise<Topic>;
 }
 

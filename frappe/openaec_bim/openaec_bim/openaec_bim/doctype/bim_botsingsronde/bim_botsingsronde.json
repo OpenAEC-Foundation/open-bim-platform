@@ -5,7 +5,7 @@
  "engine": "InnoDB",
  "index_web_pages_for_search": 0,
  "links": [],
- "modified": "2026-10-29 13:00:00.000000",
+ "modified": "2026-11-04 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "OpenAEC BIM",
  "owner": "Administrator",
@@ -57,7 +57,7 @@
    "fieldname": "soort",
    "fieldtype": "Select",
    "label": "Soort",
-   "options": "hard\nafstand",
+   "options": "hard\nafstand\ndubbel\ngemengd",
    "default": "hard"
   },
   {
@@ -105,6 +105,33 @@
    "fieldname": "fout",
    "fieldtype": "JSON",
    "label": "Fout"
+  },
+  {
+   "fieldname": "regels",
+   "fieldtype": "JSON",
+   "label": "Regels"
+  },
+  {
+   "fieldname": "voorinstelling",
+   "fieldtype": "Data",
+   "label": "Voorinstelling"
+  },
+  {
+   "fieldname": "reeks",
+   "fieldtype": "Data",
+   "label": "Reeks",
+   "search_index": 1
+  },
+  {
+   "fieldname": "voortgang",
+   "fieldtype": "Float",
+   "label": "Voortgang",
+   "precision": "4"
+  },
+  {
+   "fieldname": "samenvatting",
+   "fieldtype": "JSON",
+   "label": "Samenvatting"
   }
  ],
  "field_order": [
@@ -120,7 +147,12 @@
   "resultaat",
   "aantal",
   "vorige_ronde",
-  "fout"
+  "fout",
+  "regels",
+  "voorinstelling",
+  "reeks",
+  "voortgang",
+  "samenvatting"
  ],
  "title_field": "titel"
 }

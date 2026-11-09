@@ -114,10 +114,22 @@ def bcf_import(map: str, bestand: str) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def botsingsronde_start(map: str, set_a, set_b, soort: str = "hard", tolerantie=0.0, titel: str | None = None) -> dict:
+def botsingsronde_start(
+	map: str,
+	set_a=None,
+	set_b=None,
+	soort: str = "hard",
+	tolerantie=0.0,
+	titel: str | None = None,
+	controles=None,
+	voorinstelling: str | None = None,
+) -> dict:
 	_gastpagina()
 	project = issues_mod.project_van(map)
-	ronde = botsingen_mod.start(project, _lijst(set_a), _lijst(set_b), soort, float(tolerantie), titel)
+	if controles:
+		ronde = botsingen_mod.start_controles(project, _lijst(controles), titel, voorinstelling)
+	else:
+		ronde = botsingen_mod.start(project, _lijst(set_a), _lijst(set_b), soort, float(tolerantie), titel)
 	return {"ronde": ronde}
 
 
@@ -134,9 +146,42 @@ def botsingen(ronde: str) -> list[dict]:
 
 
 @frappe.whitelist(methods=["POST"])
-def botsing_status(botsing: str, status: str) -> dict:
+def botsing_status(botsing: str, status: str, reden: str | None = None) -> dict:
 	_gastpagina()
-	return botsingen_mod.zet_status(botsing, status)
+	return botsingen_mod.zet_status(botsing, status, reden)
+
+
+@frappe.whitelist(methods=["POST"])
+def botsing_status_veel(botsingen: list[str] | str, status: str, reden: str | None = None) -> list[dict]:
+	"""Dezelfde beoordeling voor een groep botsingen (hoogstens 500). Een formulierverzoek geeft de lijst als JSON-tekst; met
+	alleen `list[str]` weigert Frappe die al bij de controle van de typen."""
+	_gastpagina()
+	return botsingen_mod.zet_status_veel(_lijst(botsingen), status, reden)
+
+
+@frappe.whitelist(methods=["POST"])
+def botsing_instellingen(map: str) -> dict:
+	"""De botsingsregels en opgeslagen weergaven van het project."""
+	_gastpagina()
+	return botsingen_mod.instellingen(issues_mod.project_van(map))
+
+
+@frappe.whitelist(methods=["POST"])
+def botsing_instellingen_bewaar(map: str, regels=None, weergaven=None) -> dict:
+	"""Bewaart regels en/of weergaven; wat ontbreekt blijft staan."""
+	_gastpagina()
+	return botsingen_mod.instellingen_bewaar(
+		issues_mod.project_van(map),
+		None if regels is None else _lijst(regels),
+		None if weergaven is None else _lijst(weergaven),
+	)
+
+
+@frappe.whitelist(methods=["POST"])
+def botsing_trends(ronde: str) -> list[dict]:
+	"""De samenvattingen van de rondes in de reeks van deze ronde, oudste eerst."""
+	_gastpagina()
+	return botsingen_mod.trends(ronde)
 
 
 @frappe.whitelist(methods=["POST"])
