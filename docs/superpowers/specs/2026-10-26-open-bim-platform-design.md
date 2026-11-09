@@ -29,6 +29,9 @@ Wat het bijzonder maakt:
   functielijst (hoofdstuk 9).
 - Drie werkwijzen per project (hoofdstuk 6): losse bestanden, IfcGit traditioneel, IfcGit met IFCX-graaf.
 - Zware verwerking (omzetten, botsingen, vergelijken) op de server met IfcOpenShell.
+- Open standaarden als ruggengraat, niet als exportfunctie aan de rand: issues zijn BCF 3.0 en bereikbaar via de
+  BCF-API, informatiecontainers volgen de staten en goedkeuringen van ISO 19650, en IDS is de controle voordat een
+  model gepubliceerd wordt.
 
 **Niet-doelen (nu)**
 
@@ -187,9 +190,11 @@ Per bestandsversie maakt de BIM-kern:
 | Afgeleid | Inhoud | Gemaakt met |
 |---|---|---|
 | `model.frag` (of `deel-<n>.frag`) | geometrie + standaardeigenschappen voor de viewer | `@thatopen/fragments` IfcImporter in Node |
-| `eigenschappen.sqlite` | alle psets, hoeveelheden, materialen, classificaties, typen, relaties per GlobalId | IfcOpenShell |
+| `eigenschappen.sqlite` | alle psets, hoeveelheden, materialen, classificaties, typen, relaties per GlobalId; vanaf fase 2 ook de tabel `relaties (van, naar, soort)` met alle geobjectiveerde relaties | IfcOpenShell |
 | `ruimtelijk.json` | ruimtelijke boom (project, terrein, gebouw, verdieping, ruimte) met GlobalIds | IfcOpenShell |
 | `index.json` | samenvatting: schema, eenheden, georeferentie (IfcMapConversion), begrenzingsdoos, aantallen per klasse en verdieping, lijst van delen | IfcOpenShell |
+| `manifest.json` (fase 2) | per GlobalId: de hash van de mesh (vóór het uitsnijden van sparingen), de plaatsing, de sparingen die erin snijden, deel en verdieping; de meshes zelf staan in de meshstore (5.4) | IfcOpenShell (geometrie-iterator) |
+| `eigenschappen.parquet` (fase 2) | alle eigenschapswaarden kolomgericht, voor zoeken en rapporten over modellen heen | IfcOpenShell |
 
 - **Splitsen:** boven 1,5 GB (mijn keuze, ruim onder de gemeten grens) splitst de kern het bestand eerst met
   `IfcSplitter` in `ceil(grootte / 1 GB)` delen. De splitser maakt groepen van ongeveer even veel elementen, houdt
@@ -204,16 +209,34 @@ Per bestandsversie maakt de BIM-kern:
 - **Eén identiteit:** viewer en IfcOpenShell lezen hetzelfde bestand; elementen worden overal herkend aan GlobalId
   (plus bestand en versie). Verschillen in geometrie tussen web-ifc (weergave) en IfcOpenShell (botsingen) zijn
   mogelijk; de kern meet ze bij elke release op een vaste testset (zie 11).
+- **Identiteit over versies heen (het fundament onder issues, botsingen, vergelijken en status):** een element is
+  `(bestand, GlobalId)` en blijft dat over versies. Exporteurs houden GlobalIds niet altijd vast (in de opslagproef
+  verdwenen er over vijf maanden 1 707 en kwamen er 2 487 bij in één model). Daarom maakt de kern bij elke nieuwe
+  versie een **versiekoppeling** naar de vorige: eerst op GlobalId, dan voor wat overblijft een **terugval** op
+  klasse, type, naam, verdieping en de oorsprong van de plaatsing (fase 1, zonder geometriedoorgang: alleen een sleutel
+  die precies één keer voorkomt telt), en vanaf fase 2 ook de geometrie (de mesh-hash uit het manifest). De koppeling
+  levert een **matchrate** (het deel van de elementen van de vorige versie dat is
+  teruggevonden). Issues, botsingen en statussen verwijzen naar het element, niet naar één versie: ze reizen mee met de
+  koppeling, een element dat niet terug te vinden is krijgt de melding "niet teruggevonden in versie n", en een
+  matchrate onder een drempel (mijn voorstel: 90 %) geeft een waarschuwing bij de nieuwe versie.
 
 ### 5.4 Opslag en caching van afgeleide gegevens
 
 - **Waar:** in de S3-bucket van de omgeving, onder `<openaec_storage_prefix>/bim/afgeleid/<bestand>/<versie>/<omzetter>/`.
   Niet als bestand in een ruimte (niemand werkt erin), wel in dezelfde bucket en met dezelfde versleuteling (KMS van
   de klant).
-- **Quotum:** telt mee in het opslaggebruik van de omgeving als aparte post `bim_afgeleid_bytes`, niet in het quotum
-  van een ruimte (mijn keuze; het is ongeveer 10% van de bronbestanden). Issue voor Storage: `api.quotum` met die post.
+- **Meshstore (fase 2):** de geometrie per element, compact gecodeerd, één keer per omgeving onder
+  `<openaec_storage_prefix>/bim/geometrie/<hash>`; het manifest van een versie verwijst ernaar. Een nieuwe versie
+  schrijft alleen de meshes die er nog niet zijn (in de proef 9 % bij een aanlevering na 2,5 week, zie
+  `2026-10-28-elementopslag-en-relatiegraaf.md`). Het `.frag` per versie blijft voor de viewer tot That Open streaming
+  levert.
+- **Quotum:** telt mee in het opslaggebruik van de omgeving als aparte post `bim_afgeleid_bytes` (met de meshstore),
+  niet in het quotum van een ruimte (mijn keuze; gemeten bij echte modellen: `.frag` 13–14 % en de eigenschappen-index
+  120–155 % van de bron, zie `docs/metingen/2026-fase-0.md`; fase 2 maakt de eigenschappen kolomgericht). Issue voor Storage:
+  `api.quotum` met die post.
 - **Opruimen:** afgeleide gegevens van een bronversie verdwijnen als die versie in Storage definitief weg is
-  (wijzigingenlijst), en van een versie die 90 dagen niemand opende en niet de nieuwste is (instelbaar).
+  (wijzigingenlijst), en van een versie die 90 dagen niemand opende en niet de nieuwste is (instelbaar). Een mesh
+  verdwijnt pas als geen enkel manifest er nog naar verwijst.
 - **Browser:** de viewer heeft geen opslag (opaque frame). Binnen één sessie houdt de gastpagina geladen
   `.frag`-bestanden in het geheugen. HTTP-cache: de gastpagina haalt afgeleide gegevens met een kortlevend, ondertekend
   adres zonder cookies (zoals `lees_token` van de werkplek), met `Cache-Control: private, max-age=…, immutable`; de
@@ -266,24 +289,39 @@ DocTypes (eerste opzet):
 
 | DocType | Velden (kern) |
 |---|---|
-| `BIM Project` | `naam`, `ruimte`, `werkwijze` (`bestanden`, `ifcgit`, `ifcx`), `modelmappen` (tabel), `lezers_mogen_reageren`, `georeferentie` (keuze: eerste model / vast punt) |
+| `BIM Project` | `naam` (de id van de modelmap), `ruimte`, `werkwijze` (`bestanden`, `ifcgit`, `ifcx`), `modelmappen` (tabel), `lezers_mogen_reageren`, `georeferentie` (keuze: eerste model / vast punt), en de BCF-uitbreidingen: toegestane soorten, statussen, prioriteiten, fasen en labels, `standaard_status` |
 | `BIM Model` | `project`, `bestand` (Link Opslagbestand), `discipline` (afgeleid uit de submap of de naam, aanpasbaar), `zichtbaar_standaard` |
 | `BIM Afgeleid` | `bestand`, `versie`, `omzetter`, `status` (`wacht`, `bezig`, `klaar`, `fout`), `delen`, `bytes`, `fout`, `laatst_geopend` |
 | `BIM Taak` | `soort`, `project`, `status`, `voortgang`, `kern_taak`, `gestart_door`, `uitkomst` |
-| `BIM Issue` | BCF-topic: `guid`, `titel`, `status`, `soort`, `prioriteit`, `toegewezen_aan`, `vervaldatum`, `labels`, `elementen` (GlobalIds met bestand en versie), `standpunten` (tabel: camera, doorsneden, zichtbaarheid, markering, schermafbeelding) |
+| `BIM Issue` | BCF-topic: `guid`, `titel`, `beschrijving`, `status`, `soort`, `prioriteit`, `fase`, `toegewezen_aan`, `vervaldatum`, `labels`, `verwante_issues`, `documentverwijzingen`, `elementen` (element-identiteit uit 5.3, met de versie waarin het gezien is; mag leeg zijn), `standpunten` (tabel: camera, doorsneden, zichtbaarheid, markering, schermafbeelding) |
 | `BIM Reactie` | `issue`, `tekst`, `standpunt?` |
+| `BIM Containerstatus` (fase 2) | `bestand`, `versie`, `staat` (`wip`, `gedeeld`, `gepubliceerd`, `gearchiveerd`), `statuscode`, `revisiecode`, `taakteam`, `geldig_vanaf` (zie 5.8) |
+| `BIM Goedkeuring` (fase 2) | `container`, `van_staat`, `naar_staat`, `stap` (`controle`, `review`, `goedkeuring`), `door`, `besluit`, `opmerking`, `ids_uitslag?`, `tijd` |
+| `BIM Auditregel` | alleen toevoegen: `tijd`, `gebruiker`, `handeling`, `object`, `voor`, `na`, `bron` (gastpagina, BCF-API, achtergrond) |
 | `BIM Botsingsronde` | `project`, `set A`/`set B` (modellen of filters), `tolerantie`, `soort` (hard, afstand), `status`, `resultaten` (aantal), `bron_versies` |
 | `BIM Botsing` | `ronde`, `element_a`, `element_b`, `punt`, `afstand`, `status` (`nieuw`, `actief`, `opgelost`, `genegeerd`), `issue?`, `groep` |
 
-- **BCF:** issues zijn BCF 3.0 in het datamodel. Export en import als `.bcfzip` in Storage (map `Gedeeld`), en later een
-  BCF-API 3.0 voor externe programma's (fase 2). De bron van waarheid is `openaec_bim`; een `.bcfzip` in Storage is
-  een export, geen tweede bron (mijn keuze, zodat meerdere mensen tegelijk werken zonder conflictkopieën).
+- **BCF 3.0 is het issuemodel**, niet een exportformaat: elk veld van een BCF 3.0-topic, -reactie en -standpunt heeft
+  een plek in het datamodel, ook topics zonder elementen, verwante topics en documentverwijzingen. Soorten, statussen,
+  prioriteiten, fasen en labels zijn per project in te stellen (de projectuitbreidingen van BCF). Import en export als
+  `.bcfzip` in BCF 2.1 en 3.0, zonder plafond op het aantal topics, naar en uit Storage (map `Gedeeld`). De bron van
+  waarheid is `openaec_bim`; een `.bcfzip` in Storage is een export, geen tweede bron (mijn keuze, zodat meerdere
+  mensen tegelijk werken zonder conflictkopieën).
+- **BCF-API 3.0 direct daarna (fase 1):** de BCF-API 3.0 met de Foundation API 1.1 (authenticatie, huidige gebruiker,
+  versies) op de klantsite, zodat controle- en ontwerpprogramma's live issues lezen en schrijven. Omdat het datamodel
+  al BCF 3.0 is, is de API een dunne laag over dezelfde functies als de gastpagina; rechten via Storage, elke wijziging
+  in het auditlog met de bron `bcf-api`. Een openbare conformiteitstest (de voorbeeldaanroepen uit de specificatie)
+  hoort bij de oplevering.
 - **Botsingen volgen:** een volgende ronde op nieuwe versies koppelt botsingen aan de vorige ronde op het paar
-  GlobalIds; een opgeloste botsing die terugkomt, wordt weer actief.
+  elementen via de versiekoppeling (5.3), dus ook als een exporteur GlobalIds verandert; een opgeloste botsing die
+  terugkomt, wordt weer actief.
 - **API voor de gastpagina:** `openaec_bim.api.*` (sessie van de gebruiker), onder meer `project`, `modellen`,
   `afgeleid_adres` (kortlevend leesadres), `eigenschappen`, `zoek`, `issues`, `issue_bewaar`, `botsingsronde_start`,
   `botsingen`. Elke methode controleert de rechten via Storage.
-- **Auditspoor:** wijzigingen aan issues en botsingsrondes in de versiegeschiedenis van Frappe.
+- **Auditlog (fase 1):** elke wijziging aan issues, botsingsrondes en (vanaf fase 2) containerstaten en goedkeuringen
+  komt als `BIM Auditregel` in een log waarin alleen toegevoegd kan worden, met gebruiker, tijd, voor en na, en de bron
+  (gastpagina, BCF-API, achtergrond). Beheerders kunnen het per project exporteren; het dient ook de monitoring en
+  audit die ISO 19650-5 vraagt.
 
 ### 5.7 Viewer (browsertool)
 
@@ -295,6 +333,35 @@ DocTypes (eerste opzet):
   blob-worker, geen opslag in de browser.
 - **Werkt ook los** (ontwikkelen, desktop later): een `host`-laag met twee uitvoeringen, `werkplek` (postMessage) en
   `lokaal` (een ontwikkelserver die een map met IFC-bestanden en de kern aanspreekt). De viewer zelf weet niet welke.
+
+### 5.8 Informatiecontainers: staten, goedkeuring, auditlog en de IDS-poort (fase 2)
+
+Een modelbestand in de modelmap is een informatiecontainer in de zin van ISO 19650. Elke versie heeft een staat als
+metadata, niet als map: verplaatsen tussen mappen breekt verwijzingen van issues en botsingen, een staat niet.
+
+- **Staten:** `wip` (werk in uitvoering, alleen zichtbaar voor het eigen taakteam), `gedeeld` (voor coördinatie
+  zichtbaar voor het hele project), `gepubliceerd` (vrijgegeven voor gebruik, bijvoorbeeld uitvoering of aanbesteding)
+  en `gearchiveerd`. Een nieuwe versie begint in `wip`, tenzij het project dat anders instelt (bijvoorbeeld een
+  externe partij die alleen `gedeeld` aanlevert).
+- **Codes:** status- en revisiecodes komen uit een codelijst per project (sjabloon met de gangbare lijst, aan te passen
+  per opdrachtgever); de revisie volgt het patroon voorlopig/definitief (`P01`, `C01`) als het project dat wil.
+- **Overgangen met goedkeuring:** van `wip` naar `gedeeld` na een controle door het eigen taakteam; van `gedeeld`
+  naar `gepubliceerd` na review en goedkeuring door de rol die het project daarvoor aanwijst (bijvoorbeeld de
+  informatiemanager of de opdrachtgever). Elke stap is een `BIM Goedkeuring` met besluit en opmerking; afwijzen zet
+  de container terug met de opmerkingen als BCF-topics.
+- **IDS-poort:** het project koppelt een of meer IDS-bestanden (de informatie-eisen van de opdrachtgever, bijvoorbeeld
+  een basis-informatieleveringsspecificatie als IDS). Elke nieuwe versie wordt bij het omzetten tegen die IDS
+  gecontroleerd (via de BIM Validator, als aparte rekenkern of bibliotheek); de uitslag staat bij de versie. De
+  overgang naar `gepubliceerd` kan alleen met een geslaagde controle. Een goedkeurder kan een afwijking toestaan, met
+  een verplichte reden; dat komt in het auditlog. Afwijkingen worden BCF-topics op de betrokken elementen.
+- **Wat de viewer toont:** standaard per model de nieuwste versie die de gebruiker mag zien: het eigen taakteam ziet
+  zijn `wip`, de rest van het project ziet `gedeeld` of `gepubliceerd`. Een momentopname (6.1) legt vast welke
+  versies met welke staat bij elkaar horen.
+- **Auditlog:** elke overgang, goedkeuring, IDS-uitslag en toegestane afwijking staat in het auditlog (5.6), met de
+  versie en de SHA-256 van het bestand, zodat achteraf aantoonbaar is wat er gepubliceerd is en door wie.
+- **Waar het staat:** de staten leven in `openaec_bim` per `(bestand, versie)` van Storage, zodat Storage niet hoeft
+  te wachten; Storage krijgt later een issue om de staat ook in Docs te tonen (7.4). Rechten op `wip` volgen de
+  taakteams van het project (rollen in de ruimte); een eigen rechtenmodel komt er niet.
 
 ## 6. Werkwijzen van een project
 
@@ -395,7 +462,9 @@ Issues voor `openaec-storage`:
 1. post `bim_afgeleid_bytes` in `api.quotum` (5.4);
 2. een hook of melding bij `upload_klaar` zodat `openaec_bim` niet hoeft te wachten op de geplande taak (5.3);
 3. "Openen met" in `/opslag` (bestaand voorstel in `werkplek.md`): `.ifc`, `.ifczip` naar `/werkplek/bim?bestand=…`,
-   en een map met IFC-bestanden naar "Openen als BIM-project".
+   en een map met IFC-bestanden naar "Openen als BIM-project";
+4. (fase 2) de containerstaat en de status- en revisiecode uit `openaec_bim` tonen bij een bestandsversie in Docs, en
+   taakteams als groep binnen een ruimte, zodat `wip` alleen voor het eigen taakteam zichtbaar is (5.8).
 
 ## 8. Eerste versie (fase 1): wat een gebruiker kan
 
@@ -408,21 +477,27 @@ Issues voor `openaec-storage`:
 4. In de viewer: navigeren (draaien, pannen, zoomen, vliegen), modellen en disciplines aan/uit, ruimtelijke boom per
    model, selecteren, isoleren, verbergen, transparant maken, eigenschappen van een element (volledig, van de server),
    doorsneden (vlakken en een doorsnededoos), meten (afstand, lengte, hoek, oppervlak), kleuren op eigenschap of klasse.
-5. Issues: met een standpunt (camera, doorsneden, zichtbaarheid), markering op de schermafbeelding, gekoppelde
-   elementen, toewijzen, status, reacties; export en import als `.bcfzip` in Storage.
+5. Issues als BCF 3.0-topics: met een standpunt (camera, doorsneden, zichtbaarheid), markering op de
+   schermafbeelding, gekoppelde elementen (of geen), toewijzen, status, soort en prioriteit uit de projectinstellingen,
+   reacties; export en import als `.bcfzip` (BCF 2.1 en 3.0) in Storage.
 6. Botsingscontrole: een ronde tussen twee sets (bijvoorbeeld constructie tegen installaties) met tolerantie; de
    resultaten als lijst in de viewer, per botsing in beeld te brengen, te groeperen en om te zetten in een issue.
 7. Momentopnames van welke versies bij elkaar horen.
+8. Een nieuwe versie van een model neemt issues en botsingen mee via de versiekoppeling (5.3); de viewer toont de
+   matchrate en waarschuwt als die laag is.
+9. De BCF-API 3.0 (met de Foundation API), zodat controle- en ontwerpprogramma's live issues lezen en schrijven.
+10. Een auditlog van issues en botsingsrondes, per project te exporteren.
 
-Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, rapporten.
+Buiten fase 1: containerstaten met goedkeuring en de IDS-poort (5.8), versies vergelijken, de Git-werkwijzen,
+rapporten.
 
 ## 9. Gefaseerde roadmap
 
 | Fase | Inhoud | Klaar als |
 |---|---|---|
 | **0. Fundament** | Repo-opzet (drie onderdelen), BIM-kern met het rekenkern-contract en de tools `omzetten`, `eigenschappen`; omzetten met splitsen; viewer die één project laadt met de host-laag `lokaal`; testset van modellen; alles lokaal en op de bench | Een map met tien IFC-bestanden (samen ≥ 5 GB) is volledig omgezet; de viewer laadt modellen tot het geheugenbudget en de rest is aan te zetten, op een laptop met 16 GB geheugen en een ingebouwde GPU (mijn maatstaf voor "gewone laptop") |
-| **1. Eerste bruikbare versie** | `openaec_bim` op de klantsite, gastpagina en `bim.*`-berichten, rechten via Storage, functies uit hoofdstuk 8 | Een coördinator en een externe partij (via een deling) werken samen aan issues en botsingen op de bench; release-assets volgens het SuperCloud-contract |
-| **2. Coördinatie compleet** | Versies vergelijken (per element, ook geometrie), IDS-controle (BIM Validator), BCF-API 3.0, rapporten (PDF via de rapportage van de organisatie), hoeveelheden per eigenschap, kleuren en filters bewaren als weergaven, AI-assistent in de viewer en via MCP | Vergelijken van twee versies van een model van 1 GB binnen 10 minuten; BCF-uitwisseling met een extern programma via de API |
+| **1. Eerste bruikbare versie** | `openaec_bim` op de klantsite, gastpagina en `bim.*`-berichten, rechten via Storage, functies uit hoofdstuk 8: issues met BCF 3.0 als datamodel, direct daarna de BCF-API 3.0 met de Foundation API, de versiekoppeling met terugval en matchrate als fundament onder issues en botsingen (5.3), een auditlog (5.6) | Een coördinator en een externe partij (via een deling) werken samen aan issues en botsingen op de bench; issues en botsingen overleven een nieuwe versie waarin een deel van de GlobalIds veranderd is; BCF-uitwisseling met een extern programma via de API; release-assets volgens het SuperCloud-contract |
+| **2. Coördinatie compleet** | Opslag per element: meshstore met een manifest per versie, de tabel `relaties` in de index en de eigenschappen kolomgericht per versie (5.3, 5.4, `2026-10-28-elementopslag-en-relatiegraaf.md`); versies vergelijken per element op het manifest (ook geometrie; de versiekoppeling van fase 1 gebruikt dan de mesh-hash), de ISO 19650-werkwijze voor informatiecontainers: staten, status- en revisiecodes, controle, review en goedkeuring, met IDS-controle (BIM Validator) als poort naar `gepubliceerd` (5.8), rapporten (PDF via de rapportage van de organisatie), hoeveelheden per eigenschap (uit het kolombestand), kleuren en filters bewaren als weergaven, AI-assistent in de viewer en via MCP | Vergelijken van twee versies van een model van 1 GB binnen 10 minuten; een nieuwe versie voegt alleen haar nieuwe meshes toe aan de meshstore; een model gaat pas naar `gepubliceerd` na een geslaagde IDS-controle en een goedkeuring, en het auditlog toont wie wat wanneer publiceerde |
 | **3. IfcGit traditioneel** | Werkwijze 6.2 | Twee partijen werken op eigen takken en voegen samen, met een overzicht van conflicten |
 | **4. IfcGit met IFCX-graaf** | Verkenning, daarna werkwijze 6.3 | Volgt uit de verkenning |
 | **5. Platform** | Documentbeheer naast het model (tekeningen en PDF's koppelen aan elementen en issues, openen in Open PDF Studio), 4D (koppeling met Open Planner Studio), kosten en hoeveelheden naar ERP, puntenwolken, gebruik op tablet in het veld, meldingen en e-mail bij issues, dashboards per project, streaming van modellen zodra That Open dat levert | Per onderdeel een eigen ontwerp |
@@ -441,7 +516,9 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
   3. werkers op goedkopere onderbreekbare capaciteit (een taak die onderbroken wordt, begint opnieuw; dat kan omdat
      elke taak herhaalbaar is);
   en per optie: kosten per GB omgezet, per botsingsronde, vaste kosten per maand, en opslag van afgeleide gegevens
-  (ongeveer 10% van de bronbestanden).
+  (bij echte modellen nu ~140–165 % van de bronbestanden per versie, vooral de eigenschappen-index; vanaf fase 2
+  zijn de eigenschappen kolomgericht en voegt een versie alleen haar nieuwe meshes toe aan de meshstore, te meten op
+  echte versiereeksen).
 - **Afrekenen:** verbruik per taak naar de regelkamer (7.2), zodat de prijs per klant kan meeschalen.
 
 ## 11. Kwaliteit en testen
@@ -456,6 +533,10 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
   de bench) en een end-to-end-proef: project openen, issue maken, botsingsronde.
 - **Frappe-app:** `bench run-tests` met een nagebootste S3 (moto), net als Storage; rechtentests per rol en per deling,
   ook ingetrokken en verlopen.
+- **Open standaarden:** een openbare conformiteitstest voor de BCF-API (de voorbeeldaanroepen uit de specificatie, BCF
+  2.1 en 3.0 heen en terug zonder verlies), een IDS-testset bij elke release, en voor de versiekoppeling een testset
+  met versies waarin GlobalIds veranderd zijn (matchrate en teruggevonden issues). Er bestaat geen certificering voor
+  BCF, IDS of openCDE; openbare testuitslagen vervangen die.
 
 ## 12. Wat aan de bouwer is
 
@@ -480,3 +561,10 @@ Buiten fase 1: versies vergelijken, IDS-controle, BCF-API, de Git-werkwijzen, ra
   gebruikt de brug en koppen van `openaec_werkplek`. Tot de tools-gateway er is, praat `openaec_bim` op het interne
   netwerk met de kern.
 - **Streaming in That Open** (engine_fragment#228, #311) kan het laden in delen vervangen; we volgen het.
+- **ISO 19650-werkwijze (5.8):** welke codelijst het sjabloon meekrijgt (de gangbare lijst of een Nederlandse
+  variant), welke rol standaard goedkeurt voor `gepubliceerd`, en of een goedkeurder een mislukte IDS-controle mag
+  overrulen (voorstel: ja, met een verplichte reden in het auditlog). De eigenaar beslist vóór fase 2.
+- **Drempel van de matchrate (5.3):** voorstel 90 %; te ijken op echte versiereeksen in fase 1.
+- **Opslag per element en de relatiegraaf** na fase 1 (meshes per hash met een manifest per versie, relaties in de
+  index, eigenschappen kolomgericht, modelsessies in de kern; wel of geen graafdatabase in fase 4): voorstel met een
+  proef in `2026-10-28-elementopslag-en-relatiegraaf.md`.

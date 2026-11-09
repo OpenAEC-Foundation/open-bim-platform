@@ -1,0 +1,12 @@
+{
+  "name": "openbim-kern-converter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "IFC to fragments converter and IFC splitter, run as a subprocess by openbim_kern.",
+  "dependencies": {
+    "@thatopen/fragments": "3.6.0",
+    "three": "0.186.1",
+    "web-ifc": "0.0.78"
+  }
+}

@@ -1,0 +1,121 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  kern:
+    name: Kern (ruff, pytest)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: kern
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: kern/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: kern/converter/package-lock.json
+      - name: Omzetter installeren
+        working-directory: kern/converter
+        run: npm ci
+      - name: Kern installeren
+        run: python -m pip install -e ".[test]"
+      - name: Ruff
+        run: |
+          ruff check src tests scripts
+          ruff format --check src tests scripts
+      - name: Tests
+        run: pytest -q
+
+  viewer:
+    name: Viewer (vitest, build, geen CDN)
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: viewer
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: viewer/package-lock.json
+      - name: Installeren
+        run: npm ci
+      - name: Tests
+        run: npx vitest run
+      - name: Bouwen
+        run: npm run build
+      - name: Geen CDN in de bundel
+        run: npm run check:geen-cdn
+
+  browserproef:
+    name: Browserproef (Playwright)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: kern/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: |
+            kern/converter/package-lock.json
+            viewer/package-lock.json
+      - name: Kern installeren
+        run: |
+          python -m pip install -e "kern[test]"
+          npm ci --prefix kern/converter
+      - name: Viewer installeren
+        working-directory: viewer
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Proef
+        working-directory: viewer
+        env:
+          OPENBIM_PYTHON: python
+        run: npm run test:e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: viewer/playwright-report/
+
+  image:
+    name: Image bouwen en starten
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Bouwen
+        run: docker build -t openbim-kern kern
+      - name: Starten, health
+        run: |
+          docker run -d --name kern -e OPENBIM_KERN_SLEUTELS=ci -p 8730:8730 openbim-kern
+          for i in $(seq 1 30); do
+            if curl -sf localhost:8730/v1/health; then exit 0; fi
+            sleep 1
+          done
+          docker logs kern
+          exit 1
+      - name: Zonder sleutels start de kern niet
+        run: |
+          if docker run --rm openbim-kern; then echo "De kern startte zonder sleutels."; exit 1; fi
+      - name: Draait niet als root
+        run: test "$(docker run --rm openbim-kern id -u)" = "10001"

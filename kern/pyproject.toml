@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "openbim-kern"
+version = "0.1.0"
+description = "Compute core of the Open BIM Platform: tool contract served over HTTP."
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "pydantic>=2.7",
+    "uvicorn>=0.30",
+    "typer>=0.12",
+    "httpx>=0.27",
+    "ifcopenshell==0.8.4.post1",
+    "psutil>=6",
+    "mcp>=1.10,<2",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8",
+    "pytest-httpserver>=1.0",
+    "ruff>=0.6",
+]
+
+[project.scripts]
+openbim-kern = "openbim_kern.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]

@@ -1,0 +1,30 @@
+# The kern (HTTP and MCP) and the worker for long jobs, from one image, sharing the job queue on /data.
+#   OPENBIM_KERN_SLEUTELS=<sleutel> docker compose up --build
+services:
+  kern:
+    build: .
+    image: openbim-kern
+    environment:
+      OPENBIM_KERN_SLEUTELS: ${OPENBIM_KERN_SLEUTELS:?zet OPENBIM_KERN_SLEUTELS (komma-gescheiden sleutels)}
+    ports:
+      - "8730:8730"
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+  werker:
+    image: openbim-kern
+    command: ["openbim-kern", "werker"]
+    environment:
+      OPENBIM_RIJ_OMZETTEN: ${OPENBIM_RIJ_OMZETTEN:-1}
+      OPENBIM_RIJ_LICHT: ${OPENBIM_RIJ_LICHT:-4}
+    volumes:
+      - data:/data
+    healthcheck:
+      disable: true
+    depends_on:
+      - kern
+    restart: unless-stopped
+
+volumes:
+  data:

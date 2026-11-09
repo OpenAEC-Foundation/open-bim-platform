@@ -1,0 +1,51 @@
+import { describe, expect, test, vi } from "vitest";
+import { HostError, type ModelSource } from "./BimHost";
+import { WerkplekHost, type WerkplekKanaal } from "./WerkplekHost";
+
+const bron: ModelSource = { soort: "bestand", sleutel: "bestand-123", versie: "3" };
+
+function kanaal(antwoord: (soort: string, extra?: Record<string, unknown>) => unknown) {
+  const vraag = vi.fn(async (soort: string, extra?: Record<string, unknown>) => antwoord(soort, extra));
+  return { kanaal: { vraag } satisfies WerkplekKanaal, vraag };
+}
+
+describe("WerkplekHost", () => {
+  test("project asks bim.project", async () => {
+    const { kanaal: k, vraag } = kanaal(() => ({ project: "P", werkwijze: "bestanden", modellen: [] }));
+    expect((await new WerkplekHost(k).project()).project).toBe("P");
+    expect(vraag).toHaveBeenCalledWith("bim.project", undefined);
+  });
+
+  test("laad asks bim.laad with the source and part, and returns the bytes", async () => {
+    const { kanaal: k, vraag } = kanaal(() => ({ bytes: new Uint8Array([7, 8]).buffer }));
+    const bytes = await new WerkplekHost(k).laad(bron, "deel-2.frag");
+    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([7, 8]));
+    expect(vraag).toHaveBeenCalledWith("bim.laad", { bron, deel: "deel-2.frag" });
+  });
+
+  test("laad without bytes is an error", async () => {
+    const { kanaal: k } = kanaal(() => ({}));
+    await expect(new WerkplekHost(k).laad(bron, "model.frag")).rejects.toBeInstanceOf(HostError);
+  });
+
+  test("eigenschappen asks bim.eigenschappen", async () => {
+    const { kanaal: k, vraag } = kanaal(() => ({ abc: { klasse: "IfcWall" } }));
+    expect(await new WerkplekHost(k).eigenschappen(bron, ["abc"])).toEqual({ abc: { klasse: "IfcWall" } });
+    expect(vraag).toHaveBeenCalledWith("bim.eigenschappen", { bron, globalids: ["abc"] });
+  });
+
+  test("an error of the guest page keeps its code", async () => {
+    const { kanaal: k } = kanaal(() => {
+      throw Object.assign(new Error("Nog niet omgezet."), { code: "nog_niet_klaar" });
+    });
+    const fout = await new WerkplekHost(k).laad(bron, "model.frag").catch((e: unknown) => e);
+    expect(fout).toBeInstanceOf(HostError);
+    expect((fout as HostError).fout).toEqual({ error_code: "nog_niet_klaar", melding: "Nog niet omgezet.", remedie: "" });
+  });
+
+  test("fromWindow uses the channel of the workspace bridge, if there is one", () => {
+    const { kanaal: k } = kanaal(() => null);
+    expect(WerkplekHost.fromWindow({ werkplekBim: k } as unknown as Window)).toBeInstanceOf(WerkplekHost);
+    expect(WerkplekHost.fromWindow({} as Window)).toBeNull();
+  });
+});
