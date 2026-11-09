@@ -97,6 +97,7 @@
   "soort_afstand_uitleg": "Clearance: elements closer to each other than the tolerance",
   "tolerantie_mm": "Tolerance (mm)",
   "tolerantie_waarde": "{{mm}} mm",
+  "tolerantie_per_regel": "tolerance per rule",
   "ronde_status": {
     "wacht": "Waiting for the kern",
     "bezig": "Calculating",
@@ -221,6 +222,7 @@
   "weergave_kies": "Choose a view",
   "weergave_bewaren": "Save view",
   "weergave_verwijderen": "Delete view",
+  "weergaven_vol": "There are already {{max}} views. Delete one first, or save under an existing name.",
   "weergave_naam": "Name of the view",
   "groeperen_op": "Group by",
   "groep_door": {

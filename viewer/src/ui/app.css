@@ -34,9 +34,9 @@ body {
   grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) var(--spacing-sidebar-width);
 }
 
-/* Issues and Botsingen: a column of 360 px. */
-.viewer__body--inspector.viewer__body--breed {
-  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) 360px;
+/* Issues and Botsingen: a column of 360 px, the sidebar width and 80 px. */
+.viewer__body--inspector.viewer__body--wide {
+  grid-template-columns: var(--spacing-sidebar-width) minmax(0, 1fr) calc(var(--spacing-sidebar-width) + var(--spacing-20));
 }
 
 .viewer__sidebar {
@@ -324,7 +324,7 @@ body {
 
 /* The filters of a clash round: every field gets room to show its text, two or three to a row in the column. */
 .botsing__filters .issues__filter > * {
-  flex: 1 1 8.5rem;
+  flex: 1 1 calc(var(--spacing-24) + var(--spacing-10));
 }
 
 .botsing__filters .issues__filter > input[type="search"] {
@@ -537,7 +537,7 @@ body {
 }
 
 .botsing__reden .oa-input {
-  flex: 1 1 8rem;
+  flex: 1 1 calc(var(--spacing-24) + var(--spacing-8));
   min-width: 0;
 }
 
@@ -641,7 +641,7 @@ body {
 .trend__grafiek {
   display: block;
   width: 100%;
-  height: 4rem;
+  height: var(--spacing-16);
 }
 
 .trend__totaal {
@@ -719,6 +719,6 @@ body {
 
 .rule__velden {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(7rem, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(calc(var(--spacing-24) + var(--spacing-4)), 1fr));
   gap: var(--spacing-2);
 }

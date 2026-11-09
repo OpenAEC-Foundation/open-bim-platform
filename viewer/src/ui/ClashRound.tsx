@@ -1,4 +1,4 @@
-import { Icon, uiChevronDown, uiChevronLeft, uiChevronRight, uiHelp } from "@openaec/icons";
+import { Icon, uiChevronLeft, uiHelp } from "@openaec/icons";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { IsolateResult } from "../engine/isolate";
@@ -25,7 +25,8 @@ import {
   voortgangProcent,
 } from "../model/clashes";
 import { ClashFilters } from "./ClashFilters";
-import { ClashRow, RedenVeld } from "./ClashRow";
+import { ClashGroupHeader, type GroepsActie } from "./ClashGroupHeader";
+import { ClashRow } from "./ClashRow";
 import { ClashTrends } from "./ClashTrends";
 import { describe, isSuperseded } from "./format";
 import type { Weergave } from "./weergave";
@@ -41,8 +42,6 @@ const TOETSEN: [string, SneltoetsActie][] = [
   ["Esc", "alles_tonen"],
   ["?", "hulp"],
 ];
-
-type GroepsActie = { sleutel: string; status: "geaccepteerd" | "genegeerd" };
 
 /** The view is not awaited: the app reports its own failures. */
 function wis(belofte: Promise<void>) {
@@ -267,7 +266,8 @@ export function ClashRound({
       <div className="inspector__title">
         <strong>{ronde.titel}</strong>
         <span>
-          {t(`soort_${ronde.soort}`)} · {t("tolerantie_waarde", { mm: Math.round(ronde.tolerantie * 1000) })} ·{" "}
+          {t(`soort_${ronde.soort}`)} ·{" "}
+          {ronde.tolerantie === null ? t("tolerantie_per_regel") : t("tolerantie_waarde", { mm: Math.round(ronde.tolerantie * 1000) })} ·{" "}
           {Object.entries(ronde.bron_versies)
             .map(([bestand, versie]) => `${naam(bestand)} v${versie}`)
             .join(", ")}
@@ -353,63 +353,26 @@ export function ClashRound({
               const actie = mag && groepsActie?.sleutel === sleutel ? groepsActie : null;
               return (
                 <section key={sleutel} className="inspector__section botsing__groep">
-                  <h3 className="inspector__section-title botsing__groepkop" data-groep={sleutel}>
-                    <button
-                      type="button"
-                      className="botsing__groepknop"
-                      aria-expanded={!dicht}
-                      onClick={() =>
-                        setIngeklapt((s) => {
-                          const nieuw = new Set(s);
-                          if (!nieuw.delete(sleutel)) nieuw.add(sleutel);
-                          return nieuw;
-                        })
-                      }
-                    >
-                      <Icon svg={dicht ? uiChevronRight : uiChevronDown} size={12} /> {groepNaam(waarde)} ({rijen.length})
-                    </button>
-                  </h3>
-                  {mag && open > 0 && !actie && (
-                    <div className="botsing__acties">
-                      <button
-                        type="button"
-                        className="oa-btn oa-btn--secondary oa-btn--sm"
-                        data-actie="groep-afwijzen"
-                        disabled={bezig || open > GROEPSACTIE_MAX}
-                        onClick={() => zetGroepsActie({ sleutel, status: "genegeerd" })}
-                      >
-                        {t("groep_alles_afwijzen")}
-                      </button>
-                      <button
-                        type="button"
-                        className="oa-btn oa-btn--secondary oa-btn--sm"
-                        data-actie="groep-accepteren"
-                        disabled={bezig || open > GROEPSACTIE_MAX}
-                        onClick={() => zetGroepsActie({ sleutel, status: "geaccepteerd" })}
-                      >
-                        {t("groep_alles_accepteren")}
-                      </button>
-                    </div>
-                  )}
-                  {mag && open > GROEPSACTIE_MAX && <p className="viewer__hint">{t("groep_te_veel", { max: GROEPSACTIE_MAX, count: open })}</p>}
-                  {actie && (
-                    <div className="botsing__bevestig" data-sectie="groepsactie">
-                      <p>{t(actie.status === "genegeerd" ? "groep_vraag_afwijzen" : "groep_vraag_accepteren", { count: open })}</p>
-                      {actie.status === "genegeerd" ? (
-                        <RedenVeld disabled={bezig} onBevestig={(reden) => void beslisGroep(rijen, actie.status, reden)} onAnnuleer={() => zetGroepsActie(null)} />
-                      ) : (
-                        <div className="botsing__acties">
-                          <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" data-actie="groep-bevestig" disabled={bezig} onClick={() => void beslisGroep(rijen, actie.status, "")}>
-                            {t("actie.accepteren")}
-                          </button>
-                          <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" data-actie="groep-annuleer" disabled={bezig} onClick={() => zetGroepsActie(null)}>
-                            {t("annuleren")}
-                          </button>
-                        </div>
-                      )}
-                      {groepFout && <p className="viewer__error">{groepFout}</p>}
-                    </div>
-                  )}
+                  <ClashGroupHeader
+                    sleutel={sleutel}
+                    titel={groepNaam(waarde)}
+                    aantal={rijen.length}
+                    open={open}
+                    dicht={dicht}
+                    mag={mag}
+                    bezig={bezig}
+                    actie={actie}
+                    fout={groepFout}
+                    onWissel={() =>
+                      setIngeklapt((s) => {
+                        const nieuw = new Set(s);
+                        if (!nieuw.delete(sleutel)) nieuw.add(sleutel);
+                        return nieuw;
+                      })
+                    }
+                    onActie={zetGroepsActie}
+                    onBeslis={(status, reden) => void beslisGroep(rijen, status, reden)}
+                  />
                   {!dicht && (
                     <ul className="issue__lijst">
                       {rijen.slice(0, limiet).map((b) => (

@@ -271,7 +271,7 @@ export function App({ host, budget = DEFAULT_BUDGET }: { host: BimHost; budget?:
           { id: "vernieuwen", label: t("vernieuwen"), icon: uiRefresh, onClick: () => void refresh() },
         ]}
       />
-      <div className={`viewer__body viewer__body--inspector${host.coordinatie && tab !== "eigenschappen" ? " viewer__body--breed" : ""}`}>
+      <div className={`viewer__body viewer__body--inspector${host.coordinatie && tab !== "eigenschappen" ? " viewer__body--wide" : ""}`}>
         <aside className="oa-sidebar viewer__sidebar" aria-label={t("modellen")}>
           <div className="oa-sidebar__header">
             <span className="oa-sidebar__section-label">{t("modellen")}</span>

@@ -3,7 +3,7 @@ import { useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { Coordinatie, ModelInfo } from "../host/BimHost";
 import type { ClashRule, ClashSettings, ClashSeverity } from "../model/bcf";
-import { disciplineVan, mmWaarde, standaardRegels } from "../model/clashes";
+import { disciplineVan, mmWaarde, standaardRegels, teBewarenRegels } from "../model/clashes";
 import { describe } from "./format";
 
 const SOORTEN: ClashRule["soort"][] = ["uit", "hard", "afstand"];
@@ -49,13 +49,16 @@ export function ClashRules({
     setBezig(true);
     setFout(null);
     try {
-      const regels: ClashRule[] = rijen.map((r) => ({
-        a: r.a,
-        b: r.b,
-        soort: r.soort,
-        mm: r.soort === "uit" ? 0 : (mmWaarde(r.mm) as number),
-        ernst: r.ernst === "" ? null : r.ernst,
-      }));
+      // A rule that is off keeps its distance (the field is only locked); only rules that differ from the default go.
+      const regels: ClashRule[] = teBewarenRegels(
+        rijen.map((r) => ({
+          a: r.a,
+          b: r.b,
+          soort: r.soort,
+          mm: mmWaarde(r.mm) ?? 0,
+          ernst: r.ernst === "" ? null : r.ernst,
+        })),
+      );
       const bewaard = await coordinatie.botsingInstellingenBewaar({ regels });
       await onKlaar(bewaard);
     } catch (e) {

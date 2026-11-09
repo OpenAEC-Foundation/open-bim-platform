@@ -17,6 +17,8 @@ import {
   overlapWaarschuwing,
   sneltoets,
   standaardRegels,
+  teBewarenRegels,
+  kanWeergaveBewaren,
   teBeslissen,
   filterChips,
   filterUitWeergave,
@@ -235,15 +237,27 @@ describe("snelle keuzes", () => {
   });
 
   test("meer regels dan een ronde aankan: niet beschikbaar met een eigen reden", () => {
-    const disciplines = Array.from({ length: MAX_CONTROLES + 1 }, (_, i) => `d${i}`);
+    // Acht disciplines geven 28 paren tussen disciplines, standaard hard; elke harde regel binnen een discipline komt erbij.
+    const disciplines = Array.from({ length: 8 }, (_, i) => `d${i}`);
     const modellen = disciplines.map((d) => model({ naam: `${d}.ifc`, discipline: d }));
-    const regels: ClashRule[] = disciplines.map((d) => ({ a: d, b: d, soort: "hard", mm: 0, ernst: null }));
-    const teVeel = voorinstellingen(modellen, regels).find((x) => x.id === "regels")!;
+    const binnen = (aantal: number): ClashRule[] => disciplines.slice(0, aantal).map((d) => ({ a: d, b: d, soort: "hard", mm: 0, ernst: null }));
+    const teVeel = voorinstellingen(modellen, binnen(3)).find((x) => x.id === "regels")!;
     expect(teVeel.beschikbaar).toBe(false);
     expect(teVeel.reden).toBe("voorinstelling_reden.te_veel_regels");
-    const precies = voorinstellingen(modellen, regels.slice(0, MAX_CONTROLES)).find((x) => x.id === "regels")!;
+    const precies = voorinstellingen(modellen, binnen(2)).find((x) => x.id === "regels")!;
     expect(precies.beschikbaar).toBe(true);
     expect(precies.controles).toHaveLength(MAX_CONTROLES);
+  });
+
+  test("volgens de projectregels: de bewaarde regels, en voor de andere paren de standaard", () => {
+    const bouwkunde = model({ naam: "bk.ifc", discipline: "bouwkunde" });
+    const bewaard: ClashRule[] = [{ a: "constructie", b: "installaties", soort: "afstand", mm: 25, ernst: null }];
+    const v = voorinstellingen([CONSTRUCTIE, INSTALLATIE, bouwkunde], bewaard).find((x) => x.id === "regels")!;
+    expect(v.controles.map((c) => [c.regel, c.soort, c.tolerantie])).toEqual([
+      ["bouwkunde × constructie", "hard", 0],
+      ["bouwkunde × installaties", "hard", 0],
+      ["constructie × installaties", "afstand", 0.025],
+    ]);
   });
 
   test("volgens de projectregels: niet beschikbaar zonder regels", () => {
@@ -307,10 +321,34 @@ describe("disciplines en regels", () => {
     expect(controlesUitRegels(regels, [CONSTRUCTIE, INSTALLATIE])[0]).toMatchObject({ soort: "hard", tolerantie: 0.01 });
   });
 
-  test("paren sorteren op codepunt, zoals de server", () => {
-    const regels = standaardRegels(["a", "B"], [{ a: "a", b: "B", soort: "afstand", mm: 5, ernst: null }]);
-    expect(regels).toContainEqual({ a: "B", b: "a", soort: "afstand", mm: 5, ernst: null });
-    expect(regels.map((r) => `${r.a}|${r.b}`)).toEqual(["B|B", "B|a", "a|a"]);
+  test("paren sorteren op alfabet zonder op hoofdletters te letten, en dan op codepunt, zoals de server", () => {
+    const paren = (disciplines: string[]) => standaardRegels(disciplines, []).map((r) => `${r.a}|${r.b}`);
+    expect(paren(["installaties", "Constructie", "architectuur"])).toEqual([
+      "architectuur|architectuur",
+      "architectuur|Constructie",
+      "architectuur|installaties",
+      "Constructie|Constructie",
+      "Constructie|installaties",
+      "installaties|installaties",
+    ]);
+    // Bij gelijke letters de hoofdletter eerst, zoals Python.
+    expect(paren(["a", "A"])).toEqual(["A|A", "A|a", "a|a"]);
+    // Boven U+FFFF telt het codepunt en niet de UTF-16-eenheid: U+FFFD komt voor U+1F600, net als op de server.
+    expect(paren(["😀", "�"])).toEqual(["�|�", "�|😀", "😀|😀"]);
+    const regels = standaardRegels(["a", "B"], [{ a: "B", b: "a", soort: "afstand", mm: 5, ernst: null }]);
+    expect(regels).toContainEqual({ a: "a", b: "B", soort: "afstand", mm: 5, ernst: null });
+  });
+
+  test("bewaren: alleen regels die van de standaard afwijken; een regel die uit staat houdt zijn afstand", () => {
+    const regels: ClashRule[] = [
+      { a: "c", b: "c", soort: "uit", mm: 0, ernst: null },
+      { a: "c", b: "i", soort: "hard", mm: 0, ernst: null },
+      { a: "c", b: "i2", soort: "hard", mm: 0, ernst: "kritiek" },
+      { a: "i", b: "i", soort: "uit", mm: 25, ernst: null },
+      { a: "c", b: "x", soort: "uit", mm: 0, ernst: null },
+      { a: "c", b: "y", soort: "hard", mm: 5, ernst: null },
+    ];
+    expect(teBewarenRegels(regels)).toEqual(regels.slice(2));
   });
 
   test("standaardregels: bewaarde paren zonder model blijven bestaan, ook met omgedraaide namen", () => {
@@ -551,6 +589,8 @@ describe("voortgangProcent", () => {
     expect(voortgangProcent(1.2)).toBe(100);
     expect(voortgangProcent(-0.1)).toBe(0);
     expect(voortgangProcent(Number.NaN)).toBe(0);
+    expect(voortgangProcent(Number.POSITIVE_INFINITY)).toBe(100);
+    expect(voortgangProcent(Number.NEGATIVE_INFINITY)).toBe(0);
   });
 });
 
@@ -694,6 +734,13 @@ describe("weergaven", () => {
     expect(filterUitWeergave({ ernst: ["groot"], tekst: "wand", emmer: "weg" })).toEqual({ ...leegFilter(), ernst: ["groot"], tekst: "wand", emmer: "weg" });
     expect(filterUitWeergave({ emmer: null }).emmer).toBeNull();
     for (const geen of [null, undefined, "tekst", 3, []]) expect(filterUitWeergave(geen)).toEqual(leegFilter());
+  });
+
+  test("een nieuwe weergave past tot 50; een bestaande naam vervangen kan altijd", () => {
+    const vijftig = Array.from({ length: 50 }, (_, i) => v({ naam: `w${i}` }));
+    expect(kanWeergaveBewaren(vijftig.slice(0, 49), "nieuw")).toBe(true);
+    expect(kanWeergaveBewaren(vijftig, "nieuw")).toBe(false);
+    expect(kanWeergaveBewaren(vijftig, " w3 ")).toBe(true);
   });
 
   test("een onbekende groepering wordt klassen", () => {

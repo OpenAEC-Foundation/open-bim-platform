@@ -97,6 +97,7 @@
   "soort_afstand_uitleg": "Afstand: elementen die dichter dan de tolerantie bij elkaar liggen",
   "tolerantie_mm": "Tolerantie (mm)",
   "tolerantie_waarde": "{{mm}} mm",
+  "tolerantie_per_regel": "tolerantie per regel",
   "ronde_status": {
     "wacht": "Wacht op de rekenkern",
     "bezig": "Wordt berekend",
@@ -221,6 +222,7 @@
   "weergave_kies": "Weergave kiezen",
   "weergave_bewaren": "Weergave bewaren",
   "weergave_verwijderen": "Weergave verwijderen",
+  "weergaven_vol": "Er zijn al {{max}} weergaven. Verwijder er eerst een, of bewaar onder een bestaande naam.",
   "weergave_naam": "Naam van de weergave",
   "groeperen_op": "Groeperen op",
   "groep_door": {

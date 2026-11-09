@@ -89,7 +89,7 @@ export class FragmentsEngine {
   /** Mark several elements at once (the elements of an issue, both sides of a clash); an empty list clears. */
   async highlightMany(targets: { keys: string[]; globalid: string }[]): Promise<void> {
     for (const model of this.fragments.list.values()) await model.resetHighlight();
-    const material = this.highlightMaterial();
+    const material = this.markMaterial("--theme-accent");
     for (const target of targets) {
       for (const key of target.keys) {
         const model = this.fragments.list.get(key);
@@ -262,11 +262,6 @@ export class FragmentsEngine {
   private basis(): Vec3 {
     const b = this.fragments.core.baseCoordinates;
     return b && b.length >= 3 ? [b[0], b[1], b[2]] : [0, 0, 0];
-  }
-
-  /** The accent colour of the active style-book theme. */
-  private highlightMaterial(): FRAGS.MaterialDefinition {
-    return this.markMaterial("--theme-accent");
   }
 
   /** A marking material in the colour of a style-book token, read from the page at the moment of use. */

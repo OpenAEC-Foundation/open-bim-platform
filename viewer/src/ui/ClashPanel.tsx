@@ -67,9 +67,10 @@ export function ClashPanel({ coordinatie, weergave, modellen }: { coordinatie: C
         coordinatie={coordinatie}
         modellen={modellen}
         instellingen={instellingen ?? GEEN_INSTELLINGEN}
-        onKlaar={async () => {
+        onKlaar={async (ronde) => {
           setNieuw(false);
-          await laad();
+          // Cancelled: nothing changed, so the list does not need to come again.
+          if (ronde) await laad();
         }}
       />
     );

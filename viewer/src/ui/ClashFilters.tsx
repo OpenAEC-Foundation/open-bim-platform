@@ -7,11 +7,13 @@ import {
   type FilterChip,
   type Facetten,
   GROEPERINGEN,
+  WEERGAVEN_MAX,
   actieveWeergave,
   facetten,
   filterChips,
   filterUitWeergave,
   groepUitWeergave,
+  kanWeergaveBewaren,
   schoneWeergaven,
   zonderChip,
 } from "../model/clashes";
@@ -52,9 +54,12 @@ export function ClashFilters({
 
   const actief = actieveWeergave(instellingen.weergaven, gekozen, filter, groep);
 
+  // The server keeps at most 50 views: a new name over that limit is not offered, saving under one that exists still is.
+  const vol = naam !== null && !kanWeergaveBewaren(instellingen.weergaven, naam);
+
   const bewaar = async () => {
     const schoon = (naam ?? "").trim();
-    if (!schoon || loopt.current) return;
+    if (!schoon || vol || loopt.current) return;
     loopt.current = true;
     setFout(null);
     try {
@@ -194,13 +199,18 @@ export function ClashFilters({
               else if (e.key === "Escape") setNaam(null);
             }}
           />
-          <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" disabled={!naam.trim()} onClick={() => void bewaar()}>
+          <button type="button" className="oa-btn oa-btn--primary oa-btn--sm" disabled={!naam.trim() || vol} onClick={() => void bewaar()}>
             {t("opslaan")}
           </button>
           <button type="button" className="oa-btn oa-btn--ghost oa-btn--sm" onClick={() => setNaam(null)}>
             {t("annuleren")}
           </button>
         </div>
+      )}
+      {vol && (
+        <p className="viewer__hint botsing__melding" data-melding="weergaven-vol">
+          {t("weergaven_vol", { max: WEERGAVEN_MAX })}
+        </p>
       )}
       {fout && <p className="viewer__error botsing__melding">{fout}</p>}
     </div>

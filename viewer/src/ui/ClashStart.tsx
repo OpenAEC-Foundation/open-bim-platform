@@ -133,6 +133,8 @@ export function ClashStart({
                     className="oa-input"
                     inputMode="decimal"
                     value={bijnaMm}
+                    // The card is the label of its radio button: without its own name the field would have none.
+                    aria-label={t("bijna_mm")}
                     aria-invalid={bijnaWaarde === null}
                     onChange={(e) => setBijnaMm(e.target.value)}
                   />

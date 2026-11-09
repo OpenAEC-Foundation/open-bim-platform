@@ -165,7 +165,8 @@ export type ClashRound = {
   set_a: ClashSetItem[];
   set_b: ClashSetItem[];
   soort: ClashKind | "gemengd";
-  tolerantie: number;
+  /** Null when the checks of the round have different tolerances: they are then per rule. */
+  tolerantie: number | null;
   status: "wacht" | "bezig" | "klaar" | "fout";
   aantal: number;
   bron_versies: Record<string, string>;

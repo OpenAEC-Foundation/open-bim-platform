@@ -84,7 +84,7 @@ function telKlassen(modellen: ModelInfo[], past: (klasse: string) => boolean): b
 
 /** Progress of a round as a whole percentage; the server sends a fraction from 0 to 1. */
 export function voortgangProcent(voortgang: number): number {
-  if (!Number.isFinite(voortgang)) return 0;
+  if (Number.isNaN(voortgang)) return 0;
   return Math.min(100, Math.max(0, Math.round(voortgang * 100)));
 }
 
@@ -144,7 +144,8 @@ export function voorinstellingen(modellen: ModelInfo[], regels: ClashRule[] = []
     { set_a: metKlassen(gereed, klassen), set_b: metKlassen(gereed, [KLASSE_INSTALLATIES]), soort: "hard", tolerantie: 0 },
   ];
   const eenModel = gereed.length < 2 ? `${REDEN}.een_model` : null;
-  const regelControles = controlesUitRegels(regels, modellen);
+  // The saved rules are what the project changed; every other pair of disciplines follows the default.
+  const regelControles = regels.length > 0 ? controlesUitRegels(standaardRegels(gereed.map(disciplineVan), regels), modellen) : [];
 
   return [
     keuze("harde", [{ set_a: set, set_b: set, soort: "hard", tolerantie: 0 }], null),
@@ -174,13 +175,37 @@ export function rondeTitel(naam: string, moment: Date, taal: string): string {
   return `${naam} ${new Intl.DateTimeFormat(taal, { dateStyle: "medium", timeStyle: "short" }).format(moment)}`;
 }
 
-/** Code-point order, like Python's `sorted` on the server. */
-function codepunt(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
+/** Order by code point, like Python compares text; the operators of JavaScript compare UTF-16 units, which differs above U+FFFF. */
+function codepunten(a: string, b: string): number {
+  const x = Array.from(a, (teken) => teken.codePointAt(0) as number);
+  const y = Array.from(b, (teken) => teken.codePointAt(0) as number);
+  for (let i = 0; i < Math.min(x.length, y.length); i++) if (x[i] !== y[i]) return x[i] - y[i];
+  return x.length - y.length;
+}
+
+/** The order of disciplines, as on the server (`_volgorde`): alphabetical without regard to case, then by code point. */
+function volgorde(a: string, b: string): number {
+  return codepunten(a.toLowerCase(), b.toLowerCase()) || codepunten(a, b);
 }
 
 function sorteerPaar(a: string, b: string): [string, string] {
-  return codepunt(a, b) <= 0 ? [a, b] : [b, a];
+  return volgorde(a, b) <= 0 ? [a, b] : [b, a];
+}
+
+/** The rule of a pair when the project sets none: between two disciplines a hard check, within one nothing. */
+export function standaardRegel(a: string, b: string): ClashRule {
+  return { a, b, soort: a === b ? "uit" : "hard", mm: 0, ernst: null };
+}
+
+/**
+ * The rules to save: those that differ from the default of their pair, as the other pairs follow the default anyway. A
+ * rule that is off keeps its distance, so switching it on again gives the distance back.
+ */
+export function teBewarenRegels(regels: ClashRule[]): ClashRule[] {
+  return regels.filter((r) => {
+    const standaard = standaardRegel(r.a, r.b);
+    return r.soort !== standaard.soort || r.mm !== standaard.mm || (r.ernst ?? null) !== standaard.ernst;
+  });
 }
 
 /**
@@ -194,13 +219,13 @@ export function standaardRegels(disciplines: string[], bewaard: ClashRule[]): Cl
     const [a, b] = sorteerPaar(regel.a, regel.b);
     regels.set(sleutel(a, b), { ...regel, a, b });
   }
-  const uniek = [...new Set(disciplines)].sort(codepunt);
+  const uniek = [...new Set(disciplines)].sort(volgorde);
   uniek.forEach((a, i) => {
     for (const b of uniek.slice(i)) {
-      if (!regels.has(sleutel(a, b))) regels.set(sleutel(a, b), { a, b, soort: a === b ? "uit" : "hard", mm: 0, ernst: null });
+      if (!regels.has(sleutel(a, b))) regels.set(sleutel(a, b), standaardRegel(a, b));
     }
   });
-  return [...regels.values()].sort((x, y) => codepunt(x.a, y.a) || codepunt(x.b, y.b));
+  return [...regels.values()].sort((x, y) => volgorde(x.a, y.a) || volgorde(x.b, y.b));
 }
 
 /** Metres that two boxes may be apart and still count as touching. */
@@ -392,6 +417,15 @@ export function filterChips(f: ClashFilter): FilterChip[] {
 export function zonderChip(f: ClashFilter, chip: FilterChip): ClashFilter {
   if (chip.veld === "tekst") return { ...f, tekst: "" };
   return { ...f, [chip.veld]: (f[chip.veld] as string[]).filter((w) => w !== chip.waarde) };
+}
+
+/** The most views a project keeps, as on the server. */
+export const WEERGAVEN_MAX = 50;
+
+/** A new view fits while there are fewer than the maximum; saving under a name that exists replaces that view. */
+export function kanWeergaveBewaren(weergaven: ClashView[], naam: string): boolean {
+  const schoon = naam.trim();
+  return weergaven.length < WEERGAVEN_MAX || weergaven.some((w) => w.naam === schoon);
 }
 
 export const GROEPERINGEN: ClashGroupBy[] = ["klassen", "verdieping", "disciplines", "ernst", "categorie", "raster", "ruimte", "ontwikkeling"];
