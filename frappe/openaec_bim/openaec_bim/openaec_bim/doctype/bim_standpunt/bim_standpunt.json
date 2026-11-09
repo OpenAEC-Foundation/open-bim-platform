@@ -1,0 +1,75 @@
+{
+ "actions": [],
+ "autoname": "field:guid",
+ "creation": "2026-10-29 09:00:00.000000",
+ "description": "Een BCF-standpunt van een issue: camera, selectie, zichtbaarheid en een schermafbeelding.",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "guid",
+  "issue",
+  "bcf_index",
+  "standpunt",
+  "snapshot",
+  "snapshot_type"
+ ],
+ "fields": [
+  {
+   "fieldname": "guid",
+   "fieldtype": "Data",
+   "label": "GUID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "issue",
+   "fieldtype": "Link",
+   "label": "Issue",
+   "options": "BIM Issue",
+   "reqd": 1,
+   "search_index": 1
+  },
+  {
+   "fieldname": "bcf_index",
+   "fieldtype": "Int",
+   "label": "Index (BCF)"
+  },
+  {
+   "fieldname": "standpunt",
+   "fieldtype": "JSON",
+   "label": "Standpunt",
+   "description": "BCF 3.0-viewpoint zonder de schermafbeelding."
+  },
+  {
+   "fieldname": "snapshot",
+   "fieldtype": "Attach Image",
+   "label": "Schermafbeelding"
+  },
+  {
+   "fieldname": "snapshot_type",
+   "fieldtype": "Select",
+   "label": "Soort schermafbeelding",
+   "options": "\npng\njpg"
+  }
+ ],
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-29 09:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "OpenAEC BIM",
+ "name": "BIM Standpunt",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "write": 1
+  }
+ ],
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}

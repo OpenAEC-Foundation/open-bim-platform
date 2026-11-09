@@ -159,3 +159,43 @@ def test_storage_study_hash_ignores_the_order_of_vertices_and_triangles(storage_
     digest = storage_study.canonical_digest
     assert digest(verts, faces) == digest(shuffled, shuffled_faces)
     assert digest(verts, faces) != digest(verts + 1, faces)
+
+
+@pytest.fixture(scope="module")
+def variant():
+    return load("variant").variant
+
+
+def test_variant_keeps_only_the_given_classes(variant, ifc_small, tmp_path):
+    out = variant(ifc_small, tmp_path / "constructie.ifc", zonder=["IfcDuctSegment"])
+    model = ifcopenshell.open(str(out))
+    assert not model.by_type("IfcDuctSegment") and model.by_type("IfcWall")
+    out = variant(ifc_small, tmp_path / "installaties.ifc", alleen=["IfcDuctSegment"])
+    model = ifcopenshell.open(str(out))
+    assert len(model.by_type("IfcDuctSegment")) == 1 and not model.by_type("IfcWall")
+    assert model.by_type("IfcBuildingStorey")
+
+
+def test_variant_replaces_part_of_the_globalids_and_the_link_finds_them_back(variant, ifc_small, tmp_path):
+    from openbim_kern.linking import link_versions
+
+    out = variant(ifc_small, tmp_path / "v2.ifc", nieuwe_globalids=0.5)
+    old = {e.GlobalId for e in ifcopenshell.open(str(ifc_small)).by_type("IfcElement")}
+    new = {e.GlobalId for e in ifcopenshell.open(str(out)).by_type("IfcElement")}
+    assert len(old) == len(new) and 0 < len(old - new) < len(old)
+    build_property_index(ifc_small, tmp_path / "v1.sqlite")
+    build_property_index(out, tmp_path / "v2.sqlite")
+    koppeling = link_versions(tmp_path / "v1.sqlite", tmp_path / "v2.sqlite")
+    assert koppeling.terugval and koppeling.matchrate > 0.9
+
+
+def test_variant_cli(ifc_small, tmp_path):
+    import subprocess
+    import sys
+
+    out = tmp_path / "cli.ifc"
+    subprocess.run(
+        [sys.executable, str(SCRIPTS / "variant.py"), str(ifc_small), str(out), "--zonder", "IfcDuctSegment"],
+        check=True,
+    )
+    assert not ifcopenshell.open(str(out)).by_type("IfcDuctSegment")

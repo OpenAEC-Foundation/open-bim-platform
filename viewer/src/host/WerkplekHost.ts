@@ -1,6 +1,8 @@
+import type { Clash, ClashRound, ClashStatus, Comment, Extensions, Topic, Viewpoint } from "../model/bcf";
 import {
   HostError,
   type BimHost,
+  type Coordinatie,
   type ElementProperties,
   type ModelSource,
   type Project,
@@ -20,9 +22,36 @@ declare global {
   }
 }
 
+/** Fields of the envelope of a bridge message: a request never carries them itself. */
+const ENVELOP = new Set(["soort", "id", "werkplek"]);
+
 /** Host in the workspace: everything goes through the guest page, which acts with the user's own session. */
 export class WerkplekHost implements BimHost {
-  constructor(private readonly kanaal: WerkplekKanaal) {}
+  /** Issues and clashes, as bim.* messages that the guest page executes for the model folder of the page. */
+  readonly coordinatie: Coordinatie;
+
+  constructor(private readonly kanaal: WerkplekKanaal) {
+    const vraag = <T>(soort: string, extra?: Record<string, unknown>) => this.vraag(soort, extra) as Promise<T>;
+    this.coordinatie = {
+      instellingen: () => vraag<Extensions>("bim.instellingen"),
+      issues: () => vraag<Topic[]>("bim.issues"),
+      issueBewaar: (topic) => vraag<Topic>("bim.issue_bewaar", { topic }),
+      issueVerwijder: async (guid) => void (await vraag("bim.issue_verwijder", { guid })),
+      reacties: (guid) => vraag<Comment[]>("bim.reacties", { guid }),
+      reactieBewaar: (guid, reactie) => vraag<Comment>("bim.reactie_bewaar", { guid, reactie }),
+      standpunten: (guid) => vraag<Viewpoint[]>("bim.standpunten", { guid }),
+      standpuntBewaar: (guid, standpunt) => vraag<Viewpoint>("bim.standpunt_bewaar", { guid, standpunt }),
+      snapshot: (guid, standpunt) => vraag("bim.snapshot", { guid, standpunt }),
+      bcfExport: (versie) => vraag("bim.bcf_export", { versie }),
+      bcfImport: () => vraag("bim.bcf_import"),
+      botsingsrondeStart: (set_a, set_b, soort, tolerantie, titel) =>
+        vraag("bim.botsingsronde_start", { set_a, set_b, botsingsoort: soort, tolerantie, ...(titel ? { titel } : {}) }),
+      botsingsrondes: () => vraag<ClashRound[]>("bim.botsingsrondes"),
+      botsingen: (ronde) => vraag<Clash[]>("bim.botsingen", { ronde }),
+      botsingStatus: (botsing, status: ClashStatus) => vraag<Clash>("bim.botsing_status", { botsing, status }),
+      botsingNaarIssue: (botsing) => vraag<Topic>("bim.botsing_naar_issue", { botsing }),
+    };
+  }
 
   /** The workspace channel when the viewer runs in the workspace, otherwise null. */
   static fromWindow(venster: Window = window): WerkplekHost | null {
@@ -46,6 +75,11 @@ export class WerkplekHost implements BimHost {
   }
 
   private async vraag(soort: string, extra?: Record<string, unknown>): Promise<unknown> {
+    // The bridge puts the fields next to its own envelope; one of the same name would change the request.
+    const botsend = Object.keys(extra ?? {}).filter((veld) => ENVELOP.has(veld));
+    if (botsend.length) {
+      throw new HostError(0, { error_code: "veld_gereserveerd", melding: `Gereserveerd veld: ${botsend.join(", ")}`, remedie: "" });
+    }
     try {
       return await this.kanaal.vraag(soort, extra);
     } catch (fout) {
