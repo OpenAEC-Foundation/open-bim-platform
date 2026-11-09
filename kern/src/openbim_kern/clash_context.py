@@ -7,6 +7,7 @@ storeys, the grid and the spaces. Everything here is best effort: the callers tr
 
 from __future__ import annotations
 
+import logging
 import math
 from typing import NamedTuple
 
@@ -18,7 +19,9 @@ import ifcopenshell.util.system
 import ifcopenshell.util.unit
 import numpy as np
 
-from .index.properties import _storey
+from .index.properties import storey_of
+
+LOG = logging.getLogger(__name__)
 
 # Depth (metres) under which a hard clash is only a touch.
 DEPTH_CONTACT_M = 0.005
@@ -92,14 +95,9 @@ class ModelContext:
         return self.model.by_guid(gid).Name
 
     def verdieping(self, gid: str) -> str | None:
-        """Name of the storey of an element, or of the assembly it is a part of."""
-        node = self.model.by_guid(gid)
-        while node is not None:
-            storey = _storey(node)
-            if storey is not None:
-                return storey.Name
-            node = element_util.get_aggregate(node)
-        return None
+        """Name of the storey of an element, as in the property index; a part of an assembly gets the assembly's."""
+        storey = storey_of(self.model.by_guid(gid))
+        return storey.Name if storey is not None else None
 
     def familie(self, gid: str) -> str:
         element = self.model.by_guid(gid)
@@ -164,7 +162,8 @@ class ModelContext:
         if self._axes is None:
             try:
                 self._axes = self._read_grid()
-            except Exception:
+            except Exception as exc:
+                LOG.warning("Reading the grid failed, clashes get no grid cell: %r", exc, exc_info=True)
                 self._axes = ([], [])  # cache the failure: the reader must not run again for every clash
         tags = [t for t in (self._nearest(axes, punt) for axes in self._axes) if t]
         return "-".join(tags) if tags else None
@@ -184,17 +183,20 @@ class ModelContext:
         v_axes: list = []
         try:
             scale = float(ifcopenshell.util.unit.calculate_unit_scale(self.model))
-        except Exception:
+        except Exception as exc:
+            LOG.warning("No length unit for the grid, read in metres: %r", exc, exc_info=True)
             scale = 1.0
+        angle = _angle_scale(self.model)
         for grid in self.model.by_type("IfcGrid"):
             try:
                 matrix = ifcopenshell.util.placement.get_local_placement(grid.ObjectPlacement)
                 for attribute, target in (("UAxes", u_axes), ("VAxes", v_axes)):
                     for axis in getattr(grid, attribute) or ():
-                        segments = _curve_segments(axis.AxisCurve, matrix, scale)
+                        segments = _curve_segments(axis.AxisCurve, matrix, scale, angle)
                         if segments:
                             target.append((axis.AxisTag, segments))
-            except Exception:
+            except Exception as exc:
+                LOG.warning("Grid %s skipped: %r", grid.Name, exc, exc_info=True)
                 continue
         return u_axes, v_axes
 
@@ -203,7 +205,8 @@ class ModelContext:
         if self._spaces is None:
             try:
                 self._spaces = self._read_spaces()
-            except Exception:
+            except Exception as exc:
+                LOG.warning("Reading the spaces failed, clashes get no room: %r", exc, exc_info=True)
                 self._spaces = []  # cache the failure: the geometry pass must not run again for every clash
         best: tuple[float, str] | None = None
         for volume, name, low, high in self._spaces:
@@ -242,8 +245,20 @@ def _distance_xy(punt, start, end, infinite: bool) -> float:
     return math.hypot(punt[0] - (start[0] + t * dx), punt[1] - (start[1] + t * dy))
 
 
-def _curve_segments(curve, matrix: np.ndarray, scale: float) -> list[tuple[tuple, tuple, bool]]:
-    """Straight pieces (start, end, infinite) of an axis curve in world metres; circular arcs are sampled."""
+def _angle_scale(model: ifcopenshell.file) -> float:
+    """Radians per plane angle unit of the model; degrees when the model declares no plane angle unit."""
+    projects = model.by_type("IfcProject")
+    units = projects[0].UnitsInContext if projects else None
+    if units and any(getattr(u, "UnitType", None) == "PLANEANGLEUNIT" for u in units.Units):
+        return float(ifcopenshell.util.unit.calculate_unit_scale(model, "PLANEANGLEUNIT"))
+    return math.pi / 180
+
+
+def _curve_segments(curve, matrix: np.ndarray, scale: float, angle: float) -> list[tuple[tuple, tuple, bool]]:
+    """Straight pieces (start, end, infinite) of an axis curve in world metres; circular arcs are sampled.
+
+    `scale` is metres per length unit of the model, `angle` radians per plane angle unit.
+    """
     placed = matrix.copy()
     placed[:3, 3] *= scale
 
@@ -266,13 +281,14 @@ def _curve_segments(curve, matrix: np.ndarray, scale: float) -> list[tuple[tuple
         return [(world(start), world(end), True)]
     if curve.is_a("IfcTrimmedCurve"):
         if curve.BasisCurve.is_a("IfcCircle"):
-            return pieces(_arc_points(curve, world))
-        return _curve_segments(curve.BasisCurve, matrix, scale)
+            return pieces(_arc_points(curve, world, angle))
+        return _curve_segments(curve.BasisCurve, matrix, scale, angle)
     return []
 
 
-def _arc_points(trimmed, world) -> list[tuple[float, float]]:
-    """Sample a trimmed circle; the trims are parameter values (angles in degrees)."""
+def _arc_points(trimmed, world, angle: float) -> list[tuple[float, float]]:
+    """Sample a trimmed circle from Trim1 to Trim2; the trims are parameter values, in plane angle units of `angle`
+    radians. Along the sense of the circle the arc runs anticlockwise, against it (SenseAgreement false) clockwise."""
     circle = trimmed.BasisCurve
     position = circle.Position
     centre_x, centre_y = (float(v) for v in position.Location.Coordinates[:2])
@@ -285,8 +301,12 @@ def _arc_points(trimmed, world) -> list[tuple[float, float]]:
     start, end = parameter(trimmed.Trim1), parameter(trimmed.Trim2)
     if start is None or end is None:
         return []
-    if end < start:
-        end += 360.0
+    start, end = start * angle, end * angle
+    if trimmed.SenseAgreement is False:
+        if end > start:
+            end -= 2 * math.pi
+    elif end < start:
+        end += 2 * math.pi
     steps = 32
-    angles = [math.radians(start + (end - start) * i / steps) + rotation for i in range(steps + 1)]
+    angles = [start + (end - start) * i / steps + rotation for i in range(steps + 1)]
     return [world((centre_x + circle.Radius * math.cos(a), centre_y + circle.Radius * math.sin(a))) for a in angles]

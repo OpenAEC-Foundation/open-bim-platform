@@ -7,7 +7,16 @@ import models
 import pytest
 
 from openbim_kern import clash as clash_module
-from openbim_kern.clash import Botsing, ClashCheck, ClashModel, ClashScene, ElementRef, find_clashes, run_checks
+from openbim_kern.clash import (
+    Botsing,
+    ClashCheck,
+    ClashModel,
+    ClashScene,
+    ElementRef,
+    box_overlap,
+    find_clashes,
+    run_checks,
+)
 from openbim_kern.jobs.worker import queues_from_env, run_worker
 from openbim_kern.tools.registry import REGISTRY
 
@@ -23,6 +32,11 @@ def model(path, klassen=None):
 
 def gids(path, ifc_class):
     return {e.GlobalId for e in ifcopenshell.open(str(path)).by_type(ifc_class)}
+
+
+def gid_of(path, name):
+    (gid,) = [e.GlobalId for e in ifcopenshell.open(str(path)).by_type("IfcProduct") if e.Name == name]
+    return gid
 
 
 def test_duct_through_wall_is_a_hard_clash(ifc_small):
@@ -170,11 +184,66 @@ def test_the_same_global_ids_in_two_files_give_no_pair_with_itself(ifc_small, tm
     assert all(c.a.globalid != c.b.globalid for c in found)
 
 
+WALL = ("IfcWall", "Wand", (0.0, 0.0, 0.0), (5.0, 0.2, 3.0))
+
+
+def versions_with_the_same_global_ids(tmp_path):
+    """Two versions of one model with the same GlobalIds: in the first the duct runs through the 200 mm wall, in the
+    second it goes 50 mm into it."""
+    deep = models.ifc_boxes(
+        tmp_path / "diep.ifc", [WALL, ("IfcDuctSegment", "Kanaal", (2.0, -0.5, 1.0), (2.3, 0.7, 1.3))]
+    )
+    shallow = models.ifc_boxes(
+        tmp_path / "ondiep.ifc", [WALL, ("IfcDuctSegment", "Kanaal", (2.0, -0.5, 1.0), (2.3, 0.05, 1.3))]
+    )
+    source = {e.Name: e.GlobalId for e in ifcopenshell.open(str(deep)).by_type("IfcElement")}
+    copy = ifcopenshell.open(str(shallow))
+    for element in copy.by_type("IfcElement"):
+        element.GlobalId = source[element.Name]
+    copy.write(str(shallow))
+    assert gids(deep, "IfcElement") == gids(shallow, "IfcElement")
+    return deep, shallow
+
+
+def test_each_file_keeps_its_own_geometry_with_the_same_global_ids(tmp_path):
+    deep, shallow = versions_with_the_same_global_ids(tmp_path)
+    found = run_checks([ClashCheck(set_a=[model(p)], set_b=[model(p)], soort="hard") for p in (deep, shallow)])
+    assert sorted((c.a.sleutel, c.b.sleutel, round(c.afstand, 3)) for c in found) == [
+        ("diep.ifc", "diep.ifc", 0.2),
+        ("ondiep.ifc", "ondiep.ifc", 0.05),
+    ]
+
+
+def test_a_set_of_two_files_with_the_same_global_ids_keeps_both(tmp_path):
+    deep, shallow = versions_with_the_same_global_ids(tmp_path)
+    check = ClashCheck(
+        set_a=[model(deep, ["IfcDuctSegment"]), model(shallow, ["IfcDuctSegment"])],
+        set_b=[model(deep, ["IfcWall"]), model(shallow, ["IfcWall"])],
+        soort="hard",
+    )
+    found = run_checks([check])
+    assert sorted((c.a.sleutel, c.b.sleutel, round(c.afstand, 3)) for c in found) == [
+        ("diep.ifc", "diep.ifc", 0.2),
+        ("diep.ifc", "ondiep.ifc", 0.2),
+        ("ondiep.ifc", "diep.ifc", 0.05),
+        ("ondiep.ifc", "ondiep.ifc", 0.05),
+    ]
+
+
 def test_duplicate_needs_the_same_class_and_box(tmp_path):
     path = models.ifc_clash_context(tmp_path / "context.ifc")
     found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="dubbel")])
     assert [c.soort for c in found] == ["dubbel"]
     assert {found[0].a.klasse, found[0].b.klasse} == {"IfcWall"}
+
+
+def test_a_box_of_another_class_is_no_duplicate(tmp_path):
+    box = ((0.0, 0.0, 0.0), (4.0, 0.2, 3.0))
+    path = models.ifc_boxes(
+        tmp_path / "dubbel.ifc", [("IfcWall", "Wand 1", *box), ("IfcSlab", "Plaat", *box), ("IfcWall", "Wand 2", *box)]
+    )
+    found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="dubbel")])
+    assert [{c.a.naam, c.b.naam} for c in found] == [{"Wand 1", "Wand 2"}]
 
 
 def test_elements_carry_name_and_storey(ifc_small):
@@ -187,6 +256,10 @@ def test_elements_carry_name_and_storey(ifc_small):
 
 def test_virtual_elements_do_not_clash(tmp_path):
     path = models.ifc_clash_context(tmp_path / "context.ifc")
+    # Without this the test proves nothing: the virtual element runs right through a wall.
+    scene = ClashScene([path])
+    virtual, wall = (gid_of(path, name) for name in ("Virtueel", "Wand 1"))
+    assert box_overlap(scene.boxes[(path, virtual)], scene.boxes[(path, wall)])[0] >= 0.1
     found = run_checks([ClashCheck(set_a=[model(path)], set_b=[model(path)], soort="hard")])
     assert found and not any("IfcVirtualElement" in (c.a.klasse, c.b.klasse) for c in found)
 

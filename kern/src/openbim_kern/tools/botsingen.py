@@ -5,21 +5,17 @@ from __future__ import annotations
 import json
 import shutil
 import tempfile
-from collections.abc import Callable
 from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 from ..clash import ClashCheck, ClashModel, run_checks
+from ..progress import Progress, no_progress
 from ..sources import Source, deliver, fetch_source
 from .registry import tool
 
 MAX_IFC_BYTES = 8 * 1024**3
-
-
-def _no_progress(_: float) -> None:
-    pass
 
 
 class BotsingBron(BaseModel):
@@ -61,7 +57,7 @@ class BotsingUit(BaseModel):
     lang=True,
     rij="botsing",
 )
-def botsingen(invoer: BotsingIn, progress: Callable[[float], None] = _no_progress) -> BotsingUit:
+def botsingen(invoer: BotsingIn, progress: Progress = no_progress) -> BotsingUit:
     work = Path(tempfile.mkdtemp(prefix="botsingen-"))
     try:
         paths: dict[str, Path] = {}

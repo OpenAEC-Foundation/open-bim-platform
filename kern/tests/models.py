@@ -356,6 +356,54 @@ def ifc_clash_context(path: Path) -> Path:
     return _write(f, path)
 
 
+def ifc_arc_grid(
+    path: Path, trims: tuple[float, float], *, sense: bool = True, angle_unit: str | None = "DEGREE"
+) -> Path:
+    """IFC4 model with a grid of one curved axis C and one straight axis 1.
+
+    C is a circle of radius 10 m around the origin, trimmed at two parameter values: angles in `angle_unit` (DEGREE,
+    RADIAN, or None for a model that declares no plane angle unit). `sense` is its SenseAgreement.
+    """
+    api = ifcopenshell.api
+    f, _, storey = _one_storey()
+    units = f.by_type("IfcProject")[0].UnitsInContext
+    radian = f.create_entity("IfcSIUnit", UnitType="PLANEANGLEUNIT", Name="RADIAN")
+    if angle_unit == "RADIAN":
+        units.Units = [*units.Units, radian]
+    elif angle_unit == "DEGREE":
+        factor = f.create_entity(
+            "IfcMeasureWithUnit",
+            ValueComponent=f.create_entity("IfcPlaneAngleMeasure", math.pi / 180),
+            UnitComponent=radian,
+        )
+        degree = f.create_entity(
+            "IfcConversionBasedUnit",
+            Dimensions=f.create_entity("IfcDimensionalExponents", 0, 0, 0, 0, 0, 0, 0),
+            UnitType="PLANEANGLEUNIT",
+            Name="DEGREE",
+            ConversionFactor=factor,
+        )
+        units.Units = [*units.Units, degree]
+    origin = f.create_entity("IfcCartesianPoint", Coordinates=[0.0, 0.0])
+    circle = f.create_entity("IfcCircle", Position=f.create_entity("IfcAxis2Placement2D", Location=origin), Radius=10.0)
+    curve = f.create_entity(
+        "IfcTrimmedCurve",
+        BasisCurve=circle,
+        Trim1=[f.create_entity("IfcParameterValue", trims[0])],
+        Trim2=[f.create_entity("IfcParameterValue", trims[1])],
+        SenseAgreement=sense,
+        MasterRepresentation="PARAMETER",
+    )
+    points = [f.create_entity("IfcCartesianPoint", Coordinates=list(p)) for p in ((-20.0, 0.0), (20.0, 0.0))]
+    straight = f.create_entity("IfcPolyline", Points=points)
+    grid = api.run("root.create_entity", f, ifc_class="IfcGrid", name="Raster")
+    grid.UAxes = [f.create_entity("IfcGridAxis", AxisTag="C", AxisCurve=curve, SameSense=True)]
+    grid.VAxes = [f.create_entity("IfcGridAxis", AxisTag="1", AxisCurve=straight, SameSense=True)]
+    api.run("geometry.edit_object_placement", f, product=grid)
+    api.run("spatial.assign_container", f, products=[grid], relating_structure=storey)
+    return _write(f, path)
+
+
 def ifc_truncated(path: Path, source: Path | None = None) -> Path:
     """The first half of the bytes of `ifc_small` (a corrupt file); builds one when no source is given."""
     path = Path(path)

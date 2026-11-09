@@ -1,3 +1,4 @@
+import logging
 import math
 
 import models
@@ -73,21 +74,36 @@ def test_the_duct_through_the_bearing_wall_is_to_be_reviewed(context_round):
     hit = find(found, "Kanaal", "Dragende wand")
     assert (hit.emmer, hit.emmer_reden, hit.ernst) == ("beoordelen", None, "kritiek")
     assert hit.categorie == "constructie × installaties"
-    assert hit.raster
+    # The duct crosses the wall at x 4.0 to 4.3: axis B (x 5) is nearer than A (x 0), axis 1 (y 0) nearer than 2 (y 10).
+    assert hit.raster == "B-1"
     assert hit.ruimte == "Gang 1"
-    assert hit.a.verdieping == hit.b.verdieping
+    assert hit.a.verdieping == hit.b.verdieping == "00 begane grond"
 
 
-def test_buckets_add_up_to_the_total(context_round):
-    path, found = context_round
+def test_a_part_of_an_assembly_gets_the_storey_of_the_assembly(context_round):
+    # The members are not in the storey themselves; their assembly is.
+    _, found = context_round
+    hit = find(found, "Deel 1", "Deel 2")
+    assert hit.a.verdieping == hit.b.verdieping == "00 begane grond"
+
+
+BUCKET_REASONS = {
+    "beoordelen": {None},
+    "contact": {"contact"},
+    "aangrenzend": {"vulling", "samenstel", "verbonden", "zelfde_systeem", "aansluiting"},
+}
+
+
+def test_every_clash_has_a_valid_bucket_and_reason(context_round):
+    path, _ = context_round
     m = ClashModel(sleutel="m", versie="1", pad=path)
     both = run_checks(
         [ClashCheck(set_a=[m], set_b=[m], soort="hard"), ClashCheck(set_a=[m], set_b=[m], soort="dubbel")]
     )
-    counts = {}
+    assert both
     for c in both:
-        counts[c.emmer] = counts.get(c.emmer, 0) + 1
-    assert sum(counts.values()) == len(both)
+        assert c.emmer_reden in BUCKET_REASONS[c.emmer], (c.a.naam, c.b.naam, c.emmer, c.emmer_reden)
+        assert c.ernst in {"klein", "groot", "kritiek"}
     dubbel = [c for c in both if c.soort == "dubbel"]
     assert dubbel and all(c.emmer == "beoordelen" and c.ernst == "groot" for c in dubbel)
 
@@ -113,8 +129,24 @@ def test_a_failing_context_never_fails_the_round(context_round, monkeypatch):
     assert all(c.raster is None and c.ruimte is None for c in again)
 
 
+def test_a_failing_context_question_is_logged_once_per_round(context_round, monkeypatch, caplog):
+    path, found = context_round
+    assert len(found) > 2  # the same question fails for every clash
+
+    def familie(*_args, **_kwargs):
+        raise RuntimeError("kapot")
+
+    monkeypatch.setattr(ModelContext, "familie", familie)
+    m = ClashModel(sleutel="m", versie="1", pad=path)
+    with caplog.at_level(logging.WARNING):
+        run_checks([ClashCheck(set_a=[m], set_b=[m], soort="hard")])
+    logged = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(logged) == 1
+    assert "familie" in logged[0].getMessage() and "kapot" in logged[0].getMessage()
+
+
 @pytest.mark.parametrize("reader,question", [("_read_spaces", "ruimte"), ("_read_grid", "raster")])
-def test_a_failing_reader_runs_once_and_gives_none(ifc_small, monkeypatch, reader, question):
+def test_a_failing_reader_runs_once_and_gives_none(ifc_small, monkeypatch, caplog, reader, question):
     import ifcopenshell
 
     calls = []
@@ -125,9 +157,12 @@ def test_a_failing_reader_runs_once_and_gives_none(ifc_small, monkeypatch, reade
 
     monkeypatch.setattr(ModelContext, reader, boom)
     context = ModelContext(ifcopenshell.open(str(ifc_small)), None)
-    results = [getattr(context, question)((0.0, 0.0, 0.0)) for _ in range(3)]
+    with caplog.at_level(logging.WARNING):
+        results = [getattr(context, question)((0.0, 0.0, 0.0)) for _ in range(3)]
     assert results == [None, None, None]
     assert len(calls) == 1
+    assert [r.levelno for r in caplog.records] == [logging.WARNING]
+    assert "kapot" in caplog.records[0].getMessage()
 
 
 # (name, boxes as class, name, lowest and highest corner; tolerance; expected depth, bucket, severity). No depth: no
@@ -298,3 +333,34 @@ def test_the_overlap_of_two_boxes():
     assert box_overlap(a, ((1.0, 0.0, 0.0), (2.0, 1.0, 1.0)))[0] == 0.0
     assert box_overlap(a, ((1.0001, 0.0, 0.0), (2.0, 1.0, 1.0)))[0] == 0.0
     assert box_overlap(a, ((1.5, 0.0, 0.0), (2.0, 1.0, 1.0))) is None
+
+
+def arc_of(path):
+    """The points of the curved axis C of `models.ifc_arc_grid`, in order."""
+    import ifcopenshell
+
+    u_axes, _ = ModelContext(ifcopenshell.open(str(path)), None)._read_grid()
+    ((tag, segments),) = u_axes
+    assert tag == "C"
+    return [segments[0][0], *(end for _, end, _ in segments)]
+
+
+QUARTER = [(10.0, 0.0), (7.0711, 7.0711), (0.0, 10.0)]
+
+
+@pytest.mark.parametrize(
+    "angle_unit,trims", [("DEGREE", (0.0, 90.0)), ("RADIAN", (0.0, math.pi / 2)), (None, (0.0, 90.0))]
+)
+def test_a_curved_grid_axis_follows_the_angle_unit_of_the_model(tmp_path, angle_unit, trims):
+    # A model that declares no plane angle unit is read in degrees.
+    points = arc_of(models.ifc_arc_grid(tmp_path / "boog.ifc", trims, angle_unit=angle_unit))
+    assert [points[0], points[len(points) // 2], points[-1]] == [pytest.approx(p, abs=1e-3) for p in QUARTER]
+
+
+def test_a_curved_grid_axis_against_the_sense_of_its_circle_runs_clockwise(tmp_path):
+    # From 0 to 90 degrees the other way round: three quarters of the circle, through -135 degrees.
+    points = arc_of(models.ifc_arc_grid(tmp_path / "boog.ifc", (0.0, 90.0), sense=False))
+    middle = points[len(points) // 2]
+    assert [points[0], middle, points[-1]] == [
+        pytest.approx(p, abs=1e-3) for p in [(10.0, 0.0), (-7.0711, -7.0711), (0.0, 10.0)]
+    ]

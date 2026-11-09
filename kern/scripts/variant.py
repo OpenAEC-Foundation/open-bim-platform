@@ -6,8 +6,9 @@ a new GlobalId (as some exporters do in a new version).
                               [--hernoem "Wand B 1=Andere naam"] [--nieuwe-globalids 0.3] [--zaad 1]
 
 `--alleen` and `--zonder` take IFC classes (subclasses count too); the spatial structure always stays. `--zonder-naam`
-drops the elements with exactly that name. `--kopie` adds a copy of every element of a class, moved over x,y,z metres
-(with a new GlobalId), so a model can get a second clash. `--hernoem` (repeatable) gives everything with exactly that
+drops the elements with exactly that name. `--kopie` adds a copy of every element of a class, moved over x,y,z in the
+length unit of the model (metres in the test models; millimetres in a model in mm), with a new GlobalId, so a model can
+get a second clash. `--hernoem` (repeatable) gives everything with exactly that
 name a new one, elements and storeys alike. Which elements get a new GlobalId is fixed by `--zaad`, so a trial can be
 repeated.
 """
@@ -101,7 +102,9 @@ def main(argv=None) -> None:
     parser.add_argument("--alleen", help="komma-gescheiden IFC-klassen die blijven")
     parser.add_argument("--zonder", help="komma-gescheiden IFC-klassen die weg gaan")
     parser.add_argument("--zonder-naam", help="komma-gescheiden namen van elementen die weg gaan")
-    parser.add_argument("--kopie", help="Klasse:dx,dy,dz: een kopie van elk element van de klasse, verschoven (meters)")
+    parser.add_argument(
+        "--kopie", help="Klasse:dx,dy,dz: een kopie van elk element van de klasse, verschoven (eenheid van het model)"
+    )
     parser.add_argument("--hernoem", action="append", help="oud=nieuw: een andere naam voor wat zo heet")
     parser.add_argument("--nieuwe-globalids", type=float, default=0.0, help="deel van de elementen met nieuwe GlobalId")
     parser.add_argument("--zaad", type=int, default=1)
