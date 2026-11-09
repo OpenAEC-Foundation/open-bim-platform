@@ -65,6 +65,16 @@ def properties_db(received, tmp_path):
     return db
 
 
+def test_progress_moves_during_the_conversion(httpserver, ifc_small, data_dir):
+    seen = []
+    run_omzetten(httpserver, ifc_small, [*BASE, "model.frag"], progress=seen.append)
+    assert seen == sorted(seen) and seen[-1] == 1.0
+    # The whole file is one part: its stages (fragments, opening, index, delivery) all move the bar.
+    between = {round(v, 2) for v in seen if 0.1 < v < 1.0}
+    assert len(between) >= 6, seen
+    assert any(0.1 < v < 0.35 for v in seen) and any(0.35 < v < 0.9 for v in seen) and any(0.9 <= v < 1.0 for v in seen)
+
+
 def test_omzetten_small(httpserver, ifc_small, tmp_path, data_dir):
     seen = []
     out, got = run_omzetten(httpserver, ifc_small, [*BASE, "model.frag"], progress=seen.append)

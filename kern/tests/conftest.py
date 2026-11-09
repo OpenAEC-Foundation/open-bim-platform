@@ -96,6 +96,19 @@ def ifc_truncated(models_dir, ifc_small):
     return models.ifc_truncated(models_dir / "truncated.ifc", ifc_small)
 
 
+@pytest.fixture(scope="session")
+def enlarged(models_dir, ifc_small):
+    """ifc_small enlarged to about 30 MB by scripts/enlarge.py: for memory and time, not for what cleaning wins."""
+    import importlib.util
+    from pathlib import Path
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "enlarge.py"
+    spec = importlib.util.spec_from_file_location("scripts_enlarge", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.enlarge(ifc_small, 3000, models_dir / "vergroot.ifc")
+
+
 @pytest.fixture
 def fake_converter(monkeypatch, tmp_path):
     """Point OPENBIM_OMZETTER_CMD at tests/fakeconv.py (JSON list form, portable)."""

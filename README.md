@@ -21,6 +21,7 @@ meting van fase 1b.
 | [Plan fase 1b](docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md) | issues (BCF 3.0), BCF-API, versiekoppeling, auditlog, botsingen |
 | [Conformiteit BCF-API](docs/bcf-conformiteit.md) | de paden van de BCF-API 3.0 op de klantsite, de test en de laatste uitslag |
 | [Meting fase 1b](docs/metingen/2026-fase-1b.md) | de acceptatie van de coördinatie in de werkplek, tijden van koppelen en botsen |
+| [Meting opschonen en splitsen](docs/metingen/2026-opschonen-en-splitsen.md) | de compacte STEP-index: geheugen en tijd van opschonen en splitsen, de winst op echte modellen |
 
 **Fase 1** maakt issues met BCF 3.0 als datamodel, direct gevolgd door de BCF-API 3.0, en een koppeling van elementen
 over versies heen (op GlobalId, met een terugval als een exporteur GlobalIds verandert), zodat issues en botsingen een
@@ -62,14 +63,18 @@ De onderdelen ook los:
 ### Omzetten en geheugen
 
 Per bestandsversie maakt de kern het weergavebestand voor de viewer (`.frag`, met `@thatopen/fragments` in Node) en
-de eigenschappen-index, de ruimtelijke boom en een samenvatting (IfcOpenShell). Bestanden boven 1,5 GB worden eerst
+de eigenschappen-index, de ruimtelijke boom en een samenvatting (IfcOpenShell). Eerst schoont de kern het IFC
+verliesvrij op: identieke records worden één (punten, richtingen, waarden, profielen, stijlen), records waar niets naar
+verwijst gaan eruit. GlobalIds, eigenschappen, materialen, classificaties en geometrie blijven inhoudelijk gelijk; het
+geüploade IFC blijft de bron, het opgeschoonde is een afgeleide in de werkmap. Bestanden boven 1,5 GB worden daarna
 gesplitst; elk deel wordt een eigen `.frag`. Elke stap draait in een eigen proces onder een geheugen- en tijdsgrens.
-Richtgetallen uit de meting van fase 0:
+Richtgetallen uit de metingen van fase 0 en van [opschonen en splitsen](docs/metingen/2026-opschonen-en-splitsen.md):
 
 - IfcOpenShell (de index): 12–13 GB geheugen per GB IFC; daarom delen van 0,4 tot 1 GB.
 - Fragments: ~3,8 × de bestandsgrootte.
-- Splitsen: ~6,4 × de bestandsgrootte, lineair in de tijd (0,42 GB in 53 s). De splitser leest het bestand regel
-  voor regel met tegendruk (`kern/converter/lines.mjs`).
+- Opschonen en splitsen delen een compacte STEP-index (`kern/converter/stepindex.mjs`): ~52 en ~38 bytes per record
+  in getypte arrays. Op 1 GB piekt opschonen op 0,9 × de bestandsgrootte (20 s) en splitsen op 0,75 × (15 s); de
+  splitser van fragments nam 6,4 × en 53 s voor 0,42 GB.
 
 ### Viewer
 
@@ -133,12 +138,18 @@ GlobalIds vervangen) en een map met modellen doormeten:
 cd kern
 python scripts/enlarge.py <in.ifc> <factor> <uit.ifc>
 python scripts/variant.py <in.ifc> <uit.ifc> [--alleen IfcWall] [--zonder IfcDuctSegment] [--nieuwe-globalids 0.5]
-python scripts/measure.py <map> --uit <rapport.md>
+python scripts/measure.py <map> --uit <rapport.md> [--hervat] [--vergelijk]
 ```
 
 `measure.py` zet elk model om in een eigen proces en schrijft per bestand de grootte, de duur per stap en het
-piekgeheugen van de omzetter en van IfcOpenShell. De uitvoer komt in `<map>/.afgeleid/`, zodat `openbim-kern lokaal
-<map>` en de viewer de map daarna meteen openen. Met `--hervat` slaat hij bestanden over die al gemeten zijn.
+piekgeheugen van de omzetter en van IfcOpenShell, en wat opschonen deed (bytes en records voor en na, de piek van
+opschonen en splitsen). De uitvoer komt in `<map>/.afgeleid/`, zodat `openbim-kern lokaal <map>` en de viewer de map
+daarna meteen openen. Met `--hervat` slaat hij bestanden over die al gemeten zijn; met `--vergelijk` controleert hij in
+IfcOpenShell dat het opgeschoonde IFC inhoudelijk gelijk is aan de bron. De vergrote modellen van `enlarge.py` zijn
+duizenden kopieën van één model: goed voor geheugen en tijd, niet om de winst van opschonen te meten.
+
+`scripts/step_schema.py` schrijft `converter/schema.json` uit de IFC-schema's van IfcOpenShell: welke verwijzingen
+maar één eigenaar mogen hebben en welke lijsten uniek zijn, de grenzen van het samenvoegen.
 
 Voor de opslag per element meet `storage_study.py` de semantische graaf (als tabellen en in een graafopslag), de
 index en de geometrie per element, met een hash die niet van de volgorde afhangt, binnen een versie en tussen twee
@@ -170,7 +181,7 @@ Node.js zelf en de Debian-pakketten van het basisimage, elk met een link naar de
 | `OPENBIM_OMZETTER_CMD` | `node converter/convert.mjs` | opdracht voor de omzetter |
 | `OPENBIM_SPLITS_VANAF_BYTES` | `1500000000` | bestanden hierboven worden gesplitst |
 | `OPENBIM_DEEL_BYTES` | `1000000000` | doelgrootte van een deel bij splitsen |
-| `OPENBIM_GEHEUGEN_GRENS_BYTES` | 3 × grootte + 1 GB (splitsen: 7 × grootte + 1 GB) | geheugengrens per omzetproces; de heap van Node groeit tot deze grens mee |
+| `OPENBIM_GEHEUGEN_GRENS_BYTES` | 3 × grootte + 1 GB (opschonen 2,5 ×, splitsen 2 × grootte + 1 GB) | geheugengrens per omzetproces; de heap van Node groeit tot deze grens mee |
 | `OPENBIM_TIJD_GRENS_S` | max(300 s, 1800 s per GB) | tijdslimiet per omzetproces |
 | `OPENBIM_RIJ_OMZETTEN` | `1` | gelijktijdige taken in de rij `omzetten` |
 | `OPENBIM_RIJ_LICHT` | `4` | gelijktijdige taken in de rij `licht` |

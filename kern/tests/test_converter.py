@@ -1,7 +1,4 @@
-import json
-import subprocess
 from collections import Counter
-from pathlib import Path
 
 import ifcopenshell
 import ifcopenshell.util.element as element_util
@@ -9,7 +6,7 @@ import pytest
 from leftovers import leftover_processes
 
 from openbim_kern import converter
-from openbim_kern.converter import CONVERT_SCRIPT, convert_to_frag, split_ifc
+from openbim_kern.converter import convert_to_frag, split_ifc
 from openbim_kern.errors import KernError
 
 
@@ -18,6 +15,15 @@ def test_convert_small(ifc_small, tmp_path):
     s = convert_to_frag(ifc_small, out)
     assert s.out_bytes > 0 and out.stat().st_size == s.out_bytes
     assert s.in_bytes == ifc_small.stat().st_size and s.attempts == 1 and s.peak_rss > 0
+
+
+def test_convert_reports_its_progress(ifc_small, tmp_path):
+    seen = []
+    convert_to_frag(ifc_small, tmp_path / "m.frag", progress=seen.append)
+    assert seen, "the converter reported nothing"
+    assert seen == sorted(seen) and all(0 <= v <= 1 for v in seen)
+    assert seen[-1] == 1
+    assert not list(tmp_path.glob("*.voortgang"))  # the file for the progress is cleaned up
 
 
 def test_truncated_ifc_fails_cleanly(ifc_truncated, tmp_path):
@@ -72,11 +78,13 @@ def test_node_heap_follows_the_memory_limit(monkeypatch):
     assert converter._environment(2**30)["NODE_OPTIONS"] == "--max-old-space-size=1024"
 
 
-def test_splitting_may_use_more_memory_than_converting(monkeypatch):
-    # Measured: the splitter keeps an index of every line, about 6.4 times the IFC size at its peak.
+def test_memory_limits_per_stage(monkeypatch):
+    # Measured on 1 GB: cleaning peaks at 0.9 times the IFC size and splitting at 0.75, both with a compact index of
+    # every record (the splitter of fragments took 6.4 times); converting stays below 3.
     monkeypatch.delenv("OPENBIM_GEHEUGEN_GRENS_BYTES", raising=False)
     assert converter._memory_limit(10**9) == 4 * 10**9
-    assert converter._memory_limit(10**9, converter.SPLIT_MEMORY_FACTOR) == 8 * 10**9
+    assert converter._memory_limit(10**9, converter.CLEAN_MEMORY_FACTOR) == 3.5 * 10**9
+    assert converter._memory_limit(10**9, converter.SPLIT_MEMORY_FACTOR) == 3 * 10**9
     monkeypatch.setenv("OPENBIM_GEHEUGEN_GRENS_BYTES", "123")
     assert converter._memory_limit(10**9, converter.SPLIT_MEMORY_FACTOR) == 123
 
@@ -88,47 +96,6 @@ def test_time_limit(fake_converter, monkeypatch, ifc_small, tmp_path):
     assert e.error_code == "omzetten_tijd_op"
     assert not (tmp_path / "m.frag").exists()
     assert not leftover_processes()
-
-
-LINES = CONVERT_SCRIPT.with_name("lines.mjs")
-
-
-def _node_lines(script: str, path: Path) -> dict:
-    """Run a module that imports readLines from converter/lines.mjs on `path`; returns its JSON output."""
-    code = f"import {{ readLines }} from {json.dumps(LINES.as_uri())};\n{script}"
-    run = subprocess.run(["node", "--input-type=module", "-e", code, str(path)], capture_output=True, text=True)
-    assert run.returncode == 0, run.stderr
-    return json.loads(run.stdout)
-
-
-def test_lines_are_read_only_as_far_as_they_are_asked_for(tmp_path):
-    # The splitter reads an IFC line by line. Reading the whole file ahead into the queue of the stream costs memory
-    # in proportion to the file, and every line taken from a queue of millions is slow.
-    big = tmp_path / "regels.ifc"
-    big.write_text("".join(f"#{i}=IFCWALL('{i}');\n" for i in range(400_000)), encoding="utf-8")
-    out = _node_lines(
-        """let pieces = 0;
-const reader = readLines(process.argv[1], () => pieces++).getReader();
-const first = await reader.read();
-for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 5));
-console.log(JSON.stringify({ first: first.value, pieces }));""",
-        big,
-    )
-    assert out == {"first": "#0=IFCWALL('0');", "pieces": 1}
-
-
-def test_lines_without_line_endings_across_pieces(tmp_path):
-    text = "".join(f"#{i}=X('{'a' * (i % 97)}');\r\n" for i in range(60_000)) + "END-ISO-10303-21;"
-    path = tmp_path / "m.ifc"
-    path.write_bytes(text.encode("utf-8"))
-    out = _node_lines(
-        """const lines = [];
-for await (const line of readLines(process.argv[1])) lines.push(line);
-const crlf = lines.some((l) => l.includes("\\r"));
-console.log(JSON.stringify({ count: lines.length, last: lines.at(-1), crlf }));""",
-        path,
-    )
-    assert out == {"count": 60_001, "last": "END-ISO-10303-21;", "crlf": False}
 
 
 def test_split(ifc_small, tmp_path):

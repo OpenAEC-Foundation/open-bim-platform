@@ -1,7 +1,7 @@
 import { Icon, uiDownload, uiPlus, uiUpload } from "@openaec/icons";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { Coordinatie, ModelInfo } from "../host/BimHost";
+import type { BimHost, Coordinatie, ModelInfo } from "../host/BimHost";
 import type { BcfCamera, Extensions, Topic } from "../model/bcf";
 import { filterTopics, nieuwTopic, verlorenElementen, type IssueForm } from "../model/issues";
 import { describe } from "./format";
@@ -12,7 +12,7 @@ import type { Weergave } from "./weergave";
 type Nieuw = { camera: BcfCamera; selectie: string[]; beeld: Blob | null };
 
 /** The issues of the project (BCF 3.0): a filtered list, one issue in detail, and a new issue from the current view. */
-export function IssuesPanel({ coordinatie, weergave, modellen }: { coordinatie: Coordinatie; weergave: Weergave; modellen: ModelInfo[] }) {
+export function IssuesPanel({ host, coordinatie, weergave, modellen }: { host: BimHost; coordinatie: Coordinatie; weergave: Weergave; modellen: ModelInfo[] }) {
   const { t } = useTranslation();
   const [topics, setTopics] = useState<Topic[] | null>(null);
   const [extensions, setExtensions] = useState<Extensions | null>(null);
@@ -89,6 +89,7 @@ export function IssuesPanel({ coordinatie, weergave, modellen }: { coordinatie: 
   if (geopend) {
     return (
       <IssueDetail
+        host={host}
         coordinatie={coordinatie}
         weergave={weergave}
         topic={geopend}

@@ -1,4 +1,8 @@
-"""Tool `omzetten`: IFC to fragments plus property index, spatial tree and summary; large files are split first."""
+"""Tool `omzetten`: IFC to fragments plus property index, spatial tree and summary.
+
+The source is cleaned first (losslessly: duplicates merged, orphans left out) and large files are split; the cleaned
+IFC and the parts are derived files in the work folder, the source stays as it was.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +23,7 @@ import psutil
 from pydantic import BaseModel, ConfigDict, HttpUrl, field_validator
 
 from .. import CONVERTER_VERSION
-from ..converter import convert_to_frag, split_ifc
+from ..converter import clean_ifc, convert_to_frag, split_with_stats
 from ..errors import KernError
 from ..index.properties import count_elements, index_model
 from ..index.spatial import merge_bounds, merge_spatial_trees, spatial_tree, summarize
@@ -31,6 +35,11 @@ GB = 1_000_000_000
 MAX_SOURCE_BYTES = 20 * GB
 BASE_TARGETS = ("index.json", "eigenschappen.sqlite", "ruimtelijk.json")
 _TARGET_NAME = re.compile(r"index\.json|eigenschappen\.sqlite|ruimtelijk\.json|model\.frag|deel-[1-9][0-9]*\.frag")
+# Where the stages of one part end, as a share of its time (measured, see docs/metingen/2026-fase-0.md):
+# fragments, opening the file, the property index; the summary and the spatial tree take the rest.
+_FRAGMENTS_END = 0.30
+_OPENED_END = 0.42
+_INDEX_END = 0.92
 
 
 class OmzetVerzoek(BaseModel):
@@ -92,8 +101,12 @@ def omzetten(invoer: OmzetVerzoek, progress: Callable[[float], None] = _no_progr
         _check_targets(invoer.doelen, planned_parts(ifc.stat().st_size))
         progress(0.05)
         result = convert_model(ifc, work, progress)
+        sizes = {name: (work / "uit" / name).stat().st_size for name in result.files}
+        sent = 0
         for name in result.files:
             deliver(work / "uit" / name, str(invoer.doelen[name]))
+            sent += sizes[name]
+            progress(0.9 + 0.1 * sent / max(1, sum(sizes.values())))
         progress(1.0)
     return _outcome(result, t0)
 
@@ -115,23 +128,33 @@ class Converted:
     delen: list[Deel]
     files: list[str]  # output files in delivery order: index.json, which marks the output as complete, last
     peak_rss: int  # of the converter processes
-    seconds: dict[str, float] = field(default_factory=dict)  # per stage: splitsen, fragments, index
+    seconds: dict[str, float] = field(default_factory=dict)  # per stage: opschonen, splitsen, fragments, index
+    peaks: dict[str, int] = field(default_factory=dict)  # peak memory per converter stage
+    cleaning: dict[str, Any] = field(default_factory=dict)  # what cleaning did, or why it was skipped
 
 
 def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no_progress) -> Converted:
-    """Split when large, convert to fragments and build the index, tree and summary: all output in work / "uit".
+    """Clean, split when large, convert to fragments and build the index, tree and summary: output in work / "uit".
 
-    The one conversion path, for the tool and the CLI alike.
+    The one conversion path, for the tool and the CLI alike. When cleaning fails the source is converted as it is.
     """
-    seconds = {"splitsen": 0.0, "fragments": 0.0, "index": 0.0}
+    seconds = {"opschonen": 0.0, "splitsen": 0.0, "fragments": 0.0, "index": 0.0}
+    peaks = {"opschonen": 0, "splitsen": 0, "fragments": 0}
+    # Whether to split follows the size of the source, as the targets were planned for it.
     parts = planned_parts(ifc.stat().st_size)
+    t0 = time.monotonic()
+    source, cleaning = _clean(ifc, work / "opgeschoond.ifc")
+    seconds["opschonen"] = time.monotonic() - t0
+    peaks["opschonen"] = cleaning.pop("piek", 0)
+    progress(0.07)
     if parts:
-        t0 = time.monotonic()
-        inputs = split_ifc(ifc, parts, work / "delen")
-        seconds["splitsen"] = time.monotonic() - t0
+        split = split_with_stats(source, parts, work / "delen")
+        seconds["splitsen"] = split.seconds
+        peaks["splitsen"] = split.peak_rss
+        inputs = split.parts
         names = [f"deel-{i}.frag" for i in range(1, len(inputs) + 1)]
     else:
-        inputs, names = [ifc], ["model.frag"]
+        inputs, names = [source], ["model.frag"]
     progress(0.1)
 
     out = work / "uit"
@@ -139,15 +162,19 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
     delen: list[Deel] = []
     summaries: list[dict[str, Any]] = []
     trees: list[dict[str, Any]] = []
-    peak = 0
     for i, (part, name) in enumerate(zip(inputs, names, strict=True)):
+
+        def in_part(share: float, part_number: int = i) -> None:
+            progress(0.1 + 0.8 * (part_number + share) / len(inputs))
+
         t0 = time.monotonic()
-        stats = convert_to_frag(part, out / name)
+        stats = convert_to_frag(part, out / name, lambda done: in_part(_FRAGMENTS_END * done))
         seconds["fragments"] += time.monotonic() - t0
-        peak = max(peak, stats.peak_rss)
+        peaks["fragments"] = max(peaks["fragments"], stats.peak_rss)
         t0 = time.monotonic()
         model = _open(part)
-        index_model(model, db)
+        in_part(_OPENED_END)
+        index_model(model, db, lambda done: in_part(_OPENED_END + (_INDEX_END - _OPENED_END) * done))
         summaries.append(summarize(model))
         trees.append(spatial_tree(model))
         del model  # one part in memory at a time
@@ -155,7 +182,7 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
         delen.append(
             Deel(naam=name, bytes=stats.out_bytes, verdiepingen=list(summaries[-1]["aantallen_per_verdieping"]))
         )
-        progress(0.1 + 0.8 * (i + 1) / len(inputs))
+        in_part(1.0)
 
     index = {
         **summaries[0],
@@ -169,9 +196,30 @@ def convert_model(ifc: Path, work: Path, progress: Callable[[float], None] = _no
     return Converted(
         delen=delen,
         files=[*names, "eigenschappen.sqlite", "ruimtelijk.json", "index.json"],
-        peak_rss=peak,
+        peak_rss=max(peaks.values()),
         seconds=seconds,
+        peaks=peaks,
+        cleaning=cleaning,
     )
+
+
+def _clean(ifc: Path, out: Path) -> tuple[Path, dict[str, Any]]:
+    """The cleaned copy of the source and what cleaning did; the source itself when cleaning failed."""
+    try:
+        stats = clean_ifc(ifc, out)
+    except KernError as exc:
+        return ifc, {"overgeslagen": exc.melding}
+    return out, {
+        "bytes_voor": stats.in_bytes,
+        "bytes_na": stats.out_bytes,
+        "regels_voor": stats.records_in,
+        "regels_na": stats.records_out,
+        "samengevoegd": stats.merged,
+        "verweesd": stats.orphans,
+        "per_klasse_samengevoegd": stats.report.get("merged_by_type", {}),
+        "per_klasse_verweesd": stats.report.get("orphans_by_type", {}),
+        "piek": stats.peak_rss,
+    }
 
 
 def _outcome(result: Converted, t0: float) -> OmzetUitkomst:

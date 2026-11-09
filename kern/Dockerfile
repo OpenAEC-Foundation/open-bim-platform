@@ -9,7 +9,7 @@ FROM node:24-bookworm-slim AS converter
 WORKDIR /app/converter
 COPY kern/converter/package.json kern/converter/package-lock.json ./
 RUN npm ci --omit=dev
-COPY kern/converter/convert.mjs kern/converter/lines.mjs ./
+COPY kern/converter/*.mjs kern/converter/schema.json ./
 
 # The kern: Python 3.12 with openbim_kern, plus the node binary and the converter.
 FROM python:3.12-slim-bookworm

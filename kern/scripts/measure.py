@@ -1,10 +1,12 @@
 """Measure the conversion of every IFC file in a folder and write a report.
 
-    python scripts/measure.py <map> --uit <rapport.md> [--hervat]
+    python scripts/measure.py <map> --uit <rapport.md> [--hervat] [--vergelijk]
 
 Writes the report as a Markdown table (bestand | MB IFC | MB .frag | s | piekgeheugen | delen, with the times per
-stage and the peak memory of IfcOpenShell for the property index), plus <rapport>.json with the raw rows, written after
+stage and the peak memory of IfcOpenShell for the property index), a table of what cleaning did (bytes and records
+before and after, the peak memory of cleaning and splitting), plus <rapport>.json with the raw rows, written after
 every file. With --hervat the files already in <rapport>.json (same version, output in place) are not converted again.
+With --vergelijk the cleaned IFC is compared with the source in IfcOpenShell (same content per GlobalId, same summary).
 The converted output lands in <map>/.afgeleid/, where `openbim-kern lokaal <map>` finds it.
 """
 
@@ -24,9 +26,12 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument(
         "--hervat", action="store_true", help="wat al gemeten is (<rapport>.json) niet opnieuw omzetten"
     )
+    parser.add_argument(
+        "--vergelijk", action="store_true", help="het opgeschoonde IFC met de bron vergelijken in IfcOpenShell"
+    )
     args = parser.parse_args(argv)
     root = args.map.resolve()
-    rows = measure(root, rows_path=args.uit.with_suffix(".json"), resume=args.hervat)
+    rows = measure(root, rows_path=args.uit.with_suffix(".json"), resume=args.hervat, compare=args.vergelijk)
     args.uit.parent.mkdir(parents=True, exist_ok=True)
     args.uit.write_text(render(rows, root), encoding="utf-8")
     args.uit.with_suffix(".json").write_text(json.dumps(rows, indent=2, ensure_ascii=False), encoding="utf-8")
