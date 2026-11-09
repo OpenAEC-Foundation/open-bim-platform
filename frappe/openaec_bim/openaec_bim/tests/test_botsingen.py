@@ -383,16 +383,16 @@ class TestBotsingen(ProjectTest):
 		frappe.db.set_value("BIM Botsing", rij.name, {"status": "genegeerd", "reden": "Is bedoeld"})
 		volgende = self.ronde_met([("w1", "k1"), ("w3", "k3")])
 		nu = self.rij(volgende, "w1")
-		assert (nu.status, nu.reden, nu.nummer, nu.ontwikkeling) == ("genegeerd", "Is bedoeld", rij.nummer, "blijft")
-		assert self.rij(volgende, "w3").nummer == 3 and self.rij(volgende, "w3").ontwikkeling == "nieuw"
+		self.assertEqual((nu.status, nu.reden, nu.nummer, nu.ontwikkeling), ("genegeerd", "Is bedoeld", rij.nummer, "blijft"))
+		self.assertEqual((self.rij(volgende, "w3").nummer, self.rij(volgende, "w3").ontwikkeling), (3, "nieuw"))
 
 	def test_weg_neemt_de_velden_over_en_telt_niet_in_de_emmers(self):
 		self.ronde_met([("w1", "k1")], velden={"emmer": "contact", "ernst": "klein", "verdieping": "00"})
 		volgende = self.ronde_met([])
 		rij = self.rij(volgende, "w1")
-		assert (rij.status, rij.ontwikkeling, rij.emmer, rij.verdieping) == ("opgelost", "weg", "contact", "00")
+		self.assertEqual((rij.status, rij.ontwikkeling, rij.emmer, rij.verdieping), ("opgelost", "weg", "contact", "00"))
 		s = json.loads(frappe.db.get_value("BIM Botsingsronde", volgende, "samenvatting"))
-		assert s["totaal"] == 0 and sum(s["per_emmer"].values()) == 0 and s["weg"] == 1
+		self.assertEqual((s["totaal"], sum(s["per_emmer"].values()), s["weg"]), (0, 0, 1))
 
 	def test_een_lege_ronde_zonder_vorige_is_gewoon_klaar(self):
 		ronde = self.ronde_met([])
@@ -456,13 +456,14 @@ class TestBotsingen(ProjectTest):
 		issue = botsingen.naar_issue(rij.name)["guid"]
 		frappe.db.set_value("BIM Issue", issue, "status", "In behandeling")
 		weg = self.ronde_met([])
-		assert frappe.db.get_value("BIM Issue", issue, "status") == "Opgelost"
-		assert self.rij(weg, "w1").issue_status_voor == "In behandeling"
+		self.assertEqual(frappe.db.get_value("BIM Issue", issue, "status"), "Opgelost")
+		self.assertEqual(self.rij(weg, "w1").issue_status_voor, "In behandeling")
 		terug = self.ronde_met([("w1", "k1")])
-		assert frappe.db.get_value("BIM Issue", issue, "status") == "In behandeling"
-		assert self.rij(terug, "w1").ontwikkeling == "terug" and not self.rij(terug, "w1").issue_status_voor
+		self.assertEqual(frappe.db.get_value("BIM Issue", issue, "status"), "In behandeling")
+		self.assertEqual(self.rij(terug, "w1").ontwikkeling, "terug")
+		self.assertFalse(self.rij(terug, "w1").issue_status_voor)
 		# beide keren een reactie
-		assert frappe.db.count("BIM Reactie", {"issue": issue}) == 2
+		self.assertEqual(frappe.db.count("BIM Reactie", {"issue": issue}), 2)
 		self.assertEqual(frappe.get_last_doc("BIM Reactie", {"issue": issue}).owner, "Botsingsronde")
 
 	def test_geen_heropening_na_een_eigen_wijziging(self):
@@ -524,7 +525,8 @@ class TestBotsingen(ProjectTest):
 	def test_afwijzen_met_reden_en_wie(self):
 		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
 		uit = botsingen.zet_status(rij.name, "genegeerd", "Bedoeld zo")
-		assert uit["reden"] == "Bedoeld zo" and uit["beoordeeld_door"] == frappe.session.user and uit["beoordeeld_op"]
+		self.assertEqual((uit["reden"], uit["beoordeeld_door"]), ("Bedoeld zo", frappe.session.user))
+		self.assertTrue(uit["beoordeeld_op"])
 
 	def test_een_te_lange_reden_of_reden_bij_een_andere_status(self):
 		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
@@ -532,17 +534,19 @@ class TestBotsingen(ProjectTest):
 			botsingen.zet_status(rij.name, "genegeerd", "x" * 201)
 		self.assertEqual(frappe.local.response.pop("foutcode", None), "reden_te_lang")
 		botsingen.zet_status(rij.name, "genegeerd", "ok")
-		assert botsingen.zet_status(rij.name, "actief")["reden"] is None
+		self.assertIsNone(botsingen.zet_status(rij.name, "actief")["reden"])
 
 	def test_bevestigen_maakt_een_issue_met_namen(self):
 		ronde = self.ronde_met([("w1", "k1")], namen={"w1": "Wand B 0", "k1": "Kanaal"})
 		uit = botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")
-		assert uit["status"] == "bevestigd"
+		self.assertEqual(uit["status"], "bevestigd")
 		titel = frappe.db.get_value("BIM Issue", uit["issue"], "titel")
-		assert uit["issue"] and "Wand B 0" in titel and "Kanaal" in titel
-		assert botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")["issue"] == uit["issue"]
+		self.assertTrue(uit["issue"])
+		self.assertIn("Wand B 0", titel)
+		self.assertIn("Kanaal", titel)
+		self.assertEqual(botsingen.zet_status(self.rij(ronde, "w1").name, "bevestigd")["issue"], uit["issue"])
 		# van bevestigd naar iets anders houdt het issue
-		assert botsingen.zet_status(self.rij(ronde, "w1").name, "actief")["issue"] == uit["issue"]
+		self.assertEqual(botsingen.zet_status(self.rij(ronde, "w1").name, "actief")["issue"], uit["issue"])
 
 	def test_naar_issue_zonder_namen_gebruikt_de_klasse_en_verandert_de_status_niet(self):
 		rij = self.rij(self.ronde_met([("w1", "k1")]), "w1")
@@ -577,7 +581,8 @@ class TestBotsingen(ProjectTest):
 		weergaven = [{"naam": "Kritiek", "filter": {"ernst": ["kritiek"]}, "groep": "verdieping"}]
 		botsingen.instellingen_bewaar(self.project, regels, weergaven)
 		uit = botsingen.instellingen(self.project)
-		assert uit["regels"] == regels and uit["weergaven"] == weergaven and uit["mag_wijzigen"]
+		self.assertEqual((uit["regels"], uit["weergaven"]), (regels, weergaven))
+		self.assertTrue(uit["mag_wijzigen"])
 
 	def test_bewaren_laat_weg_gelaten_delen_staan_en_sorteert_de_regel(self):
 		weergaven = [{"naam": "Alles", "filter": {}, "groep": None}]
@@ -1144,3 +1149,110 @@ class TestBotsingen(ProjectTest):
 		self.assertFalse(frappe.db.get_value("BIM Botsing", rij.name, "issue"))
 		# Een issue dat er al is, blijft te openen.
 		self.assertEqual(botsingen.naar_issue(met_issue.name)["guid"], frappe.db.get_value("BIM Botsing", met_issue.name, "issue"))
+
+	# Restpunten
+
+	def test_een_ronde_met_verschillende_toleranties_noemt_geen_tolerantie(self):
+		def json_van(ronde):
+			return botsingen.ronde_naar_json(frappe.get_doc("BIM Botsingsronde", ronde))
+
+		verschillend = [self.controle(tolerantie=0.01), self.controle(soort="afstand", tolerantie=0.05)]
+		self.assertIsNone(json_van(botsingen.start_controles(self.project, verschillend, voorinstelling="een"))["tolerantie"])
+		gelijk = [self.controle(tolerantie=0.02), self.controle(soort="afstand", tolerantie=0.02)]
+		self.assertEqual(json_van(botsingen.start_controles(self.project, gelijk, voorinstelling="twee"))["tolerantie"], 0.02)
+		self.assertEqual(json_van(self.start())["tolerantie"], 0.01)
+
+	def test_een_botsing_in_de_database_draait_het_inlezen_terug_en_de_volgende_tik_doet_het_een_keer(self):
+		ronde = self.ronde_met([("w1", "k1")])
+		issue = botsingen.naar_issue(self.rij(ronde, "w1").name)["guid"]
+		frappe.db.set_value("BIM Issue", issue, "status", "In behandeling")
+		weg = self.lever(self.start(), [], bijwerken=False)
+		klasse = type(frappe.get_doc("BIM Botsingsronde", weg))
+		echt = klasse.save
+
+		def botst(doc, *args, **kwargs):
+			# Een ander verzoek sloeg de ronde net op, terwijl dit verzoek haar inlas.
+			if doc.name == weg and doc.status == "klaar":
+				raise frappe.TimestampMismatchError("ouder")
+			return echt(doc, *args, **kwargs)
+
+		with patch.object(klasse, "save", botst):
+			botsingen.volg_lopende()
+		# Die poging is helemaal teruggedraaid: geen rijen, het issue zoals het was en geen reactie, en geen fout.
+		self.assertIn(frappe.db.get_value("BIM Botsingsronde", weg, "status"), ("wacht", "bezig"))
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": weg}), 0)
+		self.assertEqual(frappe.db.get_value("BIM Issue", issue, "status"), "In behandeling")
+		self.assertEqual(frappe.db.count("BIM Reactie", {"issue": issue}), 0)
+		self.assertEqual(self.foutlog(weg), [])
+		botsingen.volg_lopende()
+		self.assertEqual(frappe.db.get_value("BIM Botsingsronde", weg, "status"), "klaar")
+		self.assertEqual(frappe.db.count("BIM Botsing", {"ronde": weg}), 1)
+		self.assertEqual(frappe.db.get_value("BIM Issue", issue, "status"), "Opgelost")
+		self.assertEqual(frappe.db.count("BIM Reactie", {"issue": issue}), 1)
+
+	def test_disciplines_sorteren_zonder_op_hoofdletters_te_letten(self):
+		frappe.set_user(self.lid)
+		sub = opslag.maak_map(ruimte=self.ruimte, naam="Installaties", bovenliggende=self.map)["map"]
+		kanaal = upload(self.ruimte, "kanaal.ifc", b"ISO-10303-21; k", map_naam=sub)["bestand"]
+		self.model_klaar(kanaal)
+		ronde = botsingen.start(self.project, [{"bestand": self.constructie}], [{"bestand": kanaal}], "hard", 0.01)
+		self.lever(ronde, [("w1", "k1")], b_bestand=kanaal)
+		self.assertEqual(self.rij(ronde, "w1").disciplines, "constructie × Installaties")
+		regel = {"a": "Installaties", "b": "constructie", "soort": "hard", "mm": 0, "ernst": None}
+		[bewaard] = botsingen.instellingen_bewaar(self.project, [regel])["regels"]
+		self.assertEqual((bewaard["a"], bewaard["b"]), ("constructie", "Installaties"))
+
+	def test_een_groepsactie_met_dubbele_namen_beslist_elke_botsing_een_keer(self):
+		ronde = self.ronde_met([("w1", "k1"), ("w2", "k2")])
+		w1, w2 = self.rij(ronde, "w1").name, self.rij(ronde, "w2").name
+		uit = botsingen.zet_status_veel([w1, w2, w1], "genegeerd", "Bedoeld zo")
+		self.assertEqual([r["naam"] for r in uit], [w1, w2])
+		self.assertEqual(frappe.db.get_value("BIM Botsing", w1, "status"), "genegeerd")
+
+	def test_de_afstand_van_een_regel_is_een_getal(self):
+		regel = {"a": "A", "b": "B", "soort": "hard", "ernst": None}
+		for slecht in ("abc", "50", None, True, float("nan")):
+			with self.assertRaises(frappe.ValidationError, msg=repr(slecht)):
+				botsingen.instellingen_bewaar(self.project, [{**regel, "mm": slecht}])
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "regels_ongeldig")
+		for goed in (0, 50, 12.5):
+			self.assertEqual(botsingen.instellingen_bewaar(self.project, [{**regel, "mm": goed}])["regels"][0]["mm"], goed)
+
+	def test_regels_en_weergaven_hebben_grenzen(self):
+		regel = {"a": "A", "b": "B", "soort": "hard", "mm": 0, "ernst": None}
+		for slecht in (
+			[{**regel, "a": "x" * 141}],
+			[{**regel, "b": "x" * 141}],
+			[{**regel, "a": f"D{i}"} for i in range(501)],
+		):
+			with self.assertRaises(frappe.ValidationError):
+				botsingen.instellingen_bewaar(self.project, slecht)
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "regels_ongeldig")
+		botsingen.instellingen_bewaar(self.project, [{**regel, "a": f"D{i}"} for i in range(499)] + [{**regel, "a": "x" * 140}])
+		weergave = {"naam": "N", "filter": {}, "groep": None}
+		for slecht in (
+			{**weergave, "naam": "x" * 141},
+			{**weergave, "filter": {"tekst": "x" * 201}},
+			{**weergave, "filter": {"verdieping": ["x" * 141]}},
+			{**weergave, "filter": {"verdieping": [f"v{i}" for i in range(101)]}},
+			{**weergave, "groep": "onzin"},
+		):
+			with self.assertRaises(frappe.ValidationError, msg=str(slecht)[:80]):
+				botsingen.instellingen_bewaar(self.project, weergaven=[slecht])
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "weergave_ongeldig")
+		ruim = {
+			"naam": "x" * 140,
+			"filter": {"tekst": "x" * 200, "verdieping": [f"v{i}" for i in range(99)] + ["x" * 140]},
+			"groep": "ruimte",
+		}
+		self.assertEqual(botsingen.instellingen_bewaar(self.project, weergaven=[ruim])["weergaven"], [ruim])
+
+	def test_de_klassen_van_een_set_hebben_een_grens(self):
+		for klassen in ([f"IfcKlasse{i}" for i in range(101)], ["Ifc" + "x" * 62]):
+			controle = self.controle(set_a=[{"bestand": self.constructie, "klassen": klassen}])
+			with self.assertRaises(frappe.ValidationError):
+				botsingen.start_controles(self.project, [controle])
+			self.assertEqual(frappe.local.response.pop("foutcode", None), "klassen_ongeldig")
+		ruim = [f"IfcKlasse{i}" for i in range(99)] + ["Ifc" + "x" * 61]
+		ronde = botsingen.start_controles(self.project, [self.controle(set_a=[{"bestand": self.constructie, "klassen": ruim}])])
+		self.assertEqual(len(json.loads(frappe.db.get_value("BIM Botsingsronde", ronde, "set_a"))[0]["klassen"]), 100)

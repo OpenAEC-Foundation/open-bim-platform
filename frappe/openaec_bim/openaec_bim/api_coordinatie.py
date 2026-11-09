@@ -152,8 +152,9 @@ def botsing_status(botsing: str, status: str, reden: str | None = None) -> dict:
 
 
 @frappe.whitelist(methods=["POST"])
-def botsing_status_veel(botsingen: list[str], status: str, reden: str | None = None) -> list[dict]:
-	"""Dezelfde beoordeling voor een groep botsingen (hoogstens 500)."""
+def botsing_status_veel(botsingen: list[str] | str, status: str, reden: str | None = None) -> list[dict]:
+	"""Dezelfde beoordeling voor een groep botsingen (hoogstens 500). Een formulierverzoek geeft de lijst als JSON-tekst; met
+	alleen `list[str]` weigert Frappe die al bij de controle van de typen."""
 	_gastpagina()
 	return botsingen_mod.zet_status_veel(_lijst(botsingen), status, reden)
 

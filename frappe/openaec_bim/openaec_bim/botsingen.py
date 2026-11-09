@@ -68,9 +68,19 @@ MAX_WEERGAVEN = 50
 MAX_VERLOOP = 20
 REGELSOORTEN = ("uit", "hard", "afstand")
 MAX_MM = 1000
+MAX_REGELS = 500
+# Een discipline, de naam van een weergave en een waarde in een filter: zo lang als de langste kolom van een botsing.
+MAX_NAAM = 140
+MAX_ZOEKTEKST = 200
+MAX_FILTERWAARDEN = 100
+# Per model in een set; de langste IFC-klasse is ruim korter.
+MAX_KLASSEN = 100
+MAX_KLASSENAAM = 64
 # De filters van een weergave: lijsten van tekst, en daarnaast de emmer en de zoektekst.
 FILTER_LIJSTEN = ("ernst", "status", "categorie", "disciplines", "verdieping", "ontwikkeling")
 FILTER_EMMERS = (*EMMERS, "weg")
+# Waarop de viewer een ronde kan groeperen.
+GROEPERINGEN = ("klassen", "verdieping", "disciplines", "ernst", "categorie", "raster", "ruimte", "ontwikkeling")
 
 
 def _weiger(melding: str, foutcode: str, uitzondering=frappe.ValidationError):
@@ -85,6 +95,21 @@ def _vereis_schrijver(project) -> None:
 		frappe.throw(_("Alleen wie in de modelmap mag schrijven, kan botsingen beheren."), frappe.PermissionError)
 
 
+def _volgorde(tekst: str) -> tuple[str, str]:
+	"""Disciplines op alfabet zonder op hoofdletters te letten, en bij gelijke letters op codepunt; de viewer sorteert zo ook."""
+	return tekst.lower(), tekst
+
+
+def _klassen(klassen) -> list[str] | None:
+	uit = sorted({str(k) for k in klassen or []})
+	if len(uit) > MAX_KLASSEN or any(len(k) > MAX_KLASSENAAM for k in uit):
+		_weiger(
+			_("Hoogstens {0} klassen per model, van hoogstens {1} tekens.").format(MAX_KLASSEN, MAX_KLASSENAAM),
+			"klassen_ongeldig",
+		)
+	return uit or None
+
+
 def _set(items, modellen: dict) -> list[dict]:
 	"""Een set als `[{bestand, klassen}]`, op volgorde van bestand; elk bestand is een IFC in de modelmap."""
 	uit = []
@@ -92,8 +117,7 @@ def _set(items, modellen: dict) -> list[dict]:
 		bestand = item.get("bestand") if isinstance(item, dict) else item
 		if bestand not in modellen:
 			_weiger(_("{0} is geen model in dit project.").format(bestand), "model_onbekend")
-		klassen = sorted({str(k) for k in (item.get("klassen") if isinstance(item, dict) else None) or []}) or None
-		uit.append({"bestand": bestand, "klassen": klassen})
+		uit.append({"bestand": bestand, "klassen": _klassen(item.get("klassen") if isinstance(item, dict) else None)})
 	if not uit:
 		_weiger(_("Een set heeft minstens één model nodig."), "set_leeg")
 	return sorted(uit, key=lambda m: m["bestand"])
@@ -379,15 +403,14 @@ def _zet_issue(issue: str, status: str, tekst: str) -> None:
 	issues._nieuwe_reactie(doc, {"comment": tekst}, auteur="Botsingsronde")
 
 
-def _issue_volgt(r: dict, eerder, project, gewijzigd: bool) -> None:
-	"""Zet het issue van een rij dicht als haar botsing weg is, en terug als de botsing terugkomt; werkt `r` bij."""
+def _issue_volgt(r: dict, eerder, dicht: str, gewijzigd: bool) -> None:
+	"""Zet het issue van een rij op `dicht` als haar botsing weg is, en terug als de botsing terugkomt; werkt `r` bij."""
 	if not r["issue"]:
 		return
 	if not frappe.db.exists(issues.ISSUE, r["issue"]):
 		r["issue"] = r["issue_status_voor"] = None
 		return
 	status = frappe.db.get_value(issues.ISSUE, r["issue"], "status")
-	dicht = _dichte_status(project)
 	if r["ontwikkeling"] == "weg" and not gewijzigd and status not in DICHTE_STATUSSEN:
 		r["issue_status_voor"] = status
 		_zet_issue(r["issue"], dicht, _("De botsing is in deze ronde niet meer gevonden; het issue is op {0} gezet.").format(dicht))
@@ -463,7 +486,7 @@ def verwerk(ronde: str) -> None:
 			continue
 		eerder = vorige[sleutel][0] if sleutel in vorige else None
 		status, ontwikkeling = _ontwikkeling(eerder, True)
-		disciplines = sorted(discipline.get(e["bestand"], "") for e in (a, b))
+		disciplines = sorted((discipline.get(e["bestand"], "") for e in (a, b)), key=_volgorde)
 		rijen[sleutel] = {
 			"sleutel": sleutel,
 			"element_a": a,
@@ -524,9 +547,10 @@ def verwerk(ronde: str) -> None:
 			rijen[sleutel]["nummer"] = hoogste
 	bron = frappe.flags.bim_bron
 	frappe.flags.bim_bron = "achtergrond"
+	dicht = _dichte_status(project)
 	try:
 		for sleutel, r in rijen.items():
-			_issue_volgt(r, vorige[sleutel][0] if sleutel in vorige else None, project, gewijzigd)
+			_issue_volgt(r, vorige[sleutel][0] if sleutel in vorige else None, dicht, gewijzigd)
 	finally:
 		frappe.flags.bim_bron = bron
 	nu, gebruiker = now_datetime(), frappe.session.user
@@ -637,12 +661,13 @@ def zet_status(botsing: str, status: str, reden: str | None = None) -> dict:
 
 
 def zet_status_veel(botsingen: list[str], status: str, reden: str | None = None) -> list[dict]:
-	"""Dezelfde beoordeling voor tot 500 botsingen, met één rechtencontrole per ronde."""
+	"""Dezelfde beoordeling voor tot 500 botsingen, met één rechtencontrole per ronde. Een naam die twee keer voorkomt, telt
+	één keer: twee keer geladen botste de tweede opslag op een verouderde tijdstempel."""
 	botsingen = list(botsingen or [])
 	if len(botsingen) > MAX_GROEPSACTIE:
 		_weiger(_("Een groepsactie omvat hoogstens {0} botsingen.").format(MAX_GROEPSACTIE), "te_veel_botsingen")
 	reden = _controleer_status(status, reden)
-	docs = [frappe.get_doc(BOTSING, naam) for naam in botsingen]
+	docs = [frappe.get_doc(BOTSING, naam) for naam in dict.fromkeys(botsingen)]
 	gecontroleerd = set()
 	for doc in docs:
 		if doc.ronde not in gecontroleerd:
@@ -711,6 +736,13 @@ def naar_issue(botsing: str) -> dict:
 	return issues.topic(t["guid"])
 
 
+def _tolerantie(ronde) -> float | None:
+	"""De tolerantie van de ronde; None als haar controles verschillende toleranties hebben. Het veld bewaart dan de grootste,
+	en die is voor geen van de controles de tolerantie: de viewer toont ze dan per regel."""
+	toleranties = {flt(c.get("tolerantie")) for c in _lijst_uit(ronde.regels) if isinstance(c, dict)}
+	return None if len(toleranties) > 1 else flt(ronde.tolerantie)
+
+
 def ronde_naar_json(ronde, heeft_opvolger: bool | None = None) -> dict:
 	"""Een ronde voor de viewer; wie een hele lijst maakt, geeft `heeft_opvolger` mee en vraagt het niet per rij."""
 	return {
@@ -719,7 +751,7 @@ def ronde_naar_json(ronde, heeft_opvolger: bool | None = None) -> dict:
 		"set_a": json.loads(ronde.set_a or "[]"),
 		"set_b": json.loads(ronde.set_b or "[]"),
 		"soort": ronde.soort,
-		"tolerantie": flt(ronde.tolerantie),
+		"tolerantie": _tolerantie(ronde),
 		"regels": json.loads(ronde.regels or "[]"),
 		"voorinstelling": ronde.voorinstelling,
 		"reeks": ronde.reeks,
@@ -784,19 +816,19 @@ def _regel(regel) -> dict:
 	a, b = str(regel.get("a") or "").strip(), str(regel.get("b") or "").strip()
 	if not a or not b:
 		_weiger(_("Een regel heeft twee disciplines nodig."), "regels_ongeldig")
+	if len(a) > MAX_NAAM or len(b) > MAX_NAAM:
+		_weiger(_("Een discipline is hoogstens {0} tekens.").format(MAX_NAAM), "regels_ongeldig")
 	if regel.get("soort") not in REGELSOORTEN:
 		_weiger(_("Kies uit, hard of afstand."), "regels_ongeldig")
-	try:
-		mm = flt(regel.get("mm"))
-	except (TypeError, ValueError):
-		mm = -1
-	if not 0 <= mm <= MAX_MM:
+	# Een getal, geen tekst: van "abc" maakt flt() stil 0 mm. Een bool is in Python ook een int.
+	mm = regel.get("mm")
+	if isinstance(mm, bool) or not isinstance(mm, int | float) or not 0 <= mm <= MAX_MM:
 		_weiger(_("De afstand ligt tussen 0 en {0} mm.").format(MAX_MM), "regels_ongeldig")
 	ernst = regel.get("ernst") or None
 	if ernst is not None and ernst not in ERNSTEN:
 		_weiger(_("Onbekende ernst {0}.").format(ernst), "regels_ongeldig")
-	a, b = sorted((a, b))
-	return {"a": a, "b": b, "soort": regel["soort"], "mm": mm, "ernst": ernst}
+	a, b = sorted((a, b), key=_volgorde)
+	return {"a": a, "b": b, "soort": regel["soort"], "mm": float(mm), "ernst": ernst}
 
 
 def _weergavefilter(filter_) -> dict:
@@ -805,9 +837,13 @@ def _weergavefilter(filter_) -> dict:
 		_weiger(_("Het filter van een weergave is een object."), "weergave_ongeldig")
 	for sleutel, waarde in filter_.items():
 		if sleutel in FILTER_LIJSTEN:
-			goed = isinstance(waarde, list) and all(isinstance(w, str) for w in waarde)
+			goed = (
+				isinstance(waarde, list)
+				and len(waarde) <= MAX_FILTERWAARDEN
+				and all(isinstance(w, str) and len(w) <= MAX_NAAM for w in waarde)
+			)
 		elif sleutel == "tekst":
-			goed = isinstance(waarde, str)
+			goed = isinstance(waarde, str) and len(waarde) <= MAX_ZOEKTEKST
 		elif sleutel == "emmer":
 			goed = waarde is None or waarde in FILTER_EMMERS
 		else:
@@ -823,10 +859,12 @@ def _weergave(weergave) -> dict:
 	naam = str(weergave.get("naam") or "").strip()
 	if not naam:
 		_weiger(_("Een weergave heeft een naam nodig."), "weergave_ongeldig")
+	if len(naam) > MAX_NAAM:
+		_weiger(_("De naam van een weergave is hoogstens {0} tekens.").format(MAX_NAAM), "weergave_ongeldig")
 	filter_ = _weergavefilter(weergave.get("filter") if weergave.get("filter") is not None else {})
 	groep = weergave.get("groep") or None
-	if groep is not None and not isinstance(groep, str):
-		_weiger(_("De groepering van een weergave is een tekst."), "weergave_ongeldig")
+	if groep is not None and groep not in GROEPERINGEN:
+		_weiger(_("Onbekende groepering {0}.").format(groep), "weergave_ongeldig")
 	return {"naam": naam, "filter": filter_, "groep": groep}
 
 
@@ -835,6 +873,8 @@ def instellingen_bewaar(project, regels=None, weergaven=None) -> dict:
 	project = issues._project(project)
 	_vereis_schrijver(project)
 	if regels is not None:
+		if len(regels) > MAX_REGELS:
+			_weiger(_("Hoogstens {0} regels.").format(MAX_REGELS), "regels_ongeldig")
 		project.botsingsregels = _json([_regel(r) for r in regels])
 	if weergaven is not None:
 		if len(weergaven) > MAX_WEERGAVEN:
