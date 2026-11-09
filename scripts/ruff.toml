@@ -1,0 +1,6 @@
+# The same rules as the kern (kern/pyproject.toml).
+line-length = 120
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]

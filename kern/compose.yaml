@@ -2,7 +2,9 @@
 #   OPENBIM_KERN_SLEUTELS=<sleutel> docker compose up --build
 services:
   kern:
-    build: .
+    build:
+      context: ..
+      dockerfile: kern/Dockerfile
     image: openbim-kern
     environment:
       OPENBIM_KERN_SLEUTELS: ${OPENBIM_KERN_SLEUTELS:?zet OPENBIM_KERN_SLEUTELS (komma-gescheiden sleutels)}

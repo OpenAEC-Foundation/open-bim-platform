@@ -72,7 +72,11 @@ def create_app(keys: list[str] | None = None, store: JobStore | None = None) -> 
 
     @app.get("/v1/health")
     def health() -> dict[str, str]:
-        return {"status": "ok", "versie": __version__}
+        status = {"status": "ok", "versie": __version__}
+        # The release tag the image was built from (set in kern/Dockerfile); absent outside a release image.
+        if release := os.environ.get("OPENBIM_KERN_RELEASE"):
+            status["release"] = release
+        return status
 
     @app.get("/v1/tools", dependencies=[Depends(require_key)])
     def list_tools() -> list[dict]:

@@ -110,8 +110,8 @@ ontwerpprogramma's biedt de klantsite de BCF-API 3.0 met de Foundation API 1.1 o
 werkplek is `scripts/werkplek-e2e/bim-coordinatie.mjs` in `openaec-bench`. Plan:
 `docs/superpowers/plans/2026-10-29-fase-1b-coordinatie.md`.
 
-Nog een besluit van de eigenaar: de projectlicentie van deze repo, prijsniveau en status in de catalogus, welke app
-een `.ifc` standaard opent (nu de planner), en een machine met genoeg geheugen voor het omzetten op staging.
+Nog een besluit van de eigenaar: prijsniveau en status in de catalogus, welke app een `.ifc` standaard opent (nu de
+planner), en een machine met genoeg geheugen voor het omzetten op staging.
 
 ### Tests
 
@@ -156,6 +156,10 @@ OPENBIM_KERN_SLEUTELS=<sleutel> docker compose up --build
 ```
 
 Dit start de kern op poort 8730 en de werker, uit dezelfde image, met de wachtrij en werkmappen op het volume `/data`.
+De image wordt gebouwd vanuit de hoofdmap van de repo, omdat de licentieteksten en de releasescripts daar staan:
+`docker build -f kern/Dockerfile -t openbim-kern .`. In de image staan naast de kern `COPYING`, `COPYING.LESSER`,
+`bron.json` en `THIRD-PARTY-NOTICES.txt`: alle Python-distributies, de npm-pakketten van de omzetter, Python en
+Node.js zelf en de Debian-pakketten van het basisimage, elk met een link naar de broncode van precies die versie.
 
 ### Instellingen
 
@@ -171,5 +175,34 @@ Dit start de kern op poort 8730 en de werker, uit dezelfde image, met de wachtri
 | `OPENBIM_RIJ_OMZETTEN` | `1` | gelijktijdige taken in de rij `omzetten` |
 | `OPENBIM_RIJ_LICHT` | `4` | gelijktijdige taken in de rij `licht` |
 | `OPENBIM_RIJ_BOTSING` | `1` | gelijktijdige taken in de rij `botsing` (botsingscontrole) |
+
+## Releases
+
+Een tag `v<jaar>.<week>.<n>` (zoals `v2026.44.1`) op een commit van `main` publiceert een release volgens het
+SuperCloud-contract (`openaec-supercloud/docs/apps-harmoniseren.md`), via `.github/workflows/release.yml`:
+
+| Asset | Soort | Gebruik |
+|---|---|---|
+| `ghcr.io/openaec-foundation/open-bim-platform-api:<versie>` | rekenkern als clouddienst, `linux/amd64` en `linux/arm64` | `serve` (standaard) en `openbim-kern werker`, zie *Container* en *Instellingen* |
+| `open-bim-platform-web-<versie>.tar.gz` | browsertool voor de werkplek (`/werkplek/app/bim/`) | relatieve base `./`, SRI op scripts en stylesheets, geen inline code |
+| `openaec_bim-<versie>.tar.gz` | Frappe-app voor de klantsite | de map `openaec_bim/` met de bestanden die git bijhoudt |
+
+Elk asset heeft `bron.json` (versie, tag, commit, licentie, broncode), `THIRD-PARTY-NOTICES.txt`, `COPYING` en
+`COPYING.LESSER`; de tarballs ook `MANIFEST.sha256` en een `.sha256` ernaast. De tarballs zijn reproduceerbaar (vaste
+volgorde, eigenaar 0, de tijd van de commit). `/v1/health` van een release-image noemt de tag (`release`).
+
+```bash
+git tag v2026.44.1 <commit op main>
+git push origin v2026.44.1
+```
+
+Een pull request die de release raakt (de workflow, `kern/Dockerfile`, `scripts/release/`) bouwt alles zonder te
+publiceren, met de assets als artefact van de workflow. De scripts zelf: `python -m pytest scripts/tests`.
+
+## Licentie
+
+LGPL-3.0-or-later: de GNU Lesser General Public License, versie 3 of later ([COPYING.LESSER](COPYING.LESSER)), als
+aanvulling op de GNU General Public License, versie 3 ([COPYING](COPYING)). De onderdelen van derden met hun eigen
+licenties staan in `THIRD-PARTY-NOTICES.txt` van elk release-asset.
 
 Onderdeel van de [OpenAEC Foundation](https://github.com/OpenAEC-Foundation). Build free. Build together.
